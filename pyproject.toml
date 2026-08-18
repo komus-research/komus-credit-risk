@@ -1,0 +1,10 @@
+[project]
+name = "komus-credit-risk"
+version = "0.1.0"
+requires-python = ">=3.12.2"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+]
