@@ -6,7 +6,7 @@
 
 Перед каждым крупным этапом проверяется фактическое состояние репозитория, данных и артефактов. Закрытый этап считается завершённым только после проверки результата и обновления документации.
 
-Дата актуализации: **2026-08-18**.
+Дата актуализации: **2026-08-19**.
 
 ---
 
@@ -21,16 +21,21 @@
 - зафиксирован historical baseline №06 и SHA-256 ключевых файлов;
 - зафиксированы новые бизнес-ограничения `Q_B1_norm`/`Q_B2_norm`;
 - зафиксирована архитектурная граница ML-core → backend → frontend;
-- зафиксированы настраиваемые cost policy и manual review capacity.
+- зафиксированы настраиваемые cost policy и manual review capacity;
+- локальный repository клонирован в `D:\Projects\komus-credit-risk` и открыт в VS Code;
+- проверены `main`, чистый `git status` и корректный `origin`;
+- выбран и зафиксирован основной runtime **Python 3.12.2**;
+- подтверждён `uv 0.11.6` как менеджер environment/dependencies;
+- создана локальная `.venv` на Python 3.12.2 и проверен фактический путь interpreter;
+- созданы `.python-version`, `pyproject.toml` и `uv.lock`;
+- `ipykernel 7.3.0` добавлен как dev-зависимость и успешно импортирован из `.venv`;
+- VS Code переключён на проектный `.venv` interpreter;
+- environment commit `9b5fc5a` успешно отправлен в `origin/main`;
+- Python 3.10 сохранён как отдельный delivery compatibility gate, Docker — как будущий механизм упаковки после стабилизации runtime/ML-core.
 
 ### Осталось
 
-- создать/открыть локальную папку `komus-credit-risk` в VS Code;
-- клонировать/связать локальный проект с GitHub;
-- проверить `git status`, branch и remote;
-- создать локальное Python environment;
-- подключить Jupyter kernel в VS Code;
-- определить и зафиксировать Python/dependency management для нового этапа;
+- выполнить минимальную проверку реального Jupyter notebook cell в VS Code именно на `.venv` kernel;
 - разместить frozen notebook №06 в безопасном baseline-контуре, если его содержимое допустимо для Git;
 - добавить локальную структуру `notebooks/`, `src/`, `configs/`, `tests/` только по мере фактической необходимости.
 
