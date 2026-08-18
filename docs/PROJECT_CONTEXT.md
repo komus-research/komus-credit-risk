@@ -26,7 +26,17 @@
 - локальное `.venv`;
 - Jupyter в VS Code.
 
-Локальный репозиторий клонирован в `D:\Projects\komus-credit-risk`. Перед созданием окружения проверено: активная ветка `main`, `origin` указывает на `https://github.com/alekseeva943-cloud/komus-credit-risk.git`, рабочее дерево было чистым и синхронизированным с `origin/main`.
+Локальный репозиторий клонирован в `D:\Projects\komus-credit-risk`. Проверено: активная ветка `main`, `origin` указывает на `https://github.com/alekseeva943-cloud/komus-credit-risk.git`, локальный Git корректно синхронизируется с `origin/main`.
+
+Локальное окружение фактически создано командой `uv venv --python 3.12.2`. Проверено, что активный interpreter — `D:\Projects\komus-credit-risk\.venv\Scripts\python.exe` и он сообщает `Python 3.12.2`.
+
+Проект и версия runtime зафиксированы файлами:
+
+- `.python-version` → `3.12.2`;
+- `pyproject.toml` → `requires-python = ">=3.12.2"`;
+- `uv.lock` → воспроизводимый lock dependency set.
+
+`ipykernel 7.3.0` добавлен как **dev-зависимость**, установлен в `.venv` и успешно импортирован через `uv run`; VS Code выбран на проектный interpreter `.venv`. Первый environment commit `9b5fc5a` (`chore: configure Python 3.12 uv environment`) успешно отправлен в `origin/main`. После локального commit рабочее дерево было чистым.
 
 Python 3.12.2 выбран осознанно, а не случайно. Historical baseline №06 уже использует современный ML-стек, в котором сохранены версии XGBoost и SHAP, требующие более нового Python, чем 3.10. Основная исследовательская среда не должна искусственно ограничивать актуальные ML-библиотеки и будущие современные модели только ради старой строки в ТЗ.
 
