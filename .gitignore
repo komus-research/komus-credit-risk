@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# IDE / OS local state
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Customer / raw / derived datasets
+*.xlsb
+*.parquet
+*.feather
+*.arrow
+data/raw/
+data/private/
+data/external/
+data/cache/
+
+# Heavy model binaries and checkpoints
+*.pkl
+*.pickle
+*.joblib
+*.cbm
+*.pt
+*.pth
+*.onnx
+*.safetensors
+artifacts/models/
+artifacts/checkpoints/
+artifacts/cache/
+models/
+checkpoints/
+cache/
+
+# Run logs and temporary exports
+logs/
+*.log
+*.tmp
+*.temp
+*.zip
+
+# Local generated reports may be selectively added later
+reports/generated/
