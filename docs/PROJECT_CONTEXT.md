@@ -64,7 +64,52 @@ Colab остаётся дополнительной средой для демо
 - Python/Jupyter smoke-test успешно выполнен на проектной `.venv`;
 - `main` синхронизирован с `origin/main`, рабочее дерево после проверок чистое.
 
-Следующий активный этап — воспроизводимый baseline без `Q_B1_norm` и `Q_B2_norm`.
+Stage 1 — новый baseline без `Q_B1_norm` и `Q_B2_norm` — завершён.
+
+### Новый baseline Stage 1 V2
+
+Рабочий notebook:
+
+`notebooks/01_Новый_baseline_без_Q_B1_Q_B2_V2.ipynb`
+
+SHA-256 notebook:
+
+`d009de42e4050943f039e7f09403ee939612e42cc68422ca06e6cd01a83f3437`
+
+Локальные воспроизводимые артефакты запуска:
+
+- `stage1_baseline_results_V2.json` — SHA-256 `d5f54f3698cd3c11be93e0de8d1736a421706d2d20017ec622e1092689284a7e`;
+- `stage1_baseline_leaderboard_V2.csv` — SHA-256 `331cf04d35e90a690e8182393c7faf1ae453ad3eb2beffa9d8c0e33b9e51bbe2`.
+
+Оба результата находятся в `reports/generated/` и намеренно не отслеживаются Git.
+
+Протокол:
+
+- dataset SHA-256: `fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930`;
+- target: `DefMark`;
+- identifier: `INN`;
+- исходных модельных признаков: 49;
+- исключены до обучения: `Q_B1_norm` и `Q_B2_norm`;
+- допустимых признаков: 47;
+- working/final split: 80/20;
+- CV: 3-fold `StratifiedKFold`;
+- seed: 42;
+- class weights: нет;
+- Optuna: нет;
+- calibration: нет;
+- threshold optimization: нет;
+- early stopping: внутренняя validation-часть train-фолда с последующим refit на полном train-фолде;
+- final test для выбора модели не использован.
+
+OOF-результаты:
+
+- XGBoost: Gini **0.8040**, PR-AUC **0.5993**;
+- CatBoost: Gini **0.8038**, PR-AUC **0.6010**;
+- LightGBM: Gini **0.8034**, PR-AUC **0.5978**.
+
+Различия между моделями слишком малы относительно межфолдового разброса, чтобы объявлять абсолютного победителя. Текущий подтверждённый baseline без закрытых индексов: **Gini ≈ 0.804**.
+
+Следующий плановый исследовательский этап — explainability допустимых признаков без причинных утверждений.
 
 ## 3. Исторический baseline v1
 
