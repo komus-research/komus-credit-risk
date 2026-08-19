@@ -2,7 +2,16 @@
 name = "komus-credit-risk"
 version = "0.1.0"
 requires-python = ">=3.12.2"
-dependencies = []
+dependencies = [
+    "catboost>=1.2.10",
+    "lightgbm>=4.7.0",
+    "matplotlib>=3.11.1",
+    "numpy>=2.5.2",
+    "pandas>=3.0.5",
+    "pyxlsb>=1.0.10",
+    "scikit-learn>=1.9.0",
+    "xgboost>=3.4.1",
+]
 
 [dependency-groups]
 dev = [
