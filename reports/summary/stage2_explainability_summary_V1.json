@@ -1,0 +1,61 @@
+{
+  "experiment": "Stage 2",
+  "version": "V1",
+  "status": "completed_backfilled_summary",
+  "summary_origin": "Восстановлено 2026-08-20 из сохранённых outputs notebook; вычисления не перезапускались.",
+  "question": "Какие из 47 допустимых признаков стабильно формируют прогноз после полного исключения Q_B1_norm и Q_B2_norm, и насколько эта картина согласуется между CatBoost, XGBoost и LightGBM?",
+  "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+  "working_rows": 289614,
+  "final_test_rows": 72404,
+  "features_allowed": 47,
+  "excluded_features": ["Q_B1_norm", "Q_B2_norm"],
+  "cv": "Те же 3 внешних StratifiedKFold-фолда, что в Stage 1 V2",
+  "seed": 42,
+  "final_test_used": false,
+  "shap_sample_per_fold": 5000,
+  "permutation_repeats": 3,
+  "baseline_reproduction_gate": "OOF Gini всех трёх моделей должен находиться в заранее заданном допуске ±0.003 относительно Stage 1 V2.",
+  "consensus_top10": [
+    "Q_D6_norm",
+    "Q_A5_norm",
+    "Q_B3_norm",
+    "Q_C1_norm",
+    "G1_norm",
+    "Q_D4_norm",
+    "D5_norm",
+    "A4_norm",
+    "C4_norm",
+    "Q_A4_norm"
+  ],
+  "min_intermodel_shap_rank_correlation": 0.974,
+  "min_intermodel_permutation_rank_correlation": 0.899,
+  "historical_top15_overlap_count": 13,
+  "historical_top15_overlap_pct": 86.66666666666667,
+  "historical_top15_overlap_features": [
+    "A1_norm",
+    "A4_norm",
+    "B1_norm",
+    "D1_norm",
+    "D5_norm",
+    "G1_norm",
+    "Q_A4_norm",
+    "Q_A5_norm",
+    "Q_A6_norm",
+    "Q_B3_norm",
+    "Q_C1_norm",
+    "Q_D4_norm",
+    "Q_D6_norm"
+  ],
+  "facts": [
+    "Global SHAP и permutation importance рассчитаны на внешних validation-подвыборках, а OOF-качество — на полных validation-фолдах.",
+    "Ранги важности очень согласованы между тремя GBDT: минимальная межмодельная корреляция SHAP 0.974, permutation importance 0.899.",
+    "Consensus top-15 пересекается с historical top-15 заказчика по 13 из 15 признаков."
+  ],
+  "interpretation": "После удаления закрытых индексов три разные реализации GBDT опираются на почти одно и то же ядро разрешённых факторов. Это повышает уверенность, что структура важности не является артефактом одной модели, но не доказывает причинность и не доказывает, что эти признаки полностью заменили Q_B1/Q_B2.",
+  "limitations": [
+    "SHAP и permutation importance описывают поведение модели и ассоциации, а не причинное влияние на дефолт.",
+    "Explainability рассчитана на стратифицированных подвыборках validation-фолдов для ограничения CPU-времени.",
+    "Stage 2 не меняет baseline и не проверяет новые признаки."
+  ],
+  "decision": "Принять устойчивое consensus-ядро разрешённых признаков и перейти к анализу общих OOF-ошибок, чтобы локализовать информационный провал."
+}
