@@ -11,3 +11,5 @@
 - figure должен быть связан с конкретным notebook/summary и проверяемым выводом.
 
 Embedded output внутри `.ipynb` сохраняется как часть narrative, но presentation-worthy график по возможности дополнительно сохраняется сюда отдельным файлом.
+
+Для уже выполненных notebooks добавлен `scripts/export_notebook_figures.py`: он извлекает сохранённые PNG/JPEG/SVG outputs в отдельные файлы **без повторного запуска экспериментов** и создаёт `manifest.json` с SHA-256 исходного notebook и каждого figure-файла.
