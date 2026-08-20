@@ -1,0 +1,73 @@
+{
+  "experiment": "Stage 1",
+  "version": "V2",
+  "status": "completed_backfilled_summary",
+  "summary_origin": "Восстановлено 2026-08-20 из сохранённых outputs notebook и актуальной проектной документации; вычисления не перезапускались.",
+  "question": "Какой честный уровень качества дают CatBoost, XGBoost и LightGBM после полного исключения Q_B1_norm и Q_B2_norm при одном и том же протоколе оценки?",
+  "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+  "target": "DefMark",
+  "identifier": "INN",
+  "dataset_rows": 362018,
+  "working_rows": 289614,
+  "final_test_rows": 72404,
+  "working_final_split": "80/20",
+  "cv": "3-fold StratifiedKFold",
+  "seed": 42,
+  "features_total": 49,
+  "features_allowed": 47,
+  "excluded_features": ["Q_B1_norm", "Q_B2_norm"],
+  "class_weights": false,
+  "optuna": false,
+  "calibration": false,
+  "threshold_optimization": false,
+  "diagnostic_threshold": 0.5,
+  "final_test_used": false,
+  "early_stopping_protocol": "Внутренняя validation-часть train-фолда для выбора числа итераций, затем refit на полном внешнем train-фолде; внешний validation-фолд используется только для OOF-оценки.",
+  "models": [
+    {
+      "model": "XGBoost",
+      "oof_gini": 0.8040,
+      "gini_fold_std": 0.0060,
+      "oof_roc_auc": 0.9020,
+      "oof_pr_auc": 0.5993,
+      "precision_at_0_5": 0.7123,
+      "recall_at_0_5": 0.3684,
+      "f1_at_0_5": 0.4857,
+      "cv_train_time_sec": 74.4,
+      "cv_predict_time_sec": 0.823
+    },
+    {
+      "model": "CatBoost",
+      "oof_gini": 0.8038,
+      "gini_fold_std": 0.0067,
+      "oof_roc_auc": 0.9019,
+      "oof_pr_auc": 0.6010,
+      "precision_at_0_5": 0.7226,
+      "recall_at_0_5": 0.3622,
+      "f1_at_0_5": 0.4825,
+      "cv_train_time_sec": 244.4,
+      "cv_predict_time_sec": 0.168
+    },
+    {
+      "model": "LightGBM",
+      "oof_gini": 0.8034,
+      "gini_fold_std": 0.0056,
+      "oof_roc_auc": 0.9017,
+      "oof_pr_auc": 0.5978,
+      "precision_at_0_5": 0.7156,
+      "recall_at_0_5": 0.3621
+    }
+  ],
+  "facts": [
+    "Все три градиентных бустинга дают практически одинаковый OOF Gini около 0.804 на 47 разрешённых признаках.",
+    "Различия между моделями меньше межфолдового разброса; абсолютный победитель не объявляется.",
+    "Final test не использован для выбора модели, признаков, параметров или порога."
+  ],
+  "interpretation": "После удаления двух закрытых индексов качество падает к уровню около Gini 0.804. Дальнейший резерв следует искать не в декларации победителя среди близких GBDT, а в объяснимости, структуре ошибок и новом доступном сигнале.",
+  "limitations": [
+    "Random split/CV не доказывает temporal stability.",
+    "Precision/Recall/F1 при 0.5 являются диагностическими и не задают бизнес-порог.",
+    "Stage 1 не проверяет новые признаки, tuning, class weights или calibration."
+  ],
+  "decision": "Принять воспроизводимый baseline без Q_B1_norm/Q_B2_norm как Gini ≈ 0.804; перейти к explainability без изменения baseline."
+}
