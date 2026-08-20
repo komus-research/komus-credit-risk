@@ -1,0 +1,130 @@
+{
+  "experiment": "Stage 5",
+  "version": "V1",
+  "status": "completed_pending_review",
+  "question": "Какую часть Q_B2-сигнала можно воспроизвести из 47 разрешённых признаков?",
+  "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+  "stage3_oof_sha256": "faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac",
+  "final_test_used": false,
+  "working_rows": 289614,
+  "blind_spot_size": 805,
+  "oof_spearman_q_b2_reconstruction": 0.5420741981174472,
+  "oof_spearman_blind_spot": 0.0241590356326386,
+  "oracle_q_b2_blind_auc": 0.7233817896667458,
+  "proxy_blind_auc": 0.39805610212909665,
+  "auc_gap": 0.3253256875376492,
+  "rescue_at_30pct": {
+    "oracle_q_b2_pct": 59.43001621226058,
+    "proxy_pct": 10.434782608695652,
+    "gap_pp": 48.99523360356493
+  },
+  "top_proxy_features": [
+    {
+      "feature": "Q_A5_norm",
+      "meaning": "Численность сотрудников",
+      "importance_mean": 26.584136201524075,
+      "mean_rank": 1.0,
+      "spearman": -0.4437578468873444
+    },
+    {
+      "feature": "Q_D6_norm",
+      "meaning": "Режим налогообложения",
+      "importance_mean": 13.810536818031627,
+      "mean_rank": 2.0,
+      "spearman": -0.004988001270078212
+    },
+    {
+      "feature": "G1_norm",
+      "meaning": "Темп роста выручки",
+      "importance_mean": 5.79441708810754,
+      "mean_rank": 3.0,
+      "spearman": -0.1830126098795852
+    },
+    {
+      "feature": "A4_norm",
+      "meaning": "Капитал и резервы + ДБП",
+      "importance_mean": 4.533142463798973,
+      "mean_rank": 4.333333333333333,
+      "spearman": -0.2889985113866111
+    },
+    {
+      "feature": "B1_norm",
+      "meaning": "Внеоборотные активы / Активы",
+      "importance_mean": 4.418311851792509,
+      "mean_rank": 4.666666666666667,
+      "spearman": -0.2563331503768549
+    },
+    {
+      "feature": "Q_A4_norm",
+      "meaning": "Отраслевая характеристика",
+      "importance_mean": 3.823452184968725,
+      "mean_rank": 6.333333333333333,
+      "spearman": -0.05107617476077455
+    },
+    {
+      "feature": "Q_C1_norm",
+      "meaning": "Кредитная история",
+      "importance_mean": 3.8028074828401692,
+      "mean_rank": 6.666666666666667,
+      "spearman": -0.2336449769983393
+    },
+    {
+      "feature": "Q_B3_norm",
+      "meaning": "Количество активных исполнительных производств",
+      "importance_mean": 3.0451491712719267,
+      "mean_rank": 8.0,
+      "spearman": -0.08621772966155607
+    },
+    {
+      "feature": "Q_A1_norm",
+      "meaning": "Регион регистрации",
+      "importance_mean": 2.594805406192672,
+      "mean_rank": 9.333333333333334,
+      "spearman": 0.0021707887426212517
+    },
+    {
+      "feature": "D1_norm",
+      "meaning": "EBIT / Активы",
+      "importance_mean": 2.3223115318309566,
+      "mean_rank": 10.333333333333334,
+      "spearman": -0.16640459906503494
+    },
+    {
+      "feature": "A1_norm",
+      "meaning": "Собственный капитал / Активы",
+      "importance_mean": 2.224033405227876,
+      "mean_rank": 11.0,
+      "spearman": -0.0808138377179757
+    },
+    {
+      "feature": "D4_norm",
+      "meaning": "Расшифровка не подтверждена в источниках",
+      "importance_mean": 2.036986366568192,
+      "mean_rank": 11.333333333333334,
+      "spearman": -0.19676980804048425
+    },
+    {
+      "feature": "Q_B4_norm",
+      "meaning": "Расшифровка не подтверждена в источниках",
+      "importance_mean": 1.5278018818358963,
+      "mean_rank": 14.333333333333334,
+      "spearman": -0.07753237099913668
+    },
+    {
+      "feature": "A6_norm",
+      "meaning": "Расшифровка не подтверждена в источниках",
+      "importance_mean": 1.5100600703625375,
+      "mean_rank": 15.333333333333334,
+      "spearman": -0.23358652308104347
+    },
+    {
+      "feature": "C3_norm",
+      "meaning": "Расшифровка не подтверждена в источниках",
+      "importance_mean": 1.506116311860909,
+      "mean_rank": 15.333333333333334,
+      "spearman": -0.1272408286721847
+    }
+  ],
+  "decision_class": "material_missing_signal",
+  "decision": "Остаётся материальный информационный gap. Следующий приоритет: один новый внешний feature block по сигналам должной осмотрительности/негативным событиям."
+}
