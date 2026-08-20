@@ -1,0 +1,59 @@
+{
+  "experiment": "Stage 3",
+  "version": "V1",
+  "status": "completed_backfilled_summary",
+  "summary_origin": "Восстановлено 2026-08-20 из сохранённых outputs notebook; вычисления не перезапускались.",
+  "question": "Есть ли в OOF-прогнозах baseline без Q_B1_norm и Q_B2_norm устойчивые группы ошибок, которые одинаково видят CatBoost, XGBoost и LightGBM, и чем общие слепые зоны отличаются по доступным признакам?",
+  "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+  "working_rows": 289614,
+  "working_defaults": 28015,
+  "features_allowed": 47,
+  "excluded_features": ["Q_B1_norm", "Q_B2_norm"],
+  "cv": "Те же 3 внешних StratifiedKFold-фолда, что в Stage 1 V2",
+  "seed": 42,
+  "final_test_used": false,
+  "stage3_oof_sha256": "faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac",
+  "diagnostic_groups": {
+    "deeply_missed_default": "DefMark=1 и consensus percentile-rank риска <= 0.50",
+    "well_ranked_default": "DefMark=1 и consensus percentile-rank риска >= 0.90",
+    "high_risk_nondefault": "DefMark=0 и consensus percentile-rank риска >= 0.95",
+    "common_blind_spot": "Глубоко пропущенный дефолт и разброс rank между тремя моделями <= 0.10",
+    "strong_model_disagreement": "Разброс rank между тремя моделями >= 0.25"
+  },
+  "deeply_missed_defaults": 1278,
+  "deeply_missed_defaults_pct_of_defaults": 4.6,
+  "common_blind_spot": 805,
+  "common_blind_spot_pct_of_deeply_missed": 63.0,
+  "strong_intermodel_disagreement_pct_among_deeply_missed": 1.9,
+  "default_capture_by_consensus_risk_capacity": {
+    "top_10_pct": 57.2,
+    "top_20_pct": 77.8,
+    "top_30_pct": 87.4
+  },
+  "top10_features_by_abs_smd_blind_spot": [
+    "Q_A5_norm",
+    "D5_norm",
+    "D4_norm",
+    "Q_D6_norm",
+    "Q_B3_norm",
+    "D1_norm",
+    "Q_C1_norm",
+    "Q_D4_norm",
+    "F1_norm",
+    "D3_norm"
+  ],
+  "facts": [
+    "Из 28 015 дефолтов working sample 1 278 (4.6%) попадают в группу глубоко пропущенных по consensus rank.",
+    "805 объектов образуют общую слепую зону; это 63.0% глубоко пропущенных дефолтов.",
+    "Сильное межмодельное расхождение среди глубоко пропущенных составляет только 1.9%.",
+    "Consensus ranking захватывает 57.2% дефолтов в top-10% риска, 77.8% в top-20% и 87.4% в top-30%."
+  ],
+  "interpretation": "Большая доля общей слепой зоны и очень низкое межмодельное расхождение указывают, что ключевая проблема скорее общая для текущего информационного набора, чем специфична для одной реализации CatBoost/XGBoost/LightGBM.",
+  "limitations": [
+    "Диагностические percentile-rank границы не являются рабочим threshold.",
+    "Различия feature-профилей не доказывают причинность.",
+    "Stage 3 не доказывает существование конкретного внешнего недостающего фактора.",
+    "Random-split OOF-анализ не доказывает temporal stability."
+  ],
+  "decision": "Перейти от общего анализа ошибок к диагностике закрытых Q_B1/Q_B2 как oracle/reference-сигналов на общей слепой зоне, не открывая final test."
+}
