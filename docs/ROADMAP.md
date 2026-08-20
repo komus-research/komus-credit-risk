@@ -2,266 +2,279 @@
 
 ## Статус
 
-Этапы выполняются отдельными управляемыми блоками. Наличие пункта в roadmap не означает, что его нужно реализовывать заранее.
+Этапы выполняются отдельными контролируемыми блоками. Наличие пункта в roadmap не означает, что его нужно реализовывать заранее.
 
-Перед каждым крупным этапом проверяется фактическое состояние репозитория, данных и артефактов. Закрытый этап считается завершённым только после проверки результата и обновления документации.
+Перед крупным изменением проверяются branch/HEAD/status, данные и affected artifacts. Исследовательский Stage закрывается только после review результата и сохранения evidence package по правилам `docs/RESEARCH_RECORD.md`.
 
-Дата актуализации: **2026-08-19**.
+Дата актуализации: **2026-08-20**.
 
 ---
 
 ## 0. Фундамент репозитория — ЗАВЕРШЁН
 
-Цель: создать безопасную и понятную основу, не потеряв историческое исследование.
+Создан и проверен рабочий контур:
 
-### Уже сделано
-
-- создан private GitHub repository `alekseeva943-cloud/komus-credit-risk`;
-- создана базовая документация проекта;
-- зафиксирован historical baseline №06 и SHA-256 ключевых файлов;
-- зафиксированы новые бизнес-ограничения `Q_B1_norm`/`Q_B2_norm`;
-- зафиксирована архитектурная граница ML-core → backend → frontend;
-- зафиксированы настраиваемые cost policy и manual review capacity;
-- локальный repository клонирован в `D:\Projects\komus-credit-risk` и открыт в VS Code;
-- проверены `main`, чистый `git status` и корректный `origin`;
-- выбран и зафиксирован основной runtime **Python 3.12.2**;
-- подтверждён `uv 0.11.6` как менеджер environment/dependencies;
-- создана локальная `.venv` на Python 3.12.2 и проверен фактический путь interpreter;
-- созданы `.python-version`, `pyproject.toml` и `uv.lock`;
-- `ipykernel 7.3.0` добавлен как dev-зависимость и успешно импортирован из `.venv`;
-- VS Code переключён на проектный `.venv` interpreter;
-- выполнен реальный Jupyter smoke-test на `.venv`: подтверждены Python 3.12.2, project executable и `ipykernel 7.3.0`; тестовый notebook закрыт без сохранения;
-- frozen notebook №06 размещён в `notebooks/baseline/`, его SHA-256 повторно подтверждён, файл отслеживается Git;
-- `Data_final.xlsb` размещён локально в `data/raw/`, его SHA-256 повторно подтверждён;
-- защита `data/raw/` через `.gitignore` проверена командой `git check-ignore`;
-- после контрольных проверок `main` синхронизирован с `origin/main`, рабочее дерево чистое;
-- environment commit `9b5fc5a` успешно отправлен в `origin/main`;
-- Python 3.10 сохранён как отдельный delivery compatibility gate, Docker — как будущий механизм упаковки после стабилизации runtime/ML-core.
-
-### После закрытия этапа
-
-Каталоги `src/`, `configs/` и `tests/` создаются только по мере фактической необходимости. Пустая структура заранее не добавляется.
+- private GitHub repository `alekseeva943-cloud/komus-credit-risk`;
+- VS Code + Git + GitHub;
+- Python 3.12.2 + `uv` + `.venv` + Jupyter;
+- historical notebook №06 сохранён как frozen baseline;
+- `Data_final.xlsb` хранится локально вне Git и идентифицируется SHA-256;
+- Git не хранит raw/customer data, secrets и тяжёлые временные artifacts;
+- Python 3.10 сохранён как будущий delivery compatibility gate;
+- Docker отложен до стабилизации ML-core/runtime.
 
 ### Критерий завершения
 
-На чистом локальном checkout можно открыть проект, активировать окружение, запустить минимальную Python/Jupyter-проверку и однозначно определить current branch/HEAD/status. Historical baseline и исходный dataset при этом не потеряны и не попали в Git случайно.
-
----
-
-## 1. Новый baseline без `Q_B1_norm` и `Q_B2_norm` — ЗАВЕРШЁН
-
-### Исследовательский вопрос
-
-Какой честный уровень качества достигают CatBoost, XGBoost и LightGBM на одном и том же допустимом feature set после полного исключения обоих индексов СПАРК?
-
-### Контролируемый эксперимент
-
-Сохраняем одинаковыми:
-
-- dataset identity;
-- target;
-- working/final partition;
-- folds;
-- seed;
-- preprocessing;
-- feature set;
-- metrics.
-
-Меняем только модель: CatBoost / XGBoost / LightGBM.
-
-### Ориентиры, а не критерии приёмки
-
-- historical diagnostic ablation без обоих индексов: Gini ≈ **0.807**;
-- customer-reported рабочая модель без этих индексов: Gini ≈ **0.92**.
-
-Ни одно из этих чисел не подменяет новый воспроизводимый baseline: первое получено в старой диагностической схеме, второе не подтверждено нашим artifact.
-
-### На первом проходе не делаем
-
-- Optuna;
-- class weights;
-- threshold optimization;
-- новые признаки;
-- stacking;
-- современные нейросети;
-- выбор по final test.
-
-### Результаты
-
-Для каждой модели:
-
-- Gini;
-- ROC-AUC;
-- PR-AUC;
-- Precision;
-- Recall;
-- F1;
-- confusion matrix;
-- CPU train time;
-- CPU inference time;
-- experiment metadata.
-
-### Фактический результат
-
-История Stage 1 сохранена двумя версиями notebook:
-
-V1 — первый рабочий прогон. В нём early stopping использовал внешний validation-фолд, поэтому результат сохранён как предварительный и не принят как основной baseline.
-V2 — строгий контролируемый протокол: early stopping выполняется на внутренней validation-части train-фолда, затем модель переобучается на полном внешнем train-фолде, а внешний validation-фолд используется только для OOF-оценки.
-
-Результаты V2 на 47 допустимых признаках:
-
-XGBoost: Gini 0.8040, PR-AUC 0.5993;
-CatBoost: Gini 0.8038, PR-AUC 0.6010;
-LightGBM: Gini 0.8034, PR-AUC 0.5978.
-
-Различия между моделями малы относительно межфолдового разброса, поэтому абсолютный победитель не объявляется.
-
-Принятый воспроизводимый baseline Stage 1: Gini ≈ 0.804.
-
-### Критерий завершения
-
-Есть воспроизводимая OOF/CV-таблица трёх моделей на допустимом feature set. Final test не использован для выбора. Новый baseline зафиксирован артефактами и выводом.
+Проект можно открыть локально, однозначно определить environment/repository state и воспроизвести исследовательский путь без зависимости от Colab как source of truth.
 
 Критерий выполнен.
 
 ---
 
-## 2. Explainability нового baseline — ПЛАНИРУЕТСЯ
-
-Цель: понять, на какие допустимые признаки теперь реально опирается новая модель.
-
-### Минимум
-
-- global SHAP;
-- локальные SHAP-примеры;
-- permutation importance;
-- сравнение с historical importance;
-- проверка устойчивости интерпретации к модели/seed там, где это оправдано.
+## 1. Новый baseline без `Q_B1_norm` и `Q_B2_norm` — ЗАВЕРШЁН
 
 ### Вопрос
 
-Какие признаки заменили часть сигнала `Q_B1/Q_B2`, а где остался настоящий информационный провал?
+Какой честный уровень качества дают CatBoost, XGBoost и LightGBM после полного исключения двух закрытых индексов при одинаковом evaluation protocol?
 
-### Критерий завершения
+### Протокол
 
-Есть понятный список ведущих допустимых факторов и ограничения интерпретации без причинных утверждений.
+Не менялись:
+
+- dataset identity;
+- 47 разрешённых признаков;
+- working/final split 80/20;
+- 3-fold StratifiedKFold;
+- seed 42;
+- preprocessing/evaluation level.
+
+Не использовались:
+
+- Optuna;
+- class weights;
+- calibration;
+- threshold optimization;
+- final test для model selection.
+
+### Фактический результат Stage 1 V2
+
+- XGBoost: Gini **0.8040**, PR-AUC **0.5993**;
+- CatBoost: Gini **0.8038**, PR-AUC **0.6010**;
+- LightGBM: Gini **0.8034**, PR-AUC **0.5978**.
+
+Различия меньше межфолдового разброса; абсолютный победитель не объявляется.
+
+Принятый baseline: **Gini ≈ 0.804**.
+
+### Evidence
+
+- notebook: `notebooks/01_Новый_baseline_без_Q_B1_Q_B2_V2.ipynb`;
+- summary: `reports/summary/stage1_baseline_summary_V2.json`.
+
+Summary backfilled 2026-08-20 из сохранённых outputs без rerun.
 
 ---
 
-## 3. Анализ потерянного сигнала и feature engineering — ПЛАНИРУЕТСЯ
+## 2. Explainability допустимых признаков — ЗАВЕРШЁН
 
-Цель: вернуть часть качества не тюнингом, а новыми доступными до прогноза факторами.
+### Вопрос
 
-### Приоритетные направления гипотез
+Какие из 47 разрешённых признаков стабильно формируют прогноз и насколько эта картина согласуется между CatBoost, XGBoost и LightGBM?
 
-- финансовая динамика за 2–3 года;
-- выручка/прибыль/долг/чистые активы и их динамика;
-- арбитражи и исполнительные производства;
-- налоговая дисциплина;
-- госзакупки;
-- стратегический/системообразующий статус;
-- корпоративные связи;
-- изменения руководителей/учредителей;
-- отраслевые/региональные факторы;
-- другие внешние факторы, для которых можно обосновать механизм влияния и доступность до даты оценки.
+### Фактический результат Stage 2 V1
 
-### Метод
+Consensus top-10:
 
-Одна гипотеза или компактная связанная группа → один контролируемый эксперимент → вывод.
+`Q_D6_norm, Q_A5_norm, Q_B3_norm, Q_C1_norm, G1_norm, Q_D4_norm, D5_norm, A4_norm, C4_norm, Q_A4_norm`
 
-### Отдельный deliverable заказчику
+- minimum intermodel SHAP rank correlation: **0.974**;
+- minimum intermodel permutation rank correlation: **0.899**;
+- historical top-15 overlap: **13/15**.
 
-Список «неочевидных/безумных» внешних факторов с кратким обоснованием, даже если их внедрение выходит за срок текущего исследования.
+### Вывод
 
-### Критерий завершения
+Три GBDT опираются на почти одно и то же ядро признаков. Это повышает уверенность в устойчивости модельной интерпретации, но не доказывает причинность и не означает, что закрытый сигнал полностью восстановлен.
 
-Для каждого проверенного нового feature block понятно: дал ли он прирост, насколько стабилен эффект и не создаёт ли leakage/provenance risk.
+### Evidence
+
+- notebook: `notebooks/02_Explainability_допустимых_признаков_V1.ipynb`;
+- summary: `reports/summary/stage2_explainability_summary_V1.json`.
+
+Summary backfilled 2026-08-20 из сохранённых outputs без rerun.
 
 ---
 
-## 4. Современные CPU-подходы — ПЛАНИРУЕТСЯ
+## 3. Анализ ошибок и общей слепой зоны — ЗАВЕРШЁН
 
-Цель: исследовать не просто дополнительные алгоритмы, а подходы, которые дают качественно другую гипотезу относительно GBDT.
+### Вопрос
 
-Перед выбором кандидатов проводится актуальный web research по первичным источникам.
+Есть ли у трёх baseline-моделей общая группа тяжёлых OOF-ошибок, указывающая на информационный gap, а не на проблему одного алгоритма?
 
-Для каждого кандидата фиксируется до запуска:
+### Фактический результат Stage 3 V1
 
-- принцип;
-- отличие от CatBoost/XGBoost/LightGBM;
-- потенциальное преимущество именно для нашего датасета;
+- working defaults: **28 015**;
+- глубоко пропущенные дефолты: **1 278** (**4.6%** дефолтов);
+- общая blind spot: **805** объектов;
+- blind spot = **63.0%** глубоко пропущенных дефолтов;
+- сильное межмодельное расхождение среди глубоко пропущенных: **1.9%**;
+- capture дефолтов consensus ranking: top-10% **57.2%**, top-20% **77.8%**, top-30% **87.4%**.
+
+### Вывод
+
+Большая доля общей blind spot и малое межмодельное расхождение сильнее поддерживают гипотезу о недостающем информационном слое, чем гипотезу «нужен другой GBDT».
+
+### Evidence
+
+- notebook: `notebooks/03_Анализ_ошибок_и_потерянного_сигнала_V1.ipynb`;
+- summary: `reports/summary/stage3_error_analysis_summary_V1.json`;
+- OOF checkpoint SHA-256: `faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac`.
+
+Summary backfilled 2026-08-20 из сохранённых outputs без rerun.
+
+---
+
+## 4. Диагностика закрытых `Q_B1_norm` / `Q_B2_norm` — ЗАВЕРШЁН ДЛЯ ПЕРЕХОДА К STAGE 5
+
+### Вопрос
+
+Какой из двух закрытых reference-индексов лучше объясняет общую blind spot при контролируемой ёмкости risk-zone?
+
+### Фактический результат Stage 4 V2
+
+- standalone Gini `Q_B1_norm`: **0.8044**;
+- standalone Gini `Q_B2_norm`: **0.6768**;
+- Pearson `Q_B1/Q_B2`: **0.8266**;
+- blind spot vs non-default ROC-AUC: `Q_B1` **0.6973**, `Q_B2` **0.7234**;
+- fixed-capacity rescue при 30%: `Q_B1` **53.75%**, `Q_B2` **59.43%**.
+
+### Вывод
+
+`Q_B1_norm` сильнее как общий standalone risk predictor, но `Q_B2_norm` лучше видит именно Stage 3 blind spot. Поэтому следующий вопрос — можно ли воспроизвести именно `Q_B2` прозрачными разрешёнными признаками.
+
+### Evidence
+
+- notebook: `notebooks/04_Диагностика_потерянного_сигнала_Q_B1_Q_B2_V2.ipynb`;
+- summary: `reports/summary/stage4_closed_signal_summary_V2.json`.
+
+Final test не использован.
+
+---
+
+## 5. Аудит proxy-сигнала `Q_B2` разрешёнными признаками — ВЫПОЛНЕН, REVIEW НЕ ЗАКРЫТ
+
+### Вопрос
+
+Какую часть диагностического сигнала `Q_B2_norm` можно восстановить только из 47 разрешённых признаков и остаётся ли material information gap именно в blind spot?
+
+### Контролируемый эксперимент
+
+Не меняются:
+
+- dataset;
+- working/final partition;
+- 47 разрешённых признаков;
+- Stage 3 OOF checkpoint;
+- blind spot definition;
+- final test остаётся закрытым.
+
+`Q_B2_norm` используется только как diagnostic target/reference, не production feature.
+
+Один фиксированный CatBoost surrogate обучается OOF восстанавливать порядковый risk-level `Q_B2`.
+
+### Сохранённые результаты Stage 5 V1
+
+- OOF Spearman reconstruction: **0.5421**;
+- Spearman внутри blind spot: **0.0242**;
+- oracle `Q_B2` blind AUC: **0.7234**;
+- proxy blind AUC: **0.3981**;
+- AUC gap: **0.3253**;
+- rescue at 30% capacity: oracle **59.43%**, proxy **10.43%**.
+
+### Текущий статус
+
+Summary имеет статус `completed_pending_review`.
+
+До закрытия Stage 5 нужно:
+
+1. review полного notebook;
+2. проверить outputs/графики/таблицы и fold stability;
+3. сверить notebook ↔ `stage5_qb2_proxy_audit_summary_V1.json`;
+4. зафиксировать окончательные FACTS / INTERPRETATION / LIMITATIONS / NEXT STEP.
+
+### Evidence
+
+- notebook: `notebooks/05_Аудит_proxy-сигнала_Q_B2_разрешёнными_признаками_V1.ipynb`;
+- summary: `reports/summary/stage5_qb2_proxy_audit_summary_V1.json`.
+
+---
+
+## 6. Новый внешний feature block для blind spot — СЛЕДУЮЩИЙ ЭТАП ПОСЛЕ REVIEW STAGE 5
+
+### Предварительный исследовательский вопрос
+
+Какой **один** новый прозрачный внешний feature block способен добавить информацию, которой нет в текущих 47 признаках, и улучшить ранжирование/coverage общей blind spot без использования закрытых `Q_B1/Q_B2`?
+
+### Приоритет направления
+
+На основании Stage 5 текущий приоритет — внешние сигналы должной осмотрительности / негативных событий, которые доступны до даты оценки и имеют проверяемый provenance.
+
+Конкретный блок выбирается только после окончательного review Stage 5 и проверки фактической доступности источника.
+
+### Правило
+
+Одна связанная группа новых признаков → один controlled experiment → сравнение с baseline/OOF blind-spot diagnostics при неизменном split/CV/seed.
+
+Final test остаётся закрытым.
+
+---
+
+## 7. Современные CPU-подходы — ПЛАНИРУЕТСЯ
+
+После проработки информационного gap исследуется минимум один содержательно иной CPU-подход относительно GBDT.
+
+Перед реализацией проводится актуальный research по первичным источникам и фиксируется:
+
+- гипотеза;
+- отличие от GBDT;
 - CPU feasibility;
 - explainability;
-- эксперимент, который честно проверяет ценность.
+- контролируемый evaluation protocol.
 
-Не создавать длинный leaderboard ради количества моделей.
-
-### Критерий завершения
-
-Есть минимум один содержательно новый CPU-подход, проверенный по тому же протоколу или с явно объяснённым отличием протокола.
+Не создаётся длинный leaderboard ради количества моделей.
 
 ---
 
-## 5. Stability и controlled tuning сильного кандидата — ПЛАНИРУЕТСЯ
+## 8. Stability и controlled tuning — ПЛАНИРУЕТСЯ
 
-Только после нового baseline и feature hypotheses.
-
-Возможные проверки:
+Только после определения сильного feature/model candidate:
 
 - seed stability;
 - bootstrap;
-- ограниченный Optuna/parameter search;
+- ограниченный parameter search/Optuna;
 - calibration;
-- class weights только если есть отдельная гипотеза.
+- class weights только под отдельную гипотезу.
 
-### Критерий завершения
-
-Понятно, насколько наблюдаемые различия превышают шум, и tuning не используется как бесконечный способ добыть тысячные без исследовательского смысла.
+Tuning не используется как бесконечный способ добывать тысячные без исследовательского смысла.
 
 ---
 
-## 6. Business Policy Engine — ПЛАНИРУЕТСЯ
+## 9. Business Policy Engine — ПЛАНИРУЕТСЯ
 
-Цель: отделить качество probability model от бизнес-решения.
-
-### Возможности
+Модель выдаёт probability, а business policy применяется отдельно:
 
 - manual threshold;
-- presets/scenarios;
-- `C_FN` и `C_FP` в реальных деньгах;
-- относительное `C_FN : C_FP`;
-- пересчёт cost по threshold;
-- manual review cap;
+- `C_FN/C_FP` или ratio;
+- manual review capacity;
 - review minutes per company;
-- расчёт человеко-часов;
-- сценарный выбор threshold по cost/capacity.
+- FP/FN/Recall/Precision/cost/human-hours scenarios.
 
-### Бизнес-контекст
-
-- цель заказчика по ПДЗ: ориентир **15% → 10%**;
-- ручная оценка: около **30 минут на ИНН**;
-- 100 000 компаний: около **50 000 человеко-часов** на один полный проход.
-
-Пока нет подтверждённой формулы, которая переводит ML-метрики/ошибки непосредственно в изменение ПДЗ.
-
-### Правила
-
-- business policy меняется без retraining;
-- ни одна стоимость не зашивается как «истинная» до подтверждения заказчика;
-- исторический `5×FN + FP` сохраняется только как research example;
-- цель ПДЗ не превращается по догадке в `C_FN/C_FP` или «оптимальный» threshold.
-
-### Критерий завершения
-
-Один и тот же набор вероятностей можно пересчитать под несколько business policies и получить воспроизводимые FP/FN/Recall/Precision/cost/review-volume результаты.
+Цель ПДЗ `15% → 10%` не превращается в выдуманную cost function без подтверждения заказчика.
 
 ---
 
-## 7. Единый `ExperimentRunner` — ПЛАНИРУЕТСЯ
+## 10. `ExperimentRunner` и reusable ML-core — ПЛАНИРУЕТСЯ ПО МЕРЕ ПОЯВЛЕНИЯ СТАБИЛЬНОЙ ПОВТОРЯЕМОЙ ЛОГИКИ
 
-Цель: вынести из notebook стабильную ML-логику так, чтобы её использовали исследования и будущий backend.
-
-### Постепенно переносим
+Постепенно выносятся:
 
 - dataset validation/hash;
 - feature registry;
@@ -269,154 +282,50 @@ LightGBM: Gini 0.8034, PR-AUC 0.5978.
 - CV/OOF;
 - metrics;
 - runtime;
-- artifacts;
+- artifact contract;
 - explainability;
 - experiment signature.
 
-### Не переносим автоматически
-
-- одноразовые exploratory cells;
-- текстовые выводы;
-- Colab-specific пути;
-- widgets;
-- глобальный notebook state.
-
-### Критерий завершения
-
-Notebook вызывает reusable code и остаётся исследовательским narrative, а не единственным местом, где живёт pipeline.
+Notebook остаётся research narrative.
 
 ---
 
-## 8. LLM Result Interpreter — ПЛАНИРУЕТСЯ
+## 11. Backend / frontend / LLM Result Interpreter — ПОСЛЕ СТАБИЛИЗАЦИИ EXPERIMENT CORE
 
-Цель: сохранить удачный паттерн notebook №06 и сделать его provider-independent.
+Направление:
 
-### Интерфейс
+`notebooks → reusable ML/data logic → ExperimentRunner → backend → frontend`
 
-`ExperimentResult + ExplanationResult + BusinessRules snapshot → InterpretationReport`
-
-### Требования
-
-- structured context;
-- актуальные forbidden features;
-- ограничения temporal validation;
-- cost policy status;
-- отсутствие выдуманных метрик;
-- cache/metadata;
-- provider boundary.
-
-### Критерий завершения
-
-LLM-интерпретация воспроизводимо объясняет исследование и не может противоречить актуальным business rules из-за устаревшего prompt context.
+LLM остаётся post-processing interpreter и не принимает кредитное решение.
 
 ---
 
-## 9. Backend — ПЛАНИРУЕТСЯ
+## 12. Итоговый отчёт и презентация — СОБИРАЮТСЯ ИЗ RESEARCH EVIDENCE
 
-Начинается после устойчивого ExperimentRunner.
+Подготовка защиты не должна требовать заново восстанавливать историю экспериментов.
 
-### Первая цель
+Источник:
 
-Тонкий API для:
+- `docs/RESEARCH_RECORD.md`;
+- `reports/summary/`;
+- актуальные domain docs;
+- выбранные проверенные графики/таблицы из notebooks.
 
-- model/feature registry;
-- запуска experiment;
-- получения result;
-- business policy recalculation;
-- explainability;
-- comparison.
-
-Технология backend фиксируется отдельным решением перед реализацией; предпочтительное направление — FastAPI, но не зашивается в roadmap как необратимое решение до этапа.
-
-### Критерий завершения
-
-API не содержит дублированной ML-логики и может выполнить тот же experiment, что notebook, через общий core.
+Ближе к защите создаётся отдельный небольшой каталог финальных иллюстраций, а не коммитится весь `reports/generated/`.
 
 ---
 
-## 10. Исследовательский frontend — ПЛАНИРУЕТСЯ
+## Универсальный критерий закрытия следующего Stage
 
-Основной приоритет — модельный тренажёр.
+Stage считается закрытым, когда:
 
-### Блоки UI
-
-- модель;
-- признаки;
-- настройки;
-- metrics comparison;
-- threshold;
-- стоимость FN/FP;
-- manual review capacity;
-- explainability;
-- LLM summary;
-- artifacts/reproducibility.
-
-### Критерий завершения
-
-Нетехнический пользователь может воспроизвести безопасный experiment scenario и понять качество, ошибки, ресурсы и объяснение модели без редактирования Python-кода.
-
----
-
-## 11. Prediction/API по ИНН и operational UI — ПОСЛЕДУЮЩЕЕ РАЗВИТИЕ
-
-После исследовательского контура:
-
-- prediction по подготовленному feature vector;
-- интеграция со сбором данных СПАРК;
-- карточка контрагента;
-- локальное explanation;
-- пакетные прогнозы;
-- история прогнозов;
-- возможная автоматизированная СПР.
-
-Не смешивать этот этап с текущей задачей нового baseline.
-
----
-
-## 12. Хранение, аудит, deployment — ПО МЕРЕ НЕОБХОДИМОСТИ
-
-Требования заказчика 3/5 лет будут влиять на design, когда появится реальный backend/history.
-
-Только тогда принимаются отдельные решения о:
-
-- БД;
-- модели аудита;
-- migration strategy;
-- Docker;
-- offline deployment;
-- retraining workflow;
-- monitoring.
-
----
-
-# Ближайший командный результат к 25 августа 2026
-
-Минимально ценный результат:
-
-1. GitHub/локальный проект воспроизводимо настроен;
-2. historical baseline №06 сохранён и описан;
-3. `Data_final` идентифицируется SHA-256 и не попадает в Git;
-4. построен новый baseline без `Q_B1_norm` и `Q_B2_norm`;
-5. CatBoost/XGBoost/LightGBM сравнены по одному протоколу;
-6. есть OOF/CV Gini, ROC-AUC, PR-AUC, Precision, Recall, F1, confusion matrix и CPU runtime;
-7. final test не использовался для model selection;
-8. есть первичная explainability нового baseline или чётко подготовлен следующий этап;
-9. существует список следующих feature hypotheses;
-10. архитектура ExperimentRunner → backend → frontend зафиксирована и не требует переписывания ML-core.
-
-Дополнительный результат при наличии времени — CPU smoke-test одного содержательно нового современного подхода, но только после закрытия нового baseline.
-
----
-
-# Правило завершения этапа
-
-После каждого этапа:
-
-1. проверить actual repo/data/artifact state;
-2. проверить diff;
-3. выполнить targeted tests/checks;
-4. зафиксировать FACTS / INTERPRETATION / LIMITATIONS / NEXT STEP;
-5. обновить `PROJECT_CONTEXT.md`;
-6. обновить этот `ROADMAP.md`;
-7. при новом существенном решении обновить `DECISIONS.md`;
-8. при изменении требований заказчика обновить `BUSINESS_RULES.md` и при необходимости `PRODUCT_SPEC.md`.
+1. research question сформулирован заранее;
+2. controlled experiment выполнен;
+3. result проверен;
+4. final test gate не нарушен;
+5. есть FACTS / INTERPRETATION / LIMITATIONS / NEXT STEP;
+6. notebook и summary согласованы;
+7. сохранены необходимые hashes/metadata;
+8. обновлены только реально затронутые project docs;
+9. Git diff проверен;
+10. только после этого начинается следующий research question.
