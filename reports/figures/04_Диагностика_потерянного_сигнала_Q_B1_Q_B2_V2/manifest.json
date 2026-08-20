@@ -1,0 +1,15 @@
+{
+  "source_notebook": "notebooks/04_Диагностика_потерянного_сигнала_Q_B1_Q_B2_V2.ipynb",
+  "source_notebook_sha256": "481061df186a4c4f20f8c540290bcbbdae5e995ffebcf0bd7bafe439951ae5f9",
+  "figure_count": 1,
+  "figures": [
+    {
+      "cell_index": 11,
+      "output_index": 1,
+      "mime_type": "image/png",
+      "path": "reports/figures/04_Диагностика_потерянного_сигнала_Q_B1_Q_B2_V2/cell_11_output_01.png",
+      "sha256": "aa14afb99ef94090175d6dbb6fe6132cec26ad13b9bc14d76d1ce2201290f66d",
+      "size_bytes": 43398
+    }
+  ]
+}

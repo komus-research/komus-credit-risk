@@ -1,0 +1,39 @@
+{
+  "source_notebook": "notebooks/03_Анализ_ошибок_и_потерянного_сигнала_V1.ipynb",
+  "source_notebook_sha256": "76b1954eeca7af97e42bcd4d96116794e55d3e2e0f1e65d9eb8fb716e605e365",
+  "figure_count": 4,
+  "figures": [
+    {
+      "cell_index": 11,
+      "output_index": 1,
+      "mime_type": "image/png",
+      "path": "reports/figures/03_Анализ_ошибок_и_потерянного_сигнала_V1/cell_11_output_01.png",
+      "sha256": "3e9733ff91b845d25eb6b7e465a805e0ed6785df3e2e77c198729902de751760",
+      "size_bytes": 19242
+    },
+    {
+      "cell_index": 14,
+      "output_index": 2,
+      "mime_type": "image/png",
+      "path": "reports/figures/03_Анализ_ошибок_и_потерянного_сигнала_V1/cell_14_output_02.png",
+      "sha256": "f550573581bbda90fb59bf4f275445564083f1183bb38405f4ce001f6fad04a4",
+      "size_bytes": 27903
+    },
+    {
+      "cell_index": 17,
+      "output_index": 1,
+      "mime_type": "image/png",
+      "path": "reports/figures/03_Анализ_ошибок_и_потерянного_сигнала_V1/cell_17_output_01.png",
+      "sha256": "ed4dfa2f02f5b5451cf03d9a87fe559ad536d835d2b95b7321f437ff9479fe9a",
+      "size_bytes": 35721
+    },
+    {
+      "cell_index": 20,
+      "output_index": 1,
+      "mime_type": "image/png",
+      "path": "reports/figures/03_Анализ_ошибок_и_потерянного_сигнала_V1/cell_20_output_01.png",
+      "sha256": "4026e53893f53043885b02f5b74d895a2fee3e9e3f48e4335e44cd1347a9d148",
+      "size_bytes": 34077
+    }
+  ]
+}

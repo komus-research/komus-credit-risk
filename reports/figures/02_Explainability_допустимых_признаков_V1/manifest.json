@@ -1,0 +1,79 @@
+{
+  "source_notebook": "notebooks/02_Explainability_допустимых_признаков_V1.ipynb",
+  "source_notebook_sha256": "8b19843c598449e56fec3475b974e3b96bfcd4aad5463ac1dc20c36294769ba2",
+  "figure_count": 9,
+  "figures": [
+    {
+      "cell_index": 14,
+      "output_index": 1,
+      "mime_type": "image/png",
+      "path": "reports/figures/02_Explainability_допустимых_признаков_V1/cell_14_output_01.png",
+      "sha256": "b280fb0a5c3ab3c1474f03f3a215861175011e906efc89da5cf8d02e8735f287",
+      "size_bytes": 33936
+    },
+    {
+      "cell_index": 14,
+      "output_index": 2,
+      "mime_type": "image/png",
+      "path": "reports/figures/02_Explainability_допустимых_признаков_V1/cell_14_output_02.png",
+      "sha256": "ba06d20c9b62093b3cc1c5927d55e30e37c1da8b5f96e2e5d3c9f9885a216887",
+      "size_bytes": 33555
+    },
+    {
+      "cell_index": 14,
+      "output_index": 3,
+      "mime_type": "image/png",
+      "path": "reports/figures/02_Explainability_допустимых_признаков_V1/cell_14_output_03.png",
+      "sha256": "4a56a3c6026dc95ef3c81ac1dc87f05f3c7f27c12d6022c14735d70a6a1af522",
+      "size_bytes": 33114
+    },
+    {
+      "cell_index": 14,
+      "output_index": 4,
+      "mime_type": "image/png",
+      "path": "reports/figures/02_Explainability_допустимых_признаков_V1/cell_14_output_04.png",
+      "sha256": "8c0fbc062dab9ecd32067d99ac1dcec1b12b56ad2d7b42d7fca2a98d1aad8c17",
+      "size_bytes": 34791
+    },
+    {
+      "cell_index": 14,
+      "output_index": 5,
+      "mime_type": "image/png",
+      "path": "reports/figures/02_Explainability_допустимых_признаков_V1/cell_14_output_05.png",
+      "sha256": "0bc202c52d3ec770bad929242e460a65c5e32eb55e09428cd7654b0250c4fc0e",
+      "size_bytes": 34727
+    },
+    {
+      "cell_index": 14,
+      "output_index": 6,
+      "mime_type": "image/png",
+      "path": "reports/figures/02_Explainability_допустимых_признаков_V1/cell_14_output_06.png",
+      "sha256": "7e0b5c4c413a2059f398b653fed4faa1d2c9814ff1e393bfe2f6859e310645cd",
+      "size_bytes": 34633
+    },
+    {
+      "cell_index": 19,
+      "output_index": 3,
+      "mime_type": "image/png",
+      "path": "reports/figures/02_Explainability_допустимых_признаков_V1/cell_19_output_03.png",
+      "sha256": "2c0eb68c94b0afd8e63c2f48496f556ae4e2099640929652de45a8604c3b62b5",
+      "size_bytes": 26184
+    },
+    {
+      "cell_index": 19,
+      "output_index": 6,
+      "mime_type": "image/png",
+      "path": "reports/figures/02_Explainability_допустимых_признаков_V1/cell_19_output_06.png",
+      "sha256": "f8c01580914c976d90d074dc6a54d84c81dad1f33a694db7b8527b2fa35256e9",
+      "size_bytes": 27365
+    },
+    {
+      "cell_index": 19,
+      "output_index": 9,
+      "mime_type": "image/png",
+      "path": "reports/figures/02_Explainability_допустимых_признаков_V1/cell_19_output_09.png",
+      "sha256": "4b11a4e0a6dbef5816638eb134d6fc45189084606f045d4dd35d4fc0dd128940",
+      "size_bytes": 25553
+    }
+  ]
+}

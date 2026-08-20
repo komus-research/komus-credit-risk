@@ -1,0 +1,244 @@
+{
+  "experiment": "Stage 5",
+  "version": "V1",
+  "status": "completed_pending_review",
+  "question": "Какую часть Q_B2-сигнала можно воспроизвести из 47 разрешённых признаков?",
+  "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+  "stage3_oof_sha256": "faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac",
+  "stage4_version": "V2",
+  "final_test_used": false,
+  "working_rows": 289614,
+  "blind_spot_size": 805,
+  "allowed_features_count": 47,
+  "surrogate": {
+    "model": "CatBoostRegressor",
+    "params": {
+      "iterations": 600,
+      "depth": 6,
+      "learning_rate": 0.05,
+      "loss_function": "RMSE",
+      "random_seed": 42,
+      "thread_count": -1,
+      "verbose": false,
+      "allow_writing_files": false
+    },
+    "folds": 3,
+    "stratification": "DefMark x Q_B2 ordinal risk-level"
+  },
+  "q_b2_mapping": {
+    "-210.2249": 5,
+    "-46.6927": 4,
+    "-26.4613": 3,
+    "-15.363": 2,
+    "-9.152": 1,
+    "21.2192": 0
+  },
+  "reconstruction": {
+    "oof_spearman_all": 0.5420741981174472,
+    "oof_mae_ordinal_level": 0.7058057026132597,
+    "oof_spearman_blind_spot": 0.0241590356326386
+  },
+  "blind_spot_vs_nondefault": {
+    "oracle_q_b2_roc_auc": 0.7233817896667458,
+    "proxy_roc_auc": 0.39805610212909665,
+    "auc_gap": 0.3253256875376492,
+    "proxy_pr_auc": 0.0022786003162766784
+  },
+  "fixed_capacity_rescue": [
+    {
+      "Ёмкость, %": 10.0,
+      "Q_B2 oracle expected rescue, %": 43.490386817747,
+      "OOF proxy expected rescue, %": 0.0,
+      "Gap oracle - proxy, п.п.": 43.490386817747,
+      "Proxy min rescue, %": 0.0,
+      "Proxy max rescue, %": 0.0
+    },
+    {
+      "Ёмкость, %": 20.0,
+      "Q_B2 oracle expected rescue, %": 51.38036928093399,
+      "OOF proxy expected rescue, %": 2.732919254658385,
+      "Gap oracle - proxy, п.п.": 48.64745002627561,
+      "Proxy min rescue, %": 2.732919254658385,
+      "Proxy max rescue, %": 2.732919254658385
+    },
+    {
+      "Ёмкость, %": 30.0,
+      "Q_B2 oracle expected rescue, %": 59.43001621226058,
+      "OOF proxy expected rescue, %": 10.434782608695652,
+      "Gap oracle - proxy, п.п.": 48.99523360356493,
+      "Proxy min rescue, %": 10.434782608695652,
+      "Proxy max rescue, %": 10.434782608695652
+    }
+  ],
+  "top_proxy_features": [
+    {
+      "Признак": "Q_A5_norm",
+      "Расшифровка": "Численность сотрудников",
+      "Importance mean": 26.584136201524075,
+      "Importance std": 0.2285703579703988,
+      "Mean rank": 1.0,
+      "Rank std": 0.0,
+      "Spearman с Q_B2 risk-level": -0.4437578468873444,
+      "|Spearman|": 0.4437578468873444
+    },
+    {
+      "Признак": "Q_D6_norm",
+      "Расшифровка": "Режим налогообложения",
+      "Importance mean": 13.810536818031627,
+      "Importance std": 0.01535891747548853,
+      "Mean rank": 2.0,
+      "Rank std": 0.0,
+      "Spearman с Q_B2 risk-level": -0.004988001270078212,
+      "|Spearman|": 0.004988001270078212
+    },
+    {
+      "Признак": "G1_norm",
+      "Расшифровка": "Темп роста выручки",
+      "Importance mean": 5.79441708810754,
+      "Importance std": 0.48150200536440685,
+      "Mean rank": 3.0,
+      "Rank std": 0.0,
+      "Spearman с Q_B2 risk-level": -0.1830126098795852,
+      "|Spearman|": 0.1830126098795852
+    },
+    {
+      "Признак": "A4_norm",
+      "Расшифровка": "Капитал и резервы + ДБП",
+      "Importance mean": 4.533142463798973,
+      "Importance std": 0.055396820211269224,
+      "Mean rank": 4.333333333333333,
+      "Rank std": 0.5773502691896257,
+      "Spearman с Q_B2 risk-level": -0.2889985113866111,
+      "|Spearman|": 0.2889985113866111
+    },
+    {
+      "Признак": "B1_norm",
+      "Расшифровка": "Внеоборотные активы / Активы",
+      "Importance mean": 4.418311851792509,
+      "Importance std": 0.27708468829228716,
+      "Mean rank": 4.666666666666667,
+      "Rank std": 0.5773502691896257,
+      "Spearman с Q_B2 risk-level": -0.2563331503768549,
+      "|Spearman|": 0.2563331503768549
+    },
+    {
+      "Признак": "Q_A4_norm",
+      "Расшифровка": "Отраслевая характеристика",
+      "Importance mean": 3.823452184968725,
+      "Importance std": 0.10766391424218996,
+      "Mean rank": 6.333333333333333,
+      "Rank std": 0.5773502691896257,
+      "Spearman с Q_B2 risk-level": -0.05107617476077455,
+      "|Spearman|": 0.05107617476077455
+    },
+    {
+      "Признак": "Q_C1_norm",
+      "Расшифровка": "Кредитная история",
+      "Importance mean": 3.8028074828401692,
+      "Importance std": 0.1618317389536448,
+      "Mean rank": 6.666666666666667,
+      "Rank std": 0.5773502691896257,
+      "Spearman с Q_B2 risk-level": -0.2336449769983393,
+      "|Spearman|": 0.2336449769983393
+    },
+    {
+      "Признак": "Q_B3_norm",
+      "Расшифровка": "Количество активных исполнительных производств",
+      "Importance mean": 3.0451491712719267,
+      "Importance std": 0.1583515267324495,
+      "Mean rank": 8.0,
+      "Rank std": 0.0,
+      "Spearman с Q_B2 risk-level": -0.08621772966155607,
+      "|Spearman|": 0.08621772966155607
+    },
+    {
+      "Признак": "Q_A1_norm",
+      "Расшифровка": "Регион регистрации",
+      "Importance mean": 2.594805406192672,
+      "Importance std": 0.13472872595120966,
+      "Mean rank": 9.333333333333334,
+      "Rank std": 0.5773502691896258,
+      "Spearman с Q_B2 risk-level": 0.0021707887426212517,
+      "|Spearman|": 0.0021707887426212517
+    },
+    {
+      "Признак": "D1_norm",
+      "Расшифровка": "EBIT / Активы",
+      "Importance mean": 2.3223115318309566,
+      "Importance std": 0.1766694335920379,
+      "Mean rank": 10.333333333333334,
+      "Rank std": 1.5275252316519465,
+      "Spearman с Q_B2 risk-level": -0.16640459906503494,
+      "|Spearman|": 0.16640459906503494
+    },
+    {
+      "Признак": "A1_norm",
+      "Расшифровка": "Собственный капитал / Активы",
+      "Importance mean": 2.224033405227876,
+      "Importance std": 0.030539599280701216,
+      "Mean rank": 11.0,
+      "Rank std": 0.0,
+      "Spearman с Q_B2 risk-level": -0.0808138377179757,
+      "|Spearman|": 0.0808138377179757
+    },
+    {
+      "Признак": "D4_norm",
+      "Расшифровка": "Расшифровка не подтверждена в источниках",
+      "Importance mean": 2.036986366568192,
+      "Importance std": 0.34270747760073805,
+      "Mean rank": 11.333333333333334,
+      "Rank std": 1.1547005383792517,
+      "Spearman с Q_B2 risk-level": -0.19676980804048425,
+      "|Spearman|": 0.19676980804048425
+    },
+    {
+      "Признак": "Q_B4_norm",
+      "Расшифровка": "Расшифровка не подтверждена в источниках",
+      "Importance mean": 1.5278018818358963,
+      "Importance std": 0.037413430638284034,
+      "Mean rank": 14.333333333333334,
+      "Rank std": 1.5275252316519468,
+      "Spearman с Q_B2 risk-level": -0.07753237099913668,
+      "|Spearman|": 0.07753237099913668
+    },
+    {
+      "Признак": "A6_norm",
+      "Расшифровка": "Расшифровка не подтверждена в источниках",
+      "Importance mean": 1.5100600703625375,
+      "Importance std": 0.1336658080891369,
+      "Mean rank": 15.333333333333334,
+      "Rank std": 2.3094010767585034,
+      "Spearman с Q_B2 risk-level": -0.23358652308104347,
+      "|Spearman|": 0.23358652308104347
+    },
+    {
+      "Признак": "C3_norm",
+      "Расшифровка": "Расшифровка не подтверждена в источниках",
+      "Importance mean": 1.506116311860909,
+      "Importance std": 0.10483138539816866,
+      "Mean rank": 15.333333333333334,
+      "Rank std": 0.5773502691896258,
+      "Spearman с Q_B2 risk-level": -0.1272408286721847,
+      "|Spearman|": 0.1272408286721847
+    }
+  ],
+  "decision_class": "material_missing_signal",
+  "decision": "Остаётся материальный информационный gap. Следующий приоритет: один новый внешний feature block по сигналам должной осмотрительности/негативным событиям.",
+  "runtime_seconds": 42.05053899995983,
+  "library_versions": {
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "scikit-learn": "1.9.0",
+    "catboost": "1.2.10",
+    "pyxlsb": "1.0.10",
+    "matplotlib": "3.11.1"
+  },
+  "limitations": [
+    "Surrogate предсказывает Q_B2, а не DefMark.",
+    "Q_B2 используется только как diagnostic reference.",
+    "Surrogate importance не доказывает причинность.",
+    "Decision thresholds являются research heuristic.",
+    "Final test не использован.",
+    "Random split не доказывает temporal stability."
+  ]
+}

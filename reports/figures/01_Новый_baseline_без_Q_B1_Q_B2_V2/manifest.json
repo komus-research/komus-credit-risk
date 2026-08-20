@@ -1,0 +1,15 @@
+{
+  "source_notebook": "notebooks/01_Новый_baseline_без_Q_B1_Q_B2_V2.ipynb",
+  "source_notebook_sha256": "d009de42e4050943f039e7f09403ee939612e42cc68422ca06e6cd01a83f3437",
+  "figure_count": 1,
+  "figures": [
+    {
+      "cell_index": 13,
+      "output_index": 0,
+      "mime_type": "image/png",
+      "path": "reports/figures/01_Новый_baseline_без_Q_B1_Q_B2_V2/cell_13_output_00.png",
+      "sha256": "43fbbfb7c5a6145c934729bdf6b4c26e5c8a508ae8c7a62c62290aae02426206",
+      "size_bytes": 21110
+    }
+  ]
+}
