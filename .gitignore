@@ -30,7 +30,8 @@ env/
 .DS_Store
 Thumbs.db
 
-# Customer / raw / derived datasets
+# Raw / large tabular data kept outside ordinary Git because of size and rebuildability.
+# If truly sensitive data appears later, add an explicit rule here before committing it.
 *.xlsb
 *.parquet
 *.feather
@@ -56,12 +57,17 @@ models/
 checkpoints/
 cache/
 
-# Run logs and temporary exports
+# Run logs, temporary files and archives
 logs/
 *.log
 *.tmp
 *.temp
 *.zip
 
-# Local generated reports may be selectively added later
-reports/generated/
+# Research evidence is intentionally trackable.
+# Do NOT broadly ignore reports/.
+# In particular, these paths may be committed when produced by a verified experiment:
+# - reports/summary/
+# - reports/generated/
+# - reports/figures/
+# - reports/presentation/
