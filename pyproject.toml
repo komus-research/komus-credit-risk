@@ -12,6 +12,7 @@ dependencies = [
     "pyxlsb>=1.0.10",
     "scikit-learn>=1.9.0",
     "shap>=0.52.0",
+    "tabm==0.0.3",
     "xgboost>=3.4.1",
 ]
 
