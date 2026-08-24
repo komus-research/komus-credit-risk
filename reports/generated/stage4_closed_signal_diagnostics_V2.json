@@ -1,7 +1,7 @@
 {
   "experiment": "Stage 4",
   "version": "V2",
-  "status": "completed_pending_review",
+  "status": "completed_accepted",
   "research_question": "Содержат ли Q_B1_norm и Q_B2_norm дополнительный сигнал в общей слепой зоне при честном fixed-capacity сравнении?",
   "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
   "working_split_sha256": "80430ce6290d0982d3641621ba1ed62f6fb495e8d32f7d23d9fca00091aadb45",

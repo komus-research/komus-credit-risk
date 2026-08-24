@@ -1,7 +1,7 @@
 {
   "experiment": "Stage 4",
   "version": "V2",
-  "status": "completed_pending_review",
+  "status": "completed_accepted",
   "question": "Какой закрытый индекс лучше видит общую слепую зону при одинаковой ёмкости risk-zone?",
   "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
   "stage3_oof_sha256": "faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac",
@@ -108,5 +108,5 @@
     "Baseline + Q_B2 (1:1)": 0.8449079968214837,
     "Baseline + Q_B1 + Q_B2 (1:1:1)": 0.8767534185005492
   },
-  "decision": "Требуется review фактического fixed-capacity результата."
+  "decision": "Stage 4 V2 принят: Q_B2_norm лучше видит Stage 3 blind spot при fixed-capacity диагностике и служит основанием для Stage 5."
 }

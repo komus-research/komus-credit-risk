@@ -173,6 +173,7 @@ Summary не должен превращаться в копию notebook или
 
 - Notebook: `notebooks/04_Диагностика_потерянного_сигнала_Q_B1_Q_B2_V2.ipynb`
 - Принятая для продолжения версия: **V2**
+- Формальный статус: `completed_accepted`.
 - Summary: `reports/summary/stage4_closed_signal_summary_V2.json`
 - Ключевой результат: `Q_B1_norm` сильнее как общий standalone predictor, а `Q_B2_norm` лучше видит именно Stage 3 blind spot при fixed-capacity диагностике.
 - Final test не использован.
@@ -182,9 +183,9 @@ Summary не должен превращаться в копию notebook или
 - Notebook: `notebooks/05_Аудит_proxy-сигнала_Q_B2_разрешёнными_признаками_V1.ipynb`
 - Версия: **V1**
 - Summary: `reports/summary/stage5_qb2_proxy_audit_summary_V1.json`
-- Текущий статус summary: `completed_pending_review`.
-- Предварительный ключевой факт: общий `Q_B2` частично восстанавливается из 47 разрешённых признаков (OOF Spearman ≈ **0.542**), но внутри blind spot proxy практически теряет связь (Spearman ≈ **0.024**) и сильно уступает oracle `Q_B2`.
-- Окончательное решение по Stage 5 фиксируется только после review полного notebook.
+- Формальный статус: `completed_accepted`.
+- Решение: `decision_class = material_missing_signal`.
+- Ключевой факт: общий `Q_B2` частично восстанавливается из 47 разрешённых признаков (OOF Spearman ≈ **0.542**), но внутри blind spot proxy практически теряет связь (Spearman ≈ **0.024**) и сильно уступает oracle `Q_B2`. Это поддерживает наличие material information gap.
 
 ---
 

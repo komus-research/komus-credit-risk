@@ -1,7 +1,7 @@
 {
   "experiment": "Stage 5",
   "version": "V1",
-  "status": "completed_pending_review",
+  "status": "completed_accepted",
   "question": "Какую часть Q_B2-сигнала можно воспроизвести из 47 разрешённых признаков?",
   "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
   "stage3_oof_sha256": "faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac",
@@ -126,5 +126,5 @@
     }
   ],
   "decision_class": "material_missing_signal",
-  "decision": "Остаётся материальный информационный gap. Следующий приоритет: один новый внешний feature block по сигналам должной осмотрительности/негативным событиям."
+  "decision": "Stage 5 V1 принят: существующие 47 разрешённых признаков не воспроизводят существенную часть Q_B2-сигнала, полезную именно для Stage 3 blind spot. decision_class = material_missing_signal."
 }
