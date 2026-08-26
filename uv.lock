@@ -637,6 +637,7 @@ dependencies = [
     { name = "numpy" },
     { name = "pandas" },
     { name = "pyxlsb" },
+    { name = "rtdl-revisiting-models" },
     { name = "scikit-learn" },
     { name = "shap" },
     { name = "tabm" },
@@ -657,6 +658,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "pandas", specifier = ">=3.0.5" },
     { name = "pyxlsb", specifier = ">=1.0.10" },
+    { name = "rtdl-revisiting-models", specifier = "==0.0.2" },
     { name = "scikit-learn", specifier = ">=1.9.0" },
     { name = "shap", specifier = ">=0.52.0" },
     { name = "tabm", specifier = "==0.0.3" },
@@ -1497,6 +1499,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/1c/8c/a72229cb7e07d93c9e067b36ed069a8b46c0c22b3abc1c0ac54497a696d3/rtdl_num_embeddings-0.0.12.tar.gz", hash = "sha256:44711d4991b80545fae15665d8fcf817258868370f9cf3370a5e569a062978a5", size = 1189159, upload-time = "2025-04-13T11:53:39.357Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/18/b9/cef7a26a7999740d5067406b6e856fe0f18f1dd8bd2052e05f4bf4846c5e/rtdl_num_embeddings-0.0.12-py3-none-any.whl", hash = "sha256:87fd61270118915cf40888f2164f3a1f0353edf702f15fd91e71a147d23c930d", size = 13293, upload-time = "2025-04-13T11:53:36.346Z" },
+]
+
+[[package]]
+name = "rtdl-revisiting-models"
+version = "0.0.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0d/f9/c813460e0e4d480b4a4a3681951f317892a28b848938b297c8a3fd37cf16/rtdl_revisiting_models-0.0.2.tar.gz", hash = "sha256:2f430e4ce612ceceff023b78720583dd3c425446f2ce8c34fe3ad413178050a6", size = 1566033, upload-time = "2023-11-30T11:32:57.47Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/40/64/286529b11ccadc5cd3557964f54fa50ef936e8cc4fe81ee12f08b4a5bab7/rtdl_revisiting_models-0.0.2-py3-none-any.whl", hash = "sha256:12c9cc1fc7a950cececd977ed810ec336fb8354cab96cd858855ce8e8cbe6e0a", size = 12451, upload-time = "2023-11-30T11:32:54.183Z" },
 ]
 
 [[package]]
