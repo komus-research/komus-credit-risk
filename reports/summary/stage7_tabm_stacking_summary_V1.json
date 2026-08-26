@@ -1,0 +1,51 @@
+{
+  "experiment": "Stage 7",
+  "version": "V1",
+  "status": "completed",
+  "B_star": "GBDT_mean",
+  "oof_metrics": {
+    "ROC-AUC": 0.9021301765732884,
+    "Gini": 0.8042603531465768,
+    "PR-AUC": 0.6056620220095605,
+    "Precision": 0.7190596596733411,
+    "Recall": 0.3755845082991255,
+    "F1": 0.4934346276495967,
+    "TN": 257488,
+    "FP": 4111,
+    "FN": 17493,
+    "TP": 10522
+  },
+  "deltas_vs_B_star": {
+    "ROC-AUC": -0.0010695210329426663,
+    "Gini": -0.0021390420658853326,
+    "PR-AUC": 0.0018051254877988754,
+    "Precision": -0.005565668830103787,
+    "Recall": 0.011422452257719096,
+    "F1": 0.008709963802017495
+  },
+  "decision": "no_material_benefit",
+  "runtime_seconds": 20700.830069000018,
+  "runtime_breakdown_seconds": {
+    "outer_folds": {
+      "1": 7777.033811500005,
+      "2": 6139.712334500015,
+      "3": 6784.083922999998
+    },
+    "stages": {
+      "построение nested GBDT": 1265.4612531999883,
+      "подготовка E_f": 326.1420953000488,
+      "выбор epochs TabM": 11505.430802799965,
+      "final TabM refit": 7572.699536800006,
+      "metrics": 30.619356700015487,
+      "финальные метрики": 0.4770241999940481
+    }
+  },
+  "limitations": [
+    "Random CV не доказывает temporal stability.",
+    "Три folds не являются claim о statistical significance.",
+    "Порог 0.5 диагностический.",
+    "Final test не использован.",
+    "Вывод относится только к locked Stage 7 hybrid design.",
+    "Результат stacking не доказывает бизнес-пользу."
+  ]
+}

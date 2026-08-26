@@ -245,6 +245,38 @@ Random CV не доказывает temporal stability. Три фолда не �
 
 ---
 
+## Stage 7 V1 — TabM поверх GBDT
+
+Статус: **ЗАВЕРШЁН И ПРИНЯТ**
+
+### FACTS
+
+* B* = **GBDT_mean**; его OOF Gini: **0.806399**.
+* Hybrid TabM OOF: Gini **0.804260**, ROC-AUC **0.902130**, PR-AUC **0.605662**, Precision **0.719060**, Recall **0.375585**, F1 **0.493435**.
+* Delta vs B*: Gini **-0.002139**, ROC-AUC **-0.001070**, PR-AUC **+0.001805**, Precision **-0.005566**, Recall **+0.011422**, F1 **+0.008710**.
+* Gini hybrid ниже B* на всех трёх outer folds.
+* Decision: **no_material_benefit**.
+* Runtime: **20 700.83 сек** (≈ **5 ч 45 мин**).
+* Final test не использован.
+
+### INTERPRETATION
+
+Stacking значительно улучшил TabM относительно standalone Stage 6, но TabM meta-model не дал материального преимущества относительно простого GBDT_mean. Оснований продолжать направление TabM в текущем locked design нет.
+
+### LIMITATIONS
+
+* Random CV не доказывает temporal stability.
+* Три folds не являются statistical significance claim.
+* Stacking не доказывает business benefit.
+* Порог 0.5 диагностический.
+* Final test не использован.
+
+### NEXT STEP
+
+Направление TabM закрыто. Следующий отдельный controlled experiment — FT-Transformer на тех же 47 разрешённых признаках.
+
+---
+
 ## 11. Business constraints
 
 Recall около **69%** — подтверждённый бизнес-ориентир, а не цель, которую нужно максимизировать любой ценой.
@@ -275,6 +307,8 @@ Threshold и баланс FN/FP являются отдельной business pol
 * Stage 3 blind-spot analysis;
 * Stage 4 диагностику Q_B1/Q_B2;
 * Stage 5 proxy Q_B2;
+* standalone TabM;
+* Stage 7 TabM stacking;
 * поиск row-level observation date;
 * historical enrichment текущими СПАРК/ФНС snapshots.
 
@@ -282,13 +316,13 @@ Threshold и баланс FN/FP являются отдельной business pol
 
 ## 13. Следующая исследовательская задача
 
-Основная диагностическая цепочка Stage 1–6 завершена.
+Основная диагностическая цепочка Stage 1–7 завершена.
 
 Следующий исследовательский шаг должен отвечать персональной задаче:
 
-> проверить **один современный подход**, которого не было в старом решении Комуса, на тех же 47 разрешённых признаках и сопоставимом evaluation protocol.
+> проверить **FT-Transformer** на тех же 47 разрешённых признаках и сопоставимом evaluation protocol.
 
-Stage 6 V4 закрыт: TabM не заменила GBDT baseline. Следующий подход выбирать только как отдельный controlled experiment.
+Stage 6 V4 и Stage 7 V1 закрыты: standalone TabM и TabM stacking не дали оснований заменить GBDT control. FT-Transformer выполнять только как отдельный controlled experiment.
 
 Порядок:
 
@@ -304,21 +338,13 @@ Stage 6 V4 закрыт: TabM не заменила GBDT baseline. Следую�
 
 ## 14. Git / artifacts
 
-Последний принятый и запушенный commit:
-
-`41e7120` — `Сохранить результаты Stage 6 TabM V3`
-
-Ветка на момент фиксации:
+Рабочая ветка:
 
 `research/stage6-tabm-v1`
 
-Локальная ветка синхронизирована с:
+Точный HEAD и Git status всегда проверяются fresh через `git` непосредственно перед изменениями; они намеренно не фиксируются в этом документе.
 
-`origin/research/stage6-tabm-v1`
-
-Перед следующими изменениями actual Git state проверяется заново.
-
-Evidence Stage 1–5 хранится в:
+Evidence Stage 1–7 хранится в:
 
 * `notebooks/`;
 * `reports/summary/`;

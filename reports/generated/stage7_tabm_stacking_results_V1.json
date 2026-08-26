@@ -1,0 +1,377 @@
+{
+  "experiment": "Stage 7",
+  "version": "V1",
+  "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+  "working_index_sha256": "80430ce6290d0982d3641621ba1ed62f6fb495e8d32f7d23d9fca00091aadb45",
+  "raw_features_in_order": [
+    "Q_A1_norm",
+    "Q_A2_norm",
+    "Q_A3_norm",
+    "Q_A4_norm",
+    "Q_A5_norm",
+    "Q_A6_norm",
+    "Q_A7_norm",
+    "Q_B3_norm",
+    "Q_B4_norm",
+    "Q_B5_norm",
+    "Q_C1_norm",
+    "Q_D1_norm",
+    "Q_D2_norm",
+    "Q_D3_norm",
+    "Q_D4_norm",
+    "Q_D5_norm",
+    "Q_D6_norm",
+    "A1_norm",
+    "A2_norm",
+    "A3_norm",
+    "A4_norm",
+    "A5_norm",
+    "A6_norm",
+    "B1_norm",
+    "B2_norm",
+    "B3_norm",
+    "C1_norm",
+    "C2_norm",
+    "C3_norm",
+    "C4_norm",
+    "D1_norm",
+    "D2_norm",
+    "D3_norm",
+    "D4_norm",
+    "D5_norm",
+    "E1_norm",
+    "E2_norm",
+    "E3_norm",
+    "F1_norm",
+    "F2_norm",
+    "F3_norm",
+    "F4_norm",
+    "G1_norm",
+    "G2_norm",
+    "G3_norm",
+    "G4_norm",
+    "G5_norm"
+  ],
+  "raw_feature_count": 47,
+  "probability_features_in_order": [
+    "p_catboost",
+    "p_xgboost",
+    "p_lightgbm"
+  ],
+  "probability_feature_count": 3,
+  "d_in": 50,
+  "forbidden_features": [
+    "Q_B1_norm",
+    "Q_B2_norm"
+  ],
+  "target": "DefMark",
+  "identifier": "INN",
+  "outer_cv": {
+    "type": "StratifiedKFold",
+    "n_splits": 3,
+    "shuffle": true,
+    "random_state": 42
+  },
+  "outer_fold_seeds": {
+    "1": 43,
+    "2": 44,
+    "3": 45
+  },
+  "stage3_oof": {
+    "path": "stage3_oof_predictions_V1.npz",
+    "sha256": "faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac",
+    "provenance_sha256": "3630a42513a9ff264ce32221b78bff2e4c38271b4e0089836ae6758f20206dad",
+    "usage": "только соответствующий outer validation-фолд V_f"
+  },
+  "gbdt_training_contract": {
+    "parameters": {
+      "CatBoost": {
+        "iterations": 900,
+        "learning_rate": 0.06,
+        "depth": 7,
+        "loss_function": "Logloss",
+        "eval_metric": "AUC",
+        "thread_count": -1,
+        "verbose": false,
+        "allow_writing_files": false
+      },
+      "XGBoost": {
+        "n_estimators": 900,
+        "learning_rate": 0.06,
+        "max_depth": 6,
+        "min_child_weight": 3,
+        "subsample": 0.85,
+        "colsample_bytree": 0.85,
+        "reg_alpha": 0.05,
+        "reg_lambda": 1.0,
+        "objective": "binary:logistic",
+        "eval_metric": "logloss",
+        "n_jobs": -1,
+        "tree_method": "hist"
+      },
+      "LightGBM": {
+        "n_estimators": 900,
+        "learning_rate": 0.05,
+        "num_leaves": 31,
+        "max_depth": -1,
+        "min_child_samples": 40,
+        "subsample": 0.85,
+        "subsample_freq": 1,
+        "colsample_bytree": 0.85,
+        "reg_alpha": 0.05,
+        "reg_lambda": 1.0,
+        "n_jobs": -1,
+        "verbosity": -1
+      }
+    },
+    "inner_validation_protocol": "stratified 90/10 split внутри соответствующего train; затем refit на всём train",
+    "inner_train_fraction": 0.9,
+    "inner_validation_fraction": 0.1,
+    "early_stopping_rounds": 40,
+    "selection_metric_and_mechanism": {
+      "CatBoost": "eval_metric=AUC; get_best_iteration",
+      "XGBoost": "eval_metric=logloss; best_iteration",
+      "LightGBM": "early_stopping callback; best_iteration_"
+    },
+    "refit_rule": "best iteration -> новый estimator -> refit на полном соответствующем train",
+    "nested_stacking_cv": {
+      "type": "StratifiedKFold",
+      "n_splits": 3,
+      "shuffle": true,
+      "random_state": "outer fold seed"
+    },
+    "outer_cv": {
+      "type": "StratifiedKFold",
+      "n_splits": 3,
+      "shuffle": true,
+      "random_state": 42
+    },
+    "seeds": {
+      "1": 43,
+      "2": 44,
+      "3": 45
+    }
+  },
+  "tabm_training_contract": {
+    "arch_type": "tabm",
+    "k": 8,
+    "n_blocks": 3,
+    "d_block": 512,
+    "activation": "ReLU",
+    "dropout": 0.1,
+    "start_scaling_init": "random-signs",
+    "num_embeddings": null,
+    "d_out": 2,
+    "input_dtype": "float32",
+    "optimizer": "AdamW",
+    "lr": 0.002,
+    "weight_decay": 0.0003,
+    "betas": [
+      0.9,
+      0.999
+    ],
+    "eps": 1e-08,
+    "gradient_clip_global_norm": 1.0,
+    "batch_size": 256,
+    "share_training_batches": true,
+    "max_epochs": 100,
+    "amp": false,
+    "torch_compile": false,
+    "scheduler": null,
+    "warmup": null,
+    "class_weights": null,
+    "sampling": null,
+    "d_in": 50,
+    "selection_early_stopping": {
+      "inner_train_fraction": 0.9,
+      "inner_validation_fraction": 0.1,
+      "patience": 16,
+      "selection_metric": "ROC-AUC",
+      "refit_epochs": "best_epoch"
+    },
+    "outer_fold_seeds": {
+      "1": 43,
+      "2": 44,
+      "3": 45
+    }
+  },
+  "baseline_contract": {
+    "B_star_selection_rule": "больший OOF Gini из XGBoost и GBDT_mean до просмотра TabM",
+    "GBDT_mean": "простое арифметическое среднее p_catboost, p_xgboost, p_lightgbm",
+    "weighted_averaging_forbidden": true
+  },
+  "final_test_used": false,
+  "status": "completed",
+  "stage3_provenance": {
+    "validated": true,
+    "npz": "stage3_oof_predictions_V1.npz"
+  },
+  "baseline_selection": {
+    "B_star": "GBDT_mean",
+    "xgboost_metrics": {
+      "ROC-AUC": 0.9019949389400138,
+      "Gini": 0.8039898778800276,
+      "PR-AUC": 0.599272571465239,
+      "Precision": 0.7122550372619376,
+      "Recall": 0.368445475638051,
+      "F1": 0.48566118521655255,
+      "TN": 257429,
+      "FP": 4170,
+      "FN": 17693,
+      "TP": 10322
+    },
+    "gbdt_mean_metrics": {
+      "ROC-AUC": 0.9031996976062311,
+      "Gini": 0.8063993952124622,
+      "PR-AUC": 0.6038568965217617,
+      "Precision": 0.7246253285034449,
+      "Recall": 0.3641620560414064,
+      "F1": 0.48472466384757923,
+      "TN": 257722,
+      "FP": 3877,
+      "FN": 17813,
+      "TP": 10202
+    },
+    "weighted_averaging": false
+  },
+  "fold_metrics": [
+    {
+      "fold": 1,
+      "seed": 43,
+      "best_epoch": 27,
+      "inner_best_roc_auc": 0.902727153851443,
+      "runtime_seconds": 7777.033811500005,
+      "metrics": {
+        "ROC-AUC": 0.8996770569499,
+        "Gini": 0.7993541138997999,
+        "PR-AUC": 0.6022316443529804,
+        "Precision": 0.7230801335559266,
+        "Recall": 0.37106446776611696,
+        "F1": 0.49044585987261147,
+        "TN": 85873,
+        "FP": 1327,
+        "FN": 5873,
+        "TP": 3465
+      },
+      "baseline_fold": {
+        "ROC-AUC": 0.8998923273455015,
+        "Gini": 0.799784654691003,
+        "PR-AUC": 0.5985728495241108,
+        "Precision": 0.7203498293515358,
+        "Recall": 0.36164060826729494,
+        "F1": 0.48153429345501214,
+        "TN": 85889,
+        "FP": 1311,
+        "FN": 5961,
+        "TP": 3377
+      }
+    },
+    {
+      "fold": 2,
+      "seed": 44,
+      "best_epoch": 21,
+      "inner_best_roc_auc": 0.9077454914248669,
+      "runtime_seconds": 6139.712334500015,
+      "metrics": {
+        "ROC-AUC": 0.9036501091279394,
+        "Gini": 0.8073002182558788,
+        "PR-AUC": 0.6034373311785923,
+        "Precision": 0.7293249403082266,
+        "Recall": 0.3598200899550225,
+        "F1": 0.48189315166726426,
+        "TN": 85953,
+        "FP": 1247,
+        "FN": 5978,
+        "TP": 3360
+      },
+      "baseline_fold": {
+        "ROC-AUC": 0.9039470050361451,
+        "Gini": 0.8078940100722902,
+        "PR-AUC": 0.6003640476248753,
+        "Precision": 0.7196202531645569,
+        "Recall": 0.3652816448918398,
+        "F1": 0.48458587867594827,
+        "TN": 85871,
+        "FP": 1329,
+        "FN": 5927,
+        "TP": 3411
+      }
+    },
+    {
+      "fold": 3,
+      "seed": 45,
+      "best_epoch": 23,
+      "inner_best_roc_auc": 0.9054223535449777,
+      "runtime_seconds": 6783.606898800004,
+      "metrics": {
+        "ROC-AUC": 0.905304852765531,
+        "Gini": 0.8106097055310619,
+        "PR-AUC": 0.6131533388009462,
+        "Precision": 0.7063431410011464,
+        "Recall": 0.3958667951600814,
+        "F1": 0.507376655458725,
+        "TN": 85662,
+        "FP": 1537,
+        "FN": 5642,
+        "TP": 3697
+      },
+      "baseline_fold": {
+        "ROC-AUC": 0.9058477154251707,
+        "Gini": 0.8116954308503415,
+        "PR-AUC": 0.6128414614883088,
+        "Precision": 0.7340356912491938,
+        "Recall": 0.36556376485705105,
+        "F1": 0.4880629020729092,
+        "TN": 85962,
+        "FP": 1237,
+        "FN": 5925,
+        "TP": 3414
+      }
+    }
+  ],
+  "oof_metrics": {
+    "ROC-AUC": 0.9021301765732884,
+    "Gini": 0.8042603531465768,
+    "PR-AUC": 0.6056620220095605,
+    "Precision": 0.7190596596733411,
+    "Recall": 0.3755845082991255,
+    "F1": 0.4934346276495967,
+    "TN": 257488,
+    "FP": 4111,
+    "FN": 17493,
+    "TP": 10522
+  },
+  "deltas_vs_B_star": {
+    "ROC-AUC": -0.0010695210329426663,
+    "Gini": -0.0021390420658853326,
+    "PR-AUC": 0.0018051254877988754,
+    "Precision": -0.005565668830103787,
+    "Recall": 0.011422452257719096,
+    "F1": 0.008709963802017495
+  },
+  "runtime_seconds": 20700.830069000018,
+  "runtime_breakdown_seconds": {
+    "outer_folds": {
+      "1": 7777.033811500005,
+      "2": 6139.712334500015,
+      "3": 6784.083922999998
+    },
+    "stages": {
+      "построение nested GBDT": 1265.4612531999883,
+      "подготовка E_f": 326.1420953000488,
+      "выбор epochs TabM": 11505.430802799965,
+      "final TabM refit": 7572.699536800006,
+      "metrics": 30.619356700015487,
+      "финальные метрики": 0.4770241999940481
+    }
+  },
+  "decision": "no_material_benefit",
+  "limitations": [
+    "Random CV не доказывает temporal stability.",
+    "Три folds не являются claim о statistical significance.",
+    "Порог 0.5 диагностический.",
+    "Final test не использован.",
+    "Вывод относится только к locked Stage 7 hybrid design.",
+    "Результат stacking не доказывает бизнес-пользу."
+  ]
+}
