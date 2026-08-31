@@ -1,0 +1,379 @@
+{
+  "experiment": "Stage 8",
+  "version": "V1",
+  "stage": "Stage 8 V1 — FT-Transformer vs GBDT_mean",
+  "status": "completed",
+  "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+  "working_index_sha256": "80430ce6290d0982d3641621ba1ed62f6fb495e8d32f7d23d9fca00091aadb45",
+  "feature_identity": {
+    "features_in_order": [
+      "Q_A1_norm",
+      "Q_A2_norm",
+      "Q_A3_norm",
+      "Q_A4_norm",
+      "Q_A5_norm",
+      "Q_A6_norm",
+      "Q_A7_norm",
+      "Q_B3_norm",
+      "Q_B4_norm",
+      "Q_B5_norm",
+      "Q_C1_norm",
+      "Q_D1_norm",
+      "Q_D2_norm",
+      "Q_D3_norm",
+      "Q_D4_norm",
+      "Q_D5_norm",
+      "Q_D6_norm",
+      "A1_norm",
+      "A2_norm",
+      "A3_norm",
+      "A4_norm",
+      "A5_norm",
+      "A6_norm",
+      "B1_norm",
+      "B2_norm",
+      "B3_norm",
+      "C1_norm",
+      "C2_norm",
+      "C3_norm",
+      "C4_norm",
+      "D1_norm",
+      "D2_norm",
+      "D3_norm",
+      "D4_norm",
+      "D5_norm",
+      "E1_norm",
+      "E2_norm",
+      "E3_norm",
+      "F1_norm",
+      "F2_norm",
+      "F3_norm",
+      "F4_norm",
+      "G1_norm",
+      "G2_norm",
+      "G3_norm",
+      "G4_norm",
+      "G5_norm"
+    ],
+    "sha256": "f2f5416ae348d88a4f8befa4bfb4fb43580fefe8c3d234c388a06690f00e55db"
+  },
+  "training_contract": {
+    "stage": "Stage 8 V1",
+    "features": [
+      "Q_A1_norm",
+      "Q_A2_norm",
+      "Q_A3_norm",
+      "Q_A4_norm",
+      "Q_A5_norm",
+      "Q_A6_norm",
+      "Q_A7_norm",
+      "Q_B3_norm",
+      "Q_B4_norm",
+      "Q_B5_norm",
+      "Q_C1_norm",
+      "Q_D1_norm",
+      "Q_D2_norm",
+      "Q_D3_norm",
+      "Q_D4_norm",
+      "Q_D5_norm",
+      "Q_D6_norm",
+      "A1_norm",
+      "A2_norm",
+      "A3_norm",
+      "A4_norm",
+      "A5_norm",
+      "A6_norm",
+      "B1_norm",
+      "B2_norm",
+      "B3_norm",
+      "C1_norm",
+      "C2_norm",
+      "C3_norm",
+      "C4_norm",
+      "D1_norm",
+      "D2_norm",
+      "D3_norm",
+      "D4_norm",
+      "D5_norm",
+      "E1_norm",
+      "E2_norm",
+      "E3_norm",
+      "F1_norm",
+      "F2_norm",
+      "F3_norm",
+      "F4_norm",
+      "G1_norm",
+      "G2_norm",
+      "G3_norm",
+      "G4_norm",
+      "G5_norm"
+    ],
+    "feature_sha256": "f2f5416ae348d88a4f8befa4bfb4fb43580fefe8c3d234c388a06690f00e55db",
+    "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+    "working_index_sha256": "80430ce6290d0982d3641621ba1ed62f6fb495e8d32f7d23d9fca00091aadb45",
+    "outer_cv": {
+      "n_splits": 3,
+      "shuffle": true,
+      "random_state": 42
+    },
+    "ft_transformer": {
+      "library": "rtdl_revisiting_models==0.0.2",
+      "arch_type": "FTTransformer",
+      "n_cont_features": 47,
+      "cat_cardinalities": [],
+      "d_out": 1,
+      "d_token": 192,
+      "d_block": 192,
+      "n_blocks": 3,
+      "attention_n_heads": 8,
+      "attention_dropout": 0.2,
+      "ffn_activation": "ReGLU (package-native)",
+      "ffn_d_hidden": 256,
+      "ffn_d_hidden_multiplier": 1.3333333333333333,
+      "ffn_first_projection": 512,
+      "ffn_dropout": 0.1,
+      "residual_dropout": 0.0,
+      "linformer_kv_compression": null,
+      "initialization": "official native defaults",
+      "optimizer": "AdamW(model.make_parameter_groups())",
+      "lr": 0.0001,
+      "weight_decay": 1e-05,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "eps": 1e-08,
+      "batch_size": 256,
+      "num_workers": 0,
+      "max_epochs": 100,
+      "amp": false,
+      "torch_compile": false,
+      "scheduler": null,
+      "warmup": null,
+      "gradient_clip_global_norm": null,
+      "class_weights": null,
+      "sampling": null
+    },
+    "optimizer": {
+      "name": "AdamW",
+      "lr": 0.0001,
+      "weight_decay": 1e-05,
+      "betas": [
+        0.9,
+        0.999
+      ],
+      "eps": 1e-08
+    },
+    "preprocessing": {
+      "transformer": "QuantileTransformer",
+      "n_quantiles": 1000,
+      "output_distribution": "normal",
+      "subsample": 1000000000,
+      "training_noise": 0.001,
+      "fit_policy": "fold-local fit только на соответствующем train; шум только на копии train"
+    },
+    "selection": {
+      "inner_train_fraction": 0.9,
+      "inner_validation_fraction": 0.1,
+      "patience": 16,
+      "min_delta": 0.0,
+      "selection_metric": "ROC-AUC",
+      "refit_epochs": "best_epoch",
+      "outer_fold_seeds": [
+        43,
+        44,
+        45
+      ]
+    },
+    "seeds": [
+      43,
+      44,
+      45
+    ],
+    "baseline": {
+      "name": "GBDT_mean",
+      "source": "d:\\Projects\\komus-credit-risk\\reports\\generated\\stage7_tabm_stacking_oof_V1.npz",
+      "retrained": false
+    },
+    "final_test_used": false
+  },
+  "preprocessing_contract": {
+    "transformer": "QuantileTransformer",
+    "n_quantiles": 1000,
+    "output_distribution": "normal",
+    "subsample": 1000000000,
+    "training_noise": 0.001,
+    "fit_policy": "fold-local fit только на соответствующем train; шум только на копии train"
+  },
+  "outer_folds": [
+    {
+      "fold": 1,
+      "seed": 43,
+      "best_epoch": 27,
+      "selection_roc_auc": 0.9029563888670609,
+      "ft_metrics": {
+        "roc_auc": 0.896831722777209,
+        "gini": 0.793663445554418,
+        "pr_auc": 0.591722106159603,
+        "precision": 0.6530449992049611,
+        "recall": 0.43981580638252304,
+        "f1": 0.5256287195239009
+      },
+      "baseline_metrics": {
+        "roc_auc": 0.8998923273455015,
+        "gini": 0.799784654691003,
+        "pr_auc": 0.5985728495241108,
+        "precision": 0.7203498293515358,
+        "recall": 0.36164060826729494,
+        "f1": 0.48153429345501214
+      },
+      "delta": {
+        "roc_auc": -0.003060604568292491,
+        "gini": -0.006121209136584982,
+        "pr_auc": -0.006850743364507861,
+        "precision": -0.06730483014657473,
+        "recall": 0.0781751981152281,
+        "f1": 0.04409442606888875
+      }
+    },
+    {
+      "fold": 2,
+      "seed": 44,
+      "best_epoch": 19,
+      "selection_roc_auc": 0.9065051421330765,
+      "ft_metrics": {
+        "roc_auc": 0.9034145599218739,
+        "gini": 0.8068291198437478,
+        "pr_auc": 0.5996615924790683,
+        "precision": 0.6688190314358539,
+        "recall": 0.42150353394731205,
+        "f1": 0.5171122643368588
+      },
+      "baseline_metrics": {
+        "roc_auc": 0.9039470050361451,
+        "gini": 0.8078940100722902,
+        "pr_auc": 0.6003640476248753,
+        "precision": 0.7196202531645569,
+        "recall": 0.3652816448918398,
+        "f1": 0.48458587867594827
+      },
+      "delta": {
+        "roc_auc": -0.0005324451142711961,
+        "gini": -0.0010648902285423922,
+        "pr_auc": -0.0007024551458070238,
+        "precision": -0.05080122172870305,
+        "recall": 0.05622188905547226,
+        "f1": 0.032526385660910484
+      }
+    },
+    {
+      "fold": 3,
+      "seed": 45,
+      "best_epoch": 10,
+      "selection_roc_auc": 0.9040314114590496,
+      "ft_metrics": {
+        "roc_auc": 0.9054568135661515,
+        "gini": 0.810913627132303,
+        "pr_auc": 0.6079940379288065,
+        "precision": 0.7668979696736058,
+        "recall": 0.31952029125174003,
+        "f1": 0.4510959939531368
+      },
+      "baseline_metrics": {
+        "roc_auc": 0.9058477154251707,
+        "gini": 0.8116954308503415,
+        "pr_auc": 0.6128414614883088,
+        "precision": 0.7340356912491938,
+        "recall": 0.36556376485705105,
+        "f1": 0.4880629020729092
+      },
+      "delta": {
+        "roc_auc": -0.0003909018590192437,
+        "gini": -0.0007818037180384874,
+        "pr_auc": -0.004847423559502295,
+        "precision": 0.03286227842441203,
+        "recall": -0.046043473605311025,
+        "f1": -0.03696690811977238
+      }
+    }
+  ],
+  "ft_transformer_oof_metrics": {
+    "roc_auc": 0.9007642154226978,
+    "gini": 0.8015284308453956,
+    "pr_auc": 0.593910939146681,
+    "precision": 0.6863990040460629,
+    "recall": 0.3936105657683384,
+    "f1": 0.5003176043557169
+  },
+  "baseline_oof_metrics": {
+    "roc_auc": 0.9031996976062311,
+    "gini": 0.8063993952124622,
+    "pr_auc": 0.6038568965217617,
+    "precision": 0.7246253285034449,
+    "recall": 0.3641620560414064,
+    "f1": 0.48472466384757923
+  },
+  "B_star": "GBDT_mean",
+  "fold_deltas": {
+    "gini": [
+      -0.006121209136584982,
+      -0.0010648902285423922,
+      -0.0007818037180384874
+    ],
+    "positive_count": 0,
+    "negative_count": 3
+  },
+  "delta_vs_B_star": {
+    "roc_auc": -0.0024354821835332885,
+    "gini": -0.004870964367066577,
+    "pr_auc": -0.009945957375080638,
+    "precision": -0.038226324457381944,
+    "recall": 0.029448509726932026,
+    "f1": 0.015592940508137698
+  },
+  "decision": "no_material_benefit",
+  "runtime_seconds": 125275.40500000001,
+  "runtime_breakdown": {
+    "total_seconds": 125275.40500000001,
+    "folds": {
+      "2": 45958.923,
+      "3": 27515.296999999984
+    },
+    "phases": {
+      "preprocessing_selection": 20.842000000016924,
+      "save": 1.0460000000020955,
+      "fold_1_selection": 30345.17199999999,
+      "preprocessing_refit": 26.95199999999022,
+      "fold_1_refit": 21323.707000000028,
+      "prediction": 294.0309999999954,
+      "metrics": 0.4219999999986612,
+      "fold_2_selection": 30318.629000000044,
+      "fold_2_refit": 15529.143000000025,
+      "fold_3_selection": 19065.529000000028,
+      "fold_3_refit": 8340.641000000003
+    }
+  },
+  "final_test_used": false,
+  "environment": {
+    "python": "3.12.2 (tags/v3.12.2:6abddd9, Feb  6 2024, 21:26:36) [MSC v.1937 64 bit (AMD64)]",
+    "numpy": "2.5.2",
+    "scikit_learn": "1.9.0",
+    "torch": "2.13.0+cpu",
+    "rtdl_revisiting_models": "0.0.2",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "os": "nt",
+    "cpu": "AMD64 Family 23 Model 104 Stepping 1, AuthenticAMD",
+    "cpu_count": 12,
+    "device": "cpu",
+    "torch_threads": 6,
+    "num_workers": 0
+  },
+  "limitations": [
+    "random CV не доказывает temporal stability",
+    "3 folds не являются statistical significance claim",
+    "FT-Transformer не доказывает business benefit",
+    "threshold 0.5 диагностический",
+    "final test не использован",
+    "результат относится только к locked Stage 8 FT-Transformer design"
+  ]
+}

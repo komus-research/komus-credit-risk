@@ -1,0 +1,13 @@
+timestamp=2026-08-26 23:30:53
+saved_selection_epoch=2
+selection_resume_start_epoch=3
+fresh_refit_start_epoch=1
+selection_state_loaded_into_fresh_refit=false
+load_trace=selection_resume<-selection,refit_resume<-refit
+best_epoch=4
+refit_completed_epochs=4
+saved_refit_epoch=2
+refit_resume_start_epoch=3
+max_weight_abs_diff=0.0
+max_prediction_abs_diff=0.0
+overall_status=PASS

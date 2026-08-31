@@ -1,0 +1,31 @@
+{
+  "status": "pre_run_protocol_amendment",
+  "stage": "Stage 8 V1",
+  "model": "FT-Transformer",
+  "created_at": "2026-08-26 23:30:53",
+  "change": {
+    "parameter": "max_epochs",
+    "before": 1000,
+    "after": 100
+  },
+  "reason": "Compute-budget ceiling уменьшен до 100 эпох для CPU-only запуска до получения Stage 8 OOF-result. Изменение не основано на качестве FT-Transformer на данных KOMUS.",
+  "unchanged": {
+    "features": 47,
+    "target": "DefMark",
+    "identifier": "INN",
+    "patience": 16,
+    "min_delta": 0.0,
+    "outer_folds": 3,
+    "outer_seed": 42,
+    "fold_seeds": [
+      43,
+      44,
+      45
+    ],
+    "n_quantiles": 1000,
+    "batch_size": 256,
+    "final_test_used": false
+  },
+  "old_checkpoint_archived": "d:\\Projects\\komus-credit-risk\\reports\\generated\\stage8_ft_transformer_checkpoint_V1_before_100ep_20260826_233053.pt",
+  "new_run_mode": "fresh"
+}
