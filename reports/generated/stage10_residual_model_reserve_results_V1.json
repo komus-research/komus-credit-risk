@@ -1,0 +1,393 @@
+{
+  "experiment": "Stage 10",
+  "version": "V1",
+  "status": "completed",
+  "diagnostic_only": true,
+  "final_test_used": false,
+  "oracle_any_scope": "upper_bound_diagnostic_only; not a shared fixed-capacity production system",
+  "artifact_identities": {
+    "stage3_oof_predictions": {
+      "path": "reports\\generated\\stage3_oof_predictions_V1.npz",
+      "sha256": "faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac"
+    },
+    "stage3_error_analysis_results": {
+      "path": "reports\\generated\\stage3_error_analysis_results_V1.json",
+      "sha256": "3630a42513a9ff264ce32221b78bff2e4c38271b4e0089836ae6758f20206dad"
+    },
+    "stage6_tabm_oof_v4": {
+      "path": "reports\\generated\\stage6_tabm_oof_V4.npz",
+      "sha256": "c872efbd410f32039c3c3cb21d30131db2c7ce981136321dc19357c32351f8e1"
+    },
+    "stage6_tabm_results_v4": {
+      "path": "reports\\generated\\stage6_tabm_results_V4.json",
+      "sha256": "1d27d9d9ab2cefcaa4aaf7cc269d5dcf19650bed3024975f7220cfbaff612ed1"
+    },
+    "stage7_tabm_stacking_oof": {
+      "path": "reports\\generated\\stage7_tabm_stacking_oof_V1.npz",
+      "sha256": "69fc3687b6af4f97f9668026d8ec5f6181d33436f8de37d95fbd5280e1f140fe"
+    },
+    "stage8_ft_transformer_oof": {
+      "path": "reports\\generated\\stage8_ft_transformer_oof_V1.npz",
+      "sha256": "74068f5ae4d1bcf97b34f83d63878900130be4174c75bb7be0b660a39446f14d"
+    },
+    "stage9_rank_capacity_results": {
+      "path": "reports\\generated\\stage9_rank_capacity_results_V1.json",
+      "sha256": "0800567d7c2c69ff95ef99724d53d8d17ea7bf6f7ee2246cddebeb1bcaecaf8e"
+    }
+  },
+  "preflight": {
+    "n": 289614,
+    "expected_working_index_sha256": "80430ce6290d0982d3641621ba1ed62f6fb495e8d32f7d23d9fca00091aadb45",
+    "stage3_stage7_stage8": {
+      "working_indices_exact_equal": true,
+      "target_exact_equal": true,
+      "working_index_sha256_pass": true
+    },
+    "stage6_v4_special_alignment": {
+      "working_indices_in_npz": false,
+      "results_working_index_sha256_pass": true,
+      "y_true_exact_equal_canonical_stage3_target": true,
+      "y_true_shape": [
+        289614
+      ],
+      "oof_probability_shape": [
+        289614
+      ],
+      "oof_probability_finite": true,
+      "saved_order_used_only_after_checks": true
+    },
+    "all_locked_probability_arrays_finite": true,
+    "locked_score_series_count": 7,
+    "accepted_stage3_thresholds": {
+      "consensus_rank_lte": 0.5,
+      "rank_spread_lte": 0.1
+    }
+  },
+  "ranking": {
+    "probability_order": "DESC",
+    "exact_tie_break": "working_index ASC",
+    "capacities": {
+      "10": 28961,
+      "20": 57922,
+      "30": 86884
+    }
+  },
+  "locked_score_set": [
+    "CatBoost_Stage3",
+    "XGBoost_Stage3",
+    "LightGBM_Stage3",
+    "GBDT_mean_Stage7",
+    "TabM_standalone_V4_Stage6",
+    "TabM_stacking_V1_Stage7",
+    "FT_Transformer_V1_Stage8"
+  ],
+  "blind_spot": {
+    "count": 805,
+    "all_target_one": true,
+    "rule": "target == 1 AND consensus_rank <= 0.50 AND rank_spread <= 0.10",
+    "blind_spot_cohort_sha256": "f0c227d1f07b922300b5488eb11c48590f0527e871802fb31f43e4020d8ba269",
+    "stage9_row_level_identity_pass": true
+  },
+  "overall_default_count": 28015,
+  "capacities": [
+    {
+      "capacity_pct": 10,
+      "K": 28961,
+      "score_series": {
+        "CatBoost_Stage3": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.57169373549884
+        },
+        "XGBoost_Stage3": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.5722291629484205
+        },
+        "LightGBM_Stage3": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.5700517579867928
+        },
+        "GBDT_mean_Stage7": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.5741567017669106
+        },
+        "TabM_standalone_V4_Stage6": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.5449937533464215
+        },
+        "TabM_stacking_V1_Stage7": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.5767981438515081
+        },
+        "FT_Transformer_V1_Stage8": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.5697305015170444
+        }
+      },
+      "GBDT_mean": {
+        "blind_spot_rescue_count": 0,
+        "blind_spot_rescue_rate": 0.0,
+        "overall_default_capture": 0.5741567017669106
+      },
+      "oracle_any": {
+        "actual_union_size_U_c": 39850,
+        "effective_union_capacity": 0.13759693937447776,
+        "excess_rows": 10889,
+        "blind_spot_rescue_count": 0,
+        "blind_spot_rescue_rate": 0.0,
+        "overall_default_capture": 0.6726396573264323
+      },
+      "alternative_model_contributions_to_gbdt_mean_missed_blind_spot": {
+        "CatBoost_Stage3": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "XGBoost_Stage3": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "LightGBM_Stage3": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "TabM_standalone_V4_Stage6": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "TabM_stacking_V1_Stage7": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "FT_Transformer_V1_Stage8": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        }
+      },
+      "consistency": {
+        "oracle_rescue_among_gbdt_mean_missed_count": 0,
+        "incremental_contributions_sum": 0,
+        "oracle_rescue_equals_gbdt_mean_rescue_plus_residual": true
+      }
+    },
+    {
+      "capacity_pct": 20,
+      "K": 57922,
+      "score_series": {
+        "CatBoost_Stage3": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.7768338390148135
+        },
+        "XGBoost_Stage3": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.7787970729966089
+        },
+        "LightGBM_Stage3": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.7781188648938069
+        },
+        "GBDT_mean_Stage7": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.780439050508656
+        },
+        "TabM_standalone_V4_Stage6": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.7557379975013385
+        },
+        "TabM_stacking_V1_Stage7": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.7824022844904516
+        },
+        "FT_Transformer_V1_Stage8": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.7789041584865251
+        }
+      },
+      "GBDT_mean": {
+        "blind_spot_rescue_count": 0,
+        "blind_spot_rescue_rate": 0.0,
+        "overall_default_capture": 0.780439050508656
+      },
+      "oracle_any": {
+        "actual_union_size_U_c": 74603,
+        "effective_union_capacity": 0.2575945914216854,
+        "excess_rows": 16681,
+        "blind_spot_rescue_count": 0,
+        "blind_spot_rescue_rate": 0.0,
+        "overall_default_capture": 0.8433696234160272
+      },
+      "alternative_model_contributions_to_gbdt_mean_missed_blind_spot": {
+        "CatBoost_Stage3": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "XGBoost_Stage3": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "LightGBM_Stage3": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "TabM_standalone_V4_Stage6": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "TabM_stacking_V1_Stage7": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "FT_Transformer_V1_Stage8": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        }
+      },
+      "consistency": {
+        "oracle_rescue_among_gbdt_mean_missed_count": 0,
+        "incremental_contributions_sum": 0,
+        "oracle_rescue_equals_gbdt_mean_rescue_plus_residual": true
+      }
+    },
+    {
+      "capacity_pct": 30,
+      "K": 86884,
+      "score_series": {
+        "CatBoost_Stage3": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.8731393896127074
+        },
+        "XGBoost_Stage3": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.8746742816348385
+        },
+        "LightGBM_Stage3": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.8741388541852579
+        },
+        "GBDT_mean_Stage7": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.8747456719614493
+        },
+        "TabM_standalone_V4_Stage6": {
+          "blind_spot_rescue_count": 6,
+          "blind_spot_rescue_rate": 0.007453416149068323,
+          "overall_default_capture": 0.8575406032482599
+        },
+        "TabM_stacking_V1_Stage7": {
+          "blind_spot_rescue_count": 0,
+          "blind_spot_rescue_rate": 0.0,
+          "overall_default_capture": 0.875102623594503
+        },
+        "FT_Transformer_V1_Stage8": {
+          "blind_spot_rescue_count": 9,
+          "blind_spot_rescue_rate": 0.011180124223602485,
+          "overall_default_capture": 0.8743530251650902
+        }
+      },
+      "GBDT_mean": {
+        "blind_spot_rescue_count": 0,
+        "blind_spot_rescue_rate": 0.0,
+        "overall_default_capture": 0.8747456719614493
+      },
+      "oracle_any": {
+        "actual_union_size_U_c": 108450,
+        "effective_union_capacity": 0.37446394166027885,
+        "excess_rows": 21566,
+        "blind_spot_rescue_count": 15,
+        "blind_spot_rescue_rate": 0.018633540372670808,
+        "overall_default_capture": 0.9167588791718723
+      },
+      "alternative_model_contributions_to_gbdt_mean_missed_blind_spot": {
+        "CatBoost_Stage3": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "XGBoost_Stage3": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "LightGBM_Stage3": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "TabM_standalone_V4_Stage6": {
+          "rescue_count_among_gbdt_mean_missed": 6,
+          "rescue_rate_among_blind_spot": 0.007453416149068323,
+          "unique_contribution_count": 6,
+          "incremental_contribution_count_locked_order": 6
+        },
+        "TabM_stacking_V1_Stage7": {
+          "rescue_count_among_gbdt_mean_missed": 0,
+          "rescue_rate_among_blind_spot": 0.0,
+          "unique_contribution_count": 0,
+          "incremental_contribution_count_locked_order": 0
+        },
+        "FT_Transformer_V1_Stage8": {
+          "rescue_count_among_gbdt_mean_missed": 9,
+          "rescue_rate_among_blind_spot": 0.011180124223602485,
+          "unique_contribution_count": 9,
+          "incremental_contribution_count_locked_order": 9
+        }
+      },
+      "consistency": {
+        "oracle_rescue_among_gbdt_mean_missed_count": 15,
+        "incremental_contributions_sum": 15,
+        "oracle_rescue_equals_gbdt_mean_rescue_plus_residual": true
+      }
+    }
+  ],
+  "primary_delta_oracle_blind_spot_rescue_30_pp": 1.8633540372670807,
+  "decision": "limited_residual_model_reserve",
+  "next_step_owner": "Technical Coordinator",
+  "limitations": [
+    "oracle-any — только upper-bound diagnostic: U_c может быть больше K, поэтому это не система с общей capacity 30%.",
+    "OOF random-CV не доказывает temporal stability.",
+    "Ни retraining, ни новые prediction, ни final test не выполнялись."
+  ]
+}
