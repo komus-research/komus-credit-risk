@@ -132,6 +132,7 @@ function Invoke-InstitutePush {
     if ($remote.ExitCode -eq 0 -and (Normalize-Url $remote.Text) -ne (Normalize-Url ([string]$Config.working_remote_url))) { Stop-Helper 'credit-risk remote URL does not match.' }
     $branch = New-IntegrationBranch $inst
     if ($Preview) { Write-Host ((U '0KHRg9GF0L7QuSDQt9Cw0L/Rg9GB0Lo6INC40YHRgtC+0YfQvdC40Lo=') + " $($source.Short); " + (U '0LLQtdGC0LrQsCDQuNC90YLQtdCz0YDQsNGG0LjQuA==') + " $branch; " + (U '0YHQvtGB0YLQvtGP0L3QuNC1INGA0LXQv9C+0LfQuNGC0L7RgNC40Y8g0L3QtSDQuNC30LzQtdC90LXQvdC+Lg==')) -ForegroundColor Cyan; return }
+    if ([string]::IsNullOrWhiteSpace($Message)) { $defaultMessage = (U '0KHQuNC90YXRgNC+0L3QuNC30LjRgNC+0LLQsNGC0YwgY3JlZGl0LXNjb3Jpbmc=') + " - $($source.Short)"; $Message = Read-Host ((U '0JrQvtC80LzQtdC90YLQsNGA0LjQuSDQuNC90YLQtdCz0YDQsNGG0LjQuA==') + " [$defaultMessage]"); if ([string]::IsNullOrWhiteSpace($Message)) { $Message = $defaultMessage } }
     $integrationCreated = $false; $pushed = $false
     try {
         Invoke-Git $inst @('fetch','origin') | Out-Null; Invoke-Git $inst @('switch',$base) | Out-Null; Invoke-Git $inst @('pull','--ff-only','origin',$base) | Out-Null
@@ -139,19 +140,18 @@ function Invoke-InstitutePush {
         Invoke-Git $inst @('fetch','credit-risk','main') | Out-Null
         if ((Head-Info $inst 'credit-risk/main').Sha -ne $source.Sha) { Stop-Helper 'credit-risk/main does not equal working origin/main.' }
         Invoke-Git $inst @('switch','-c',$branch,$base) | Out-Null; $integrationCreated = $true
-        $oldEditor = $env:GIT_EDITOR; try { $env:GIT_EDITOR = 'true'; Invoke-Git $inst @('subtree','pull',('--prefix=' + $prefix),'credit-risk','main','--squash') | Out-Null } finally { if ($null -eq $oldEditor) { Remove-Item Env:GIT_EDITOR -ErrorAction SilentlyContinue } else { $env:GIT_EDITOR=$oldEditor } }
+        $oldEditor = $env:GIT_EDITOR; try { $env:GIT_EDITOR = 'true'; Invoke-Git $inst @('subtree','pull',('--prefix=' + $prefix),'--squash','-m',$Message,'credit-risk','main') | Out-Null } finally { if ($null -eq $oldEditor) { Remove-Item Env:GIT_EDITOR -ErrorAction SilentlyContinue } else { $env:GIT_EDITOR=$oldEditor } }
         $changed = Invoke-Git $inst @('-c','core.quotepath=false','diff','--name-only',($base + '...HEAD'))
         if ([string]::IsNullOrWhiteSpace($changed.Text)) { Clear-IntegrationBranch $inst $base $branch | Out-Null; $integrationCreated = $false; Write-Host (U '0JPQntCi0J7QktCe') -ForegroundColor Green; Write-Host (U '0KDQtdC/0L7Qt9C40YLQvtGA0LjQuSDQmNC90YHRgtC40YLRg9GC0LAg0YPQttC1INGB0L7QtNC10YDQttC40YIg0LjRgdGC0L7Rh9C90LjQui4='); return }
         $outside = @($changed.Lines | Where-Object { -not $_.StartsWith($prefix + '/') }); if ($outside.Count) { Stop-Helper ((U '0J7QsdC90LDRgNGD0LbQtdC90Ysg0LjQt9C80LXQvdC10L3QuNGPINCy0L3QtSBjcmVkaXQtc2NvcmluZzo=') + "`n$($outside -join "`n")") }
         $check = Invoke-Git $inst @('diff','--check',($base + '...HEAD')) -AllowFailure; if ($check.ExitCode -ne 0) { Stop-Helper "git diff --check failed: $($check.Text)" }
-        if ([string]::IsNullOrWhiteSpace($Message)) { $defaultMessage = (U '0KHQuNC90YXRgNC+0L3QuNC30LjRgNC+0LLQsNGC0YwgY3JlZGl0LXNjb3Jpbmc=') + " - $($source.Short)"; $Message = Read-Host ((U '0JrQvtC80LzQtdC90YLQsNGA0LjQuSDQuNC90YLQtdCz0YDQsNGG0LjQuA==') + " [$defaultMessage]"); if ([string]::IsNullOrWhiteSpace($Message)) { $Message = $defaultMessage } }
         Write-Host (U '0JPQntCi0J7QktCeINCaINCe0KLQn9Cg0JDQktCa0JU=') -ForegroundColor Green; Write-Host ((U '0JjRgdGC0L7Rh9C90LjQujo=') + " $($source.Sha)"); Write-Host ((U '0JLQtdGC0LrQsCDQuNC90YLQtdCz0YDQsNGG0LjQuDo=') + " $branch"); Write-Host ((U '0JjQt9C80LXQvdC10L3QviDRhNCw0LnQu9C+0LI6') + " $(@($changed.Lines).Count)"); Write-Host (U '0KLQvtC70YzQutC+IGNyZWRpdC1zY29yaW5nLzog0JTQkA==')
         if (-not (Confirm-Yes (U '0KHQvtC30LTQsNCy0YwgUFI/IFt5L05d'))) { Clear-IntegrationBranch $inst $base $branch | Out-Null; $integrationCreated = $false; Write-Host (U '0J7RgtC80LXQvdC10L3Qvi4g0JLRgNC10LzQtdC90L3QsNGPIGludGVncmF0aW9uIGJyYW5jaCDRg9C00LDQu9C10L3QsC4=') -ForegroundColor Yellow; return }
         Invoke-Git $inst @('push','-u','origin',$branch) | Out-Null; $pushed = $true
         $repoName = ([string]$Config.institute_remote_url).Replace('https://github.com/','').Replace('.git',''); $body = "Source repository: $($Config.working_remote_url)`nSource branch: main`nSource SHA: $($source.Sha)`nSource commit: $($source.Subject)`nChanges are limited to $prefix/."
         $url = (Invoke-Gh $ghPath @('pr','create','--repo',$repoName,'--base',$base,'--head',$branch,'--title',$Message,'--body',$body)).Text.Trim(); Write-Host ((U 'UFIg0YHQvtC30LTQsNC9Og==') + " $url") -ForegroundColor Green
         if (-not (Confirm-Yes (U '0KHQu9C40YLRjCBQUiDQsiBEYXRhX0tvbXVzINGB0LXQudGH0LDRgT8gW3kvTl0='))) { return }
-        Invoke-Gh $ghPath @('pr','merge',$url,'--merge','--delete-branch') | Out-Null; Invoke-Git $inst @('switch',$base) | Out-Null; Invoke-Git $inst @('pull','--ff-only','origin',$base) | Out-Null
+        Invoke-Gh $ghPath @('pr','merge',$url,'--merge','--subject',$Message,'--delete-branch') | Out-Null; Invoke-Git $inst @('switch',$base) | Out-Null; Invoke-Git $inst @('pull','--ff-only','origin',$base) | Out-Null
         if (-not [string]::IsNullOrWhiteSpace((Invoke-Git $inst @('status','--porcelain')).Text)) { Stop-Helper 'Institute working tree is not clean after merge.' }
         Write-Host (U '0JPQntCi0J7QktCe') -ForegroundColor Green; Write-Host ((U 'Y3JlZGl0LXNjb3Jpbmcg0YHQuNC90YXRgNC+0L3QuNC30LjRgNC+0LLQsNC9Lg==') + " PR: $url")
     }
