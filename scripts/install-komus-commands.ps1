@@ -1,3 +1,6 @@
+# Установка
+# .\scripts\install-komus-commands.ps1
+
 [CmdletBinding()]
 param(
     [string]$WorkingRepo = 'D:\Projects\komus-work',
