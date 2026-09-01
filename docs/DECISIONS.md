@@ -458,3 +458,27 @@ Evidence chain:
 Следующий этап — Research Synthesis Stage 1–11 с итоговой таблицей, evidence/figures, FACT / INTERPRETATION / LIMITATION, закрытыми и blocked questions, reopen conditions и материалами для презентации/защиты.
 
 Data research остаётся открытым: СПАРК-пилот, новые признаки, связи, динамика и другие валидные источники информации могут открыть model research повторно. Reopen conditions: новый валидный feature source; row-level temporal anchor; сильный независимый противоречащий результат; новый business operating point; либо новая научная гипотеза, реально меняющая решение. Новый model shortlist ради количества не создаётся.
+
+### D-047 — Stage 12 V1 принят как Research Synthesis Stages 1–11
+
+Stage 12 V1 имеет статус `completed_accepted`. Он завершает и принимает текущую
+model-research chain Stages 1–12 на 47 разрешённых признаках без `Q_B1_norm` /
+`Q_B2_norm`.
+
+Synthesis подтверждает baseline без закрытых индексов, common blind spot **805** и
+Stage 5 `material_missing_signal`. TabM, stacking, FT-Transformer, complementarity,
+oracle/residual reserve и RealMLP не дали evidence, что ещё одна architecture на том
+же feature contract решает основное ограничение.
+
+Следствие: `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES` сохраняется; ожидаемый
+information gain дальнейшего model-only architecture search на тех же 47 признаках
+низок.
+
+Это решение не означает завершение проекта, доказанный математический потолок Gini,
+temporal stability или невозможность будущего улучшения. Data research остаётся
+следующим приоритетом: новые валидные признаки, СПАРК-пилот, динамика, связи,
+row-level temporal anchor при его появлении и presentation / defence evidence.
+
+Reopen conditions сохраняются: новый валидный feature source; row-level temporal
+anchor; сильный независимый противоречащий результат; новый business operating point;
+либо новая научная гипотеза, реально меняющая решение.

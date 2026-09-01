@@ -223,22 +223,27 @@ Final test не использовался. Числа берутся из accep
 
 ---
 
-## 7. Research Synthesis Stage 1–11 — ТЕКУЩИЙ ЭТАП
+## 7. Research Synthesis Stage 1–11 (Stage 12 V1) — ЗАВЕРШЁН И ПРИНЯТ
 
-Собрать presentation-ready evidence package:
+Статус: `completed_accepted`.
 
-- итоговую таблицу Stage 1–11;
-- проверенные figures и evidence;
-- FACT / INTERPRETATION / LIMITATION;
-- закрытые и blocked questions;
-- reopen conditions;
-- материалы для презентации и защиты.
+Stage 12 V1 зафиксировал единый presentation-ready evidence package: итоговую
+таблицу Stage 1–11, verified evidence/figures, FACT / INTERPRETATION / LIMITATION,
+closed/blocked questions, reopen conditions и материалы для presentation / defence.
+Он подтверждает `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`: на неизменных
+47 признаках ожидаемый information gain ещё одной model architecture низок.
+
+Это не означает, что проект завершён, что доказан математический потолок Gini или
+что temporal stability подтверждена.
 
 ---
 
-## 8. Data research — ОТКРЫТ
+## 8. Data research — ОТКРЫТ И ЯВЛЯЕТСЯ СЛЕДУЮЩИМ ПРИОРИТЕТОМ
 
-СПАРК-пилот, новые признаки, связи, динамика и другие валидные источники информации остаются открытым направлением. Новый feature block формулируется только как проверяемая гипотеза с provenance и temporal admissibility; final test остаётся закрытым.
+Следующий приоритет: новые валидные признаки, СПАРК-пилот, связи, динамика,
+row-level temporal anchor при его появлении и presentation / defence evidence.
+Новый feature block формулируется только как проверяемая гипотеза с provenance и
+temporal admissibility; final test остаётся закрытым.
 
 Model research может быть открыт повторно при новом валидном feature source, row-level temporal anchor, сильном независимом противоречащем результате, новом business operating point или новой научной гипотезе, реально меняющей решение. Новый model shortlist ради количества не добавляется.
 

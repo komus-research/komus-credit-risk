@@ -229,11 +229,34 @@ Summary не должен превращаться в копию notebook или
 - Факт: RealMLP OOF Gini **0.793325**, GBDT_mean **0.806399**, Δ **-0.013074**; fold deltas отрицательны на **3/3** folds.
 - Решение: `inferior`; final test не использован.
 
-### Сводное решение после Stage 11
+### Stage 12 V1 — Research Synthesis Stage 1–11
+
+- Status: `completed_accepted`.
+- Notebook: `notebooks/12_Research_Synthesis_Stage_1_11_V1.ipynb`.
+- Summary: `reports/summary/stage12_research_synthesis_summary_V1.json`; evidence:
+  `reports/generated/stage12_research_synthesis_evidence_V1.json`.
+- Факт: synthesis закрепил цепочку Stage 1–12 на текущих 47 разрешённых признаках
+  без `Q_B1_norm` / `Q_B2_norm`: strong baseline, common blind spot **805**,
+  Stage 5 `material_missing_signal` и отсутствие evidence material solution от TabM,
+  stacking, FT-Transformer, rank complementarity, oracle/residual reserve и RealMLP.
+- Решение: `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`. Ещё одна model
+  architecture на том же feature contract имеет низкий ожидаемый information gain.
+  Это не доказывает математический потолок Gini, temporal stability, завершение
+  проекта или невозможность будущего улучшения.
+- Next priority: data research — валидные новые признаки, СПАРК-пилот, динамика,
+  связи, row-level temporal anchor при его появлении — и presentation / defence evidence.
+  Reopen conditions сохранены: новый валидный feature source; row-level temporal
+  anchor; сильный независимый противоречащий результат; новый business operating
+  point; новая научная гипотеза, реально меняющая решение.
+
+### Сводное решение после Stage 12
 
 `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`: model-only поиск на неизменных 47 признаках остановлен, поскольку дальнейший architecture search имеет низкий ожидаемый information gain. Evidence сильнее поддерживает information/feature limitation, чем недостаток проверенных architectures. Это не доказывает математический потолок Gini, невозможность будущего улучшения или temporal stability.
 
-Следующий record — Research Synthesis Stage 1–11: таблица итогов, evidence/figures, FACT / INTERPRETATION / LIMITATION, closed/blocked questions, reopen conditions и материалы для защиты. Model research открывается повторно только при новом валидном feature source, row-level temporal anchor, сильном независимом противоречащем результате, новом business operating point или новой научной гипотезе, реально меняющей решение.
+Следующий record относится к data research или presentation / defence evidence. Model
+research открывается повторно только при новом валидном feature source, row-level
+temporal anchor, сильном независимом противоречащем результате, новом business
+operating point или новой научной гипотезе, реально меняющей решение.
 
 ---
 

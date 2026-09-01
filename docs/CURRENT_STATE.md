@@ -251,7 +251,11 @@ Threshold и баланс FN/FP являются отдельной business pol
 
 ---
 
-## 12. Stage 6–11: закрытая model-only chain на 47 признаках
+## 12. Stage 1–12: завершённая и принятая model-research chain
+
+Stage 12 V1 — Research Synthesis Stage 1–11 — имеет статус `completed_accepted`.
+Он закрепляет принятую цепочку Stage 1–12 на текущих 47 разрешённых признаках без
+`Q_B1_norm` / `Q_B2_norm`; проект в целом при этом не завершён.
 
 | Stage | Проверка | Принятый факт / решение |
 | --- | --- | --- |
@@ -274,24 +278,28 @@ Model-only поиск на текущих 47 признаках остановл
 
 ---
 
-## 13. Следующий этап: Research Synthesis Stage 1–11
+## 13. Stage 12 V1 — принятый Research Synthesis
 
-Подготовить единый evidence package для презентации и защиты:
+Принятый synthesis объединяет evidence Stages 1–11: baseline без закрытых индексов,
+общую blind spot **805**, Stage 5 `material_missing_signal` и результаты TabM,
+stacking, FT-Transformer, rank complementarity, oracle/residual reserve и RealMLP.
+Ни одна из этих architecture-проверок на неизменном feature contract не дала evidence,
+что ещё одна architecture сама по себе снимает основное ограничение.
 
-- итоговую таблицу Stage 1–11;
-- проверенные evidence и figures;
-- разделение FACT / INTERPRETATION / LIMITATION;
-- реестр закрытых и blocked questions;
-- reopen conditions;
-- материалы для презентации/защиты.
+Следствие: ожидаемый information gain ещё одной model architecture на тех же 47
+признаках сейчас низкий. Это не является математическим потолком Gini, не доказывает
+temporal stability и не исключает будущего улучшения при новом основании.
 
-Evidence хранится в `notebooks/`, `reports/summary/`, `reports/generated/`, `reports/figures/` и реестре `docs/RESEARCH_RECORD.md`. Итоговый рассказ собирается по этим артефактам, не по памяти.
+Evidence хранится в `notebooks/`, `reports/summary/`, `reports/generated/`,
+`reports/figures/` и реестре `docs/RESEARCH_RECORD.md`.
 
 ---
 
-## 14. Открытый data research и условия повторного открытия model research
+## 14. Следующий приоритет: открытый data research и условия повторного открытия model research
 
-Data research остаётся открытым: СПАРК-пилот, новые признаки, связи, динамика и другие валидные источники информации могут снова открыть model research.
+Data research остаётся открытым. Следующий приоритет: новые валидные признаки,
+СПАРК-пилот, динамика и связи, row-level temporal anchor при его появлении, а также
+presentation / defence evidence. Эти направления могут снова открыть model research.
 
 Reopen conditions:
 

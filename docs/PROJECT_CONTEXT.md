@@ -282,7 +282,30 @@ Summary:
 
 ---
 
-## 8. Research evidence и будущая презентация
+## 8. Stage 12 V1 — принятый Research Synthesis Stage 1–11
+
+Stage 12 V1 имеет статус `completed_accepted`. Он завершает текущую model-research
+chain Stages 1–12 на 47 разрешённых признаках без `Q_B1_norm` / `Q_B2_norm`.
+
+Synthesis подтверждает сильный baseline без закрытых индексов, common blind spot
+**805** и вывод Stage 5 `material_missing_signal`. TabM, stacking, FT-Transformer,
+rank complementarity, oracle/residual reserve и RealMLP не дали evidence, что ещё
+одна architecture на неизменном feature contract решает основное ограничение.
+
+Статус: `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`. Ожидаемый information
+gain ещё одной architecture на тех же 47 признаках низок. Это не означает завершения
+проекта, доказанного математического Gini ceiling, temporal stability или невозможности
+будущего улучшения.
+
+Следующий приоритет: data research — новые валидные признаки, СПАРК-пилот, динамика,
+связи и row-level temporal anchor при его появлении — плюс presentation / defence
+evidence. Reopen conditions остаются: новый валидный feature source; row-level
+temporal anchor; сильный независимый противоречащий результат; новый business
+operating point; новая научная гипотеза, реально меняющая решение.
+
+---
+
+## 9. Research evidence и будущая презентация
 
 С 2026-08-20 введён отдельный контракт:
 
@@ -301,7 +324,7 @@ Summary:
 
 ---
 
-## 9. CPU, explainability и business policy
+## 10. CPU, explainability и business policy
 
 CPU — first-class критерий.
 
@@ -318,7 +341,7 @@ Explainability также обязательна. SHAP/permutation importance о
 
 ---
 
-## 10. Роль LLM
+## 11. Роль LLM
 
 Текущее решение: LLM не является кредитным predictor.
 
@@ -334,7 +357,7 @@ LLM не меняет рассчитанные метрики и не замен
 
 ---
 
-## 11. Текущие открытые вопросы
+## 12. Текущие открытые вопросы
 
 1. Утверждённое отношение/стоимость FN и FP.
 2. Допустимые локальные LLM и разрешение/запрет внешнего LLM API для обезличенных результатов.
@@ -342,11 +365,10 @@ LLM не меняет рассчитанные метрики и не замен
 4. Temporal validation для текущего `Data_final` невозможна без дополнительной исторической структуры.
 5. Формальная связь ошибок/threshold-сценариев с целью ПДЗ `15% → 10%`.
 6. Какие валидные новые источники информации и признаки доступны для data research (включая СПАРК-пилот, связи и динамику).
-7. Как собрать Research Synthesis Stage 1–11: итоговую таблицу, figures/evidence, FACT / INTERPRETATION / LIMITATION, closed/blocked questions, reopen conditions и материалы для защиты.
 
 ---
 
-## 12. Reopen conditions для model research
+## 13. Reopen conditions для model research
 
 Model research может быть открыт повторно только при одном из условий:
 
@@ -360,7 +382,7 @@ Model research может быть открыт повторно только п
 
 ---
 
-## 13. Приоритет источников
+## 14. Приоритет источников
 
 При расхождении:
 

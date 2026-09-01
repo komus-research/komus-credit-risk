@@ -1,7 +1,7 @@
 {
   "stage": "Stage 12",
   "version": "V1",
-  "status": "prepared_not_reviewed",
+  "status": "completed_accepted",
   "research_question": "Что Stage 1–11 действительно показали о качестве модели без Q_B1_norm/Q_B2_norm, основном ограничении текущего решения и ожидаемом information gain новой architecture на тех же 47 признаках?",
   "source_stages": [
     "Stage 1 V2", "Stage 2 V1", "Stage 3 V1", "Stage 4 V2", "Stage 5 V1",
