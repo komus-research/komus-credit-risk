@@ -116,44 +116,11 @@ function Read-ReviewState {
     catch { Stop-ReviewOperation 'Review snapshot повреждён. Выполните revs заново.' }
 }
 
-function Write-GitPostSnapshotPatch {
-    param([Parameter(Mandatory = $true)][string]$BeforeTree, [Parameter(Mandatory = $true)][string]$AfterTree, [Parameter(Mandatory = $true)][string]$PatchPath)
-    $ErrorPath = $PatchPath + '.stderr'
-    try {
-        $Process = Start-Process -FilePath 'git' -ArgumentList @('-c', 'core.quotepath=false', 'diff', '--binary', '--no-ext-diff', '--full-index', '-U0', $BeforeTree, $AfterTree, '--') -NoNewWindow -Wait -PassThru -RedirectStandardOutput $PatchPath -RedirectStandardError $ErrorPath
-        if ($Process.ExitCode -ne 0) {
-            $Details = if (Test-Path -LiteralPath $ErrorPath) { (Get-Content -LiteralPath $ErrorPath -Raw).Trim() } else { '' }
-            if ([string]::IsNullOrWhiteSpace($Details)) { $Details = "git завершился с кодом $($Process.ExitCode)" }
-            Stop-ReviewOperation "Git: $Details"
-        }
-    }
-    finally { Remove-Item -LiteralPath $ErrorPath -Force -ErrorAction SilentlyContinue }
-}
-
-function New-ReviewTree {
-    param([Parameter(Mandatory = $true)][string]$BeforeTree, [Parameter(Mandatory = $true)][string]$AfterTree, [AllowNull()][string]$Head, [Parameter(Mandatory = $true)][string]$HelperDir)
-    $PatchPath = Join-Path $HelperDir ('post-snapshot-' + [guid]::NewGuid().ToString('N') + '.diff')
-    $TemporaryIndex = Join-Path ([System.IO.Path]::GetTempPath()) ('review-helper-' + [guid]::NewGuid().ToString('N') + '.index')
-    $PreviousIndex = $env:GIT_INDEX_FILE
-    try {
-        Write-GitPostSnapshotPatch $BeforeTree $AfterTree $PatchPath
-        $env:GIT_INDEX_FILE = $TemporaryIndex
-        if ([string]::IsNullOrWhiteSpace($Head)) { Invoke-Git @('read-tree', '--empty') | Out-Null } else { Invoke-Git @('read-tree', $Head) | Out-Null }
-        $Applied = Invoke-Git @('apply', '--cached', '--whitespace=nowarn', $PatchPath) -AllowFailure
-        if ($Applied.ExitCode -ne 0) { Stop-ReviewOperation 'Не удалось точно перенести post-revs diff в review-ветку. Исправьте конфликт и выполните revs заново.' }
-        return (Invoke-Git @('write-tree')).Text.Trim()
-    }
-    finally {
-        if ($null -eq $PreviousIndex) { Remove-Item Env:GIT_INDEX_FILE -ErrorAction SilentlyContinue } else { $env:GIT_INDEX_FILE = $PreviousIndex }
-        Remove-Item -LiteralPath $PatchPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $TemporaryIndex -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath ($TemporaryIndex + '.lock') -Force -ErrorAction SilentlyContinue
-    }
-}
-function New-ReviewCommit {
-    param([Parameter(Mandatory = $true)][string]$Tree, [AllowNull()][string]$Head)
-    $Arguments = @('-c', 'user.name=Universal Review Helper', '-c', 'user.email=review-helper@localhost', 'commit-tree', $Tree, '-m', 'Review snapshot')
-    if (-not [string]::IsNullOrWhiteSpace($Head)) { $Arguments += @('-p', $Head) }
+function New-SyntheticCommit {
+    param([Parameter(Mandatory = $true)][string]$Tree, [AllowNull()][string]$Parent, [Parameter(Mandatory = $true)][string]$Message)
+    $Arguments = @('-c', 'user.name=Universal Review Helper', '-c', 'user.email=review-helper@localhost', 'commit-tree', $Tree)
+    if (-not [string]::IsNullOrWhiteSpace($Parent)) { $Arguments += @('-p', $Parent) }
+    $Arguments += @('-m', $Message)
     return (Invoke-Git $Arguments).Text.Trim()
 }
 
@@ -202,8 +169,13 @@ function Complete-ReviewCycle {
     if ((Invoke-Git @('check-ref-format', ('refs/heads/' + $ReviewBranch)) -AllowFailure).ExitCode -ne 0) { Stop-ReviewOperation 'Не удалось безопасно сформировать имя review-ветки.' }
     $Origin = Invoke-Git @('remote', 'get-url', 'origin') -AllowFailure
     if ($Origin.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($Origin.Text)) { Stop-ReviewOperation 'Remote origin не настроен. Review snapshot оставлен активным.' }
-    $ReviewTree = New-ReviewTree ([string]$State.baseline_tree) $CurrentTree $CurrentHead $HelperDir
-    $ReviewCommit = New-ReviewCommit $ReviewTree $CurrentHead
+    $HeadTree = Get-HeadTree $CurrentHead
+    $ReviewParent = $CurrentHead
+    if ([string]$State.baseline_tree -ne $HeadTree) {
+        $ReviewParent = New-SyntheticCommit ([string]$State.baseline_tree) $CurrentHead 'Review baseline (pre-existing local changes)'
+    }
+    $ReviewCommit = New-SyntheticCommit $CurrentTree $ReviewParent 'Review post-snapshot changes'
+    $ReviewRange = $ReviewParent + '..' + $ReviewCommit
     $PushSpec = $ReviewCommit + ':refs/heads/' + $ReviewBranch
     $Push = Invoke-Git @('push', 'origin', $PushSpec, ('--force-with-lease=refs/heads/' + $ReviewBranch)) -AllowFailure
     if ($Push.ExitCode -ne 0) { Stop-ReviewOperation 'Не удалось отправить review-ветку в origin. Review snapshot оставлен активным.' }
@@ -211,10 +183,10 @@ function Complete-ReviewCycle {
     $RepoName = Split-Path -Leaf $RepoRoot
     Write-Host ''
     Write-Host '========================================'; Write-Host 'REVIEW READY' -ForegroundColor Green; Write-Host ''
-    Write-Host "Repository: $RepoName"; Write-Host "Source branch: $($State.branch)"; Write-Host "Review branch: $ReviewBranch"; Write-Host "Base HEAD: $CurrentHead"; Write-Host "Review commit: $ReviewCommit"; Write-Host ''
+    Write-Host "Repository: $RepoName"; Write-Host "Source branch: $($State.branch)"; Write-Host "Review branch: $ReviewBranch"; Write-Host "Base HEAD: $CurrentHead"; Write-Host "Review commit: $ReviewCommit"; Write-Host "Review range: $ReviewRange"; Write-Host ''
     Write-Host "Files after revs: $($Entries.Count)"; foreach ($Entry in $Entries) { Write-Host "  $($Entry.Status)  $($Entry.Path)" }
     Write-Host ''; Write-Host 'git diff --check: PASS'; Write-Host 'Push: PASS'; Write-Host ''; Write-Host 'REVIEWER MESSAGE:' -ForegroundColor Cyan; Write-Host ''
-    Write-Host 'Проверь изменения в ветке:'; Write-Host $ReviewBranch; Write-Host ''; Write-Host 'Scope:'; Write-Host 'только изменения после review snapshot.'; Write-Host ''
+    Write-Host 'Проверь изменения в ветке:'; Write-Host $ReviewBranch; Write-Host ''; Write-Host 'Review range:'; Write-Host $ReviewRange; Write-Host ''; Write-Host 'Scope:'; Write-Host 'только изменения после review snapshot.'; Write-Host ''
     Write-Host 'Проверь:'; Write-Host '- соответствие задаче;'; Write-Host '- scope;'; Write-Host '- diff;'; Write-Host '- отсутствие unrelated changes;'; Write-Host '- ошибки/регрессии.'; Write-Host ''
     Write-Host 'Вердикт:'; Write-Host 'ACCEPT или FIX'; Write-Host '+ BLOCKER / MAJOR / MINOR / NOTE при наличии замечаний.'; Write-Host '========================================'; Write-Host ''
 }
