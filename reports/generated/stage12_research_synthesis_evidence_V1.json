@@ -56,6 +56,8 @@
     "notebooks/06_Сравнение_TabM_с_GBDT_baseline_V4.ipynb",
     "notebooks/07_TabM_поверх_GBDT_stacking_V1.ipynb",
     "notebooks/08_Сравнение_FT_Transformer_с_GBDT_baseline_V1.ipynb",
+    "notebooks/09_OOF_rank_capacity_blind_spot_rescue_V1.ipynb",
+    "notebooks/10_Residual_model_reserve_oracle_OOF_coverage_V1.ipynb",
     "notebooks/11_Сравнение_RealMLP_с_GBDT_baseline_V1.ipynb"
   ],
   "stage_versions_and_decisions": [

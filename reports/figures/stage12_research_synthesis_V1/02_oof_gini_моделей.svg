@@ -1,1 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="800" viewBox="0 0 1400 800"><style>text{font-family:Arial,sans-serif;fill:#172033}.h{font-size:29px;font-weight:700}.s{font-size:17px}.v{font-size:18px;font-weight:700}</style><rect width="1400" height="800" fill="white"/><text x="65" y="60" class="h">OOF Gini: baseline и проверенные model architectures</text><text x="65" y="92" class="s">Diagnostic Q_B1/Q_B2 намеренно не включены: это не production-кандидаты.</text><line x1="150" y1="650" x2="1310" y2="650" stroke="#26344d" stroke-width="2"/><line x1="150" y1="150" x2="150" y2="650" stroke="#26344d" stroke-width="2"/><text x="85" y="655" class="s">0.78</text><text x="85" y="505" class="s">0.79</text><text x="85" y="355" class="s">0.80</text><text x="85" y="205" class="s">0.81</text><g fill="#4c78a8"><rect x="210" y="240" width="100" height="410"/><rect x="360" y="250" width="100" height="400"/><rect x="510" y="260" width="100" height="390"/></g><rect x="660" y="204" width="100" height="446" fill="#237a57"/><rect x="810" y="630" width="100" height="20" fill="#c65d45"/><rect x="960" y="323" width="100" height="327" fill="#c65d45"/><rect x="1110" y="450" width="100" height="200" fill="#c65d45"/><g class="v"><text x="220" y="230">0.8038</text><text x="370" y="240">0.8040</text><text x="520" y="250">0.8034</text><text x="670" y="194">0.806399</text><text x="820" y="620">0.781310</text><text x="970" y="313">0.801528</text><text x="1120" y="440">0.793325</text></g><g class="s"><text x="205" y="690">CatBoost</text><text x="360" y="690">XGBoost</text><text x="505" y="690">LightGBM</text><text x="650" y="690">GBDT_mean</text><text x="835" y="690">TabM</text><text x="970" y="690">FT-Transformer</text><text x="1128" y="690">RealMLP</text></g><text x="150" y="750" class="s">Источник: Stage 1 V2, Stage 6 V4, Stage 7 V1, Stage 8 V1, Stage 11 V1 accepted summaries. Разные столбцы показывают Gini, а не Recall/rescue.</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="800" viewBox="0 0 1400 800" data-y-formula="y=650-(gini-0.78)/0.03*500">
+  <!-- Общая линейная шкала: y = 650 - (Gini - 0.78) / 0.03 * 500; height = 650 - y. -->
+  <style>text{font-family:Arial,sans-serif;fill:#172033}.h{font-size:29px;font-weight:700}.s{font-size:17px}.v{font-size:18px;font-weight:700}.grid{stroke:#d5ddea;stroke-width:1}</style>
+  <rect width="1400" height="800" fill="white"/>
+  <text x="65" y="60" class="h">OOF Gini: baseline и проверенные model architectures</text>
+  <text x="65" y="92" class="s">Diagnostic Q_B1/Q_B2 намеренно не включены: это не production-кандидаты.</text>
+  <line x1="150" y1="650" x2="1310" y2="650" stroke="#26344d" stroke-width="2"/>
+  <line x1="150" y1="150" x2="150" y2="650" stroke="#26344d" stroke-width="2"/>
+  <line x1="150" y1="500" x2="1310" y2="500" class="grid"/><line x1="150" y1="350" x2="1310" y2="350" class="grid"/><line x1="150" y1="200" x2="1310" y2="200" class="grid"/>
+  <text x="85" y="655" class="s">0.78</text><text x="85" y="505" class="s">0.79</text><text x="85" y="355" class="s">0.80</text><text x="85" y="205" class="s">0.81</text>
+  <g fill="#4c78a8">
+    <rect x="210" y="253.333" width="100" height="396.667" data-gini="0.8038"/>
+    <rect x="360" y="250" width="100" height="400" data-gini="0.8040"/>
+    <rect x="510" y="260" width="100" height="390" data-gini="0.8034"/>
+  </g>
+  <rect x="660" y="210.010" width="100" height="439.990" fill="#237a57" data-gini="0.8063993952124622"/>
+  <rect x="810" y="628.165" width="100" height="21.835" fill="#c65d45" data-gini="0.7813100835018467"/>
+  <rect x="960" y="291.193" width="100" height="358.807" fill="#c65d45" data-gini="0.8015284308453956"/>
+  <rect x="1110" y="427.918" width="100" height="222.082" fill="#c65d45" data-gini="0.7933249026702531"/>
+  <g class="v"><text x="220" y="243">0.8038</text><text x="370" y="240">0.8040</text><text x="520" y="250">0.8034</text><text x="670" y="200">0.806399</text><text x="820" y="618">0.781310</text><text x="970" y="281">0.801528</text><text x="1120" y="418">0.793325</text></g>
+  <g class="s"><text x="205" y="690">CatBoost</text><text x="360" y="690">XGBoost</text><text x="505" y="690">LightGBM</text><text x="650" y="690">GBDT_mean</text><text x="835" y="690">TabM</text><text x="970" y="690">FT-Transformer</text><text x="1128" y="690">RealMLP</text></g>
+  <text x="150" y="750" class="s">Источник: Stage 1 V2, Stage 6 V4, Stage 7 V1, Stage 8 V1, Stage 11 V1 accepted summaries. Столбцы показывают только Gini.</text>
+</svg>
