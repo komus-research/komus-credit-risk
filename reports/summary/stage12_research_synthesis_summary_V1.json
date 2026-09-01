@@ -1,0 +1,46 @@
+{
+  "stage": "Stage 12",
+  "version": "V1",
+  "status": "prepared_not_reviewed",
+  "research_question": "Что Stage 1–11 действительно показали о качестве модели без Q_B1_norm/Q_B2_norm, основном ограничении текущего решения и ожидаемом information gain новой architecture на тех же 47 признаках?",
+  "source_stages": [
+    "Stage 1 V2", "Stage 2 V1", "Stage 3 V1", "Stage 4 V2", "Stage 5 V1",
+    "Stage 6 V4", "Stage 7 V1", "Stage 8 V1", "Stage 9 V1", "Stage 10 V1", "Stage 11 V1"
+  ],
+  "core_model_research_status": "CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES",
+  "baseline_reference": {
+    "feature_contract": "47 разрешённых признаков без Q_B1_norm/Q_B2_norm",
+    "cv": "3-fold StratifiedKFold",
+    "seed": 42,
+    "oof_gini": {"XGBoost": 0.804, "CatBoost": 0.8038, "LightGBM": 0.8034},
+    "gbdt_mean_oof_gini": 0.8063993952124622
+  },
+  "blind_spot_size": 805,
+  "information_gap_decision": "material_missing_signal",
+  "model_search_conclusion": "На неизменном feature contract TabM, TabM stacking, FT-Transformer, rank complementarity, oracle/residual reserve и RealMLP не дали evidence, что новая architecture сама по себе решает основную blind spot. Ожидаемый information gain ещё одной architecture низок.",
+  "final_test_used": false,
+  "limitations": [
+    "Нет надёжной row-level observation date.",
+    "Random CV/OOF не доказывает temporal stability.",
+    "Final test не использовался для выбора модели.",
+    "Recall около 69% — business reference, а не оптимизированная цель.",
+    "Threshold и FN/FP policy отдельно не исследовались.",
+    "SHAP/importance не являются причинностью.",
+    "Oracle diagnostics не являются deployable model.",
+    "Q_B1/Q_B2 — diagnostic/reference signals, не predictors финальной модели."
+  ],
+  "reopen_conditions": [
+    "новый валидный feature source",
+    "надёжный row-level temporal anchor",
+    "сильный независимый противоречащий результат",
+    "изменение формального business objective",
+    "новая конкретная научная гипотеза, способная изменить проектное решение"
+  ],
+  "generated_artifacts": [
+    "notebooks/12_Research_Synthesis_Stage_1_11_V1.ipynb",
+    "reports/generated/stage12_research_synthesis_table_V1.csv",
+    "reports/generated/stage12_research_synthesis_evidence_V1.json",
+    "reports/summary/stage12_research_synthesis_summary_V1.json",
+    "reports/figures/stage12_research_synthesis_V1/"
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "stage": "Stage 12",
+  "version": "V1",
+  "status": "prepared_not_reviewed",
+  "synthesis_only": true,
+  "dataset_identity": {
+    "path": "Data_final.xlsb",
+    "sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+    "target": "DefMark",
+    "identifier": "INN",
+    "dataset_rows": 362018
+  },
+  "protocol_identity": {
+    "working_rows": 289614,
+    "final_test_rows": 72404,
+    "working_final_split": "80/20",
+    "features_total": 49,
+    "features_allowed": 47,
+    "excluded_features": ["Q_B1_norm", "Q_B2_norm"],
+    "cv": "3-fold StratifiedKFold",
+    "seed": 42,
+    "working_index_sha256": "80430ce6290d0982d3641621ba1ed62f6fb495e8d32f7d23d9fca00091aadb45",
+    "stage3_oof_sha256": "faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac",
+    "final_test_used": false
+  },
+  "source_artifacts": [
+    {"stage": "Stage 1", "version": "V2", "path": "reports/summary/stage1_baseline_summary_V2.json", "sha256": "909df4c35109d44adc689729d6cd63f33c08cbdf0e7c98420d02a6430404bd90", "role": "accepted baseline summary"},
+    {"stage": "Stage 1", "version": "V2", "path": "reports/generated/stage1_baseline_results_V2.json", "sha256": "d5f54f3698cd3c11be93e0de8d1736a421706d2d20017ec622e1092689284a7e", "role": "accepted result"},
+    {"stage": "Stage 2", "version": "V1", "path": "reports/summary/stage2_explainability_summary_V1.json", "sha256": "3353b70668415f11410dac49875ae10d12a8231747c59692da338d247c410138", "role": "accepted summary"},
+    {"stage": "Stage 2", "version": "V1", "path": "reports/generated/stage2_explainability_results_V1.json", "sha256": "2fbd6e3247b88f154d3469dd5440051f8fc838da9d5ece0a2df76a0fb8d68e64", "role": "accepted result"},
+    {"stage": "Stage 3", "version": "V1", "path": "reports/summary/stage3_error_analysis_summary_V1.json", "sha256": "2cbc19c734020a8ca44e204f4ee59b977b7c12b83f99e0a441ff68190aaf04e5", "role": "accepted summary"},
+    {"stage": "Stage 3", "version": "V1", "path": "reports/generated/stage3_error_analysis_results_V1.json", "sha256": "3630a42513a9ff264ce32221b78bff2e4c38271b4e0089836ae6758f20206dad", "role": "accepted result"},
+    {"stage": "Stage 4", "version": "V2", "path": "reports/summary/stage4_closed_signal_summary_V2.json", "sha256": "3e458bf0d4d048bba7d473238673f942cffc74452b5958489d15a9608bc6d5c8", "role": "accepted summary; V2 only"},
+    {"stage": "Stage 4", "version": "V2", "path": "reports/generated/stage4_closed_signal_diagnostics_V2.json", "sha256": "2dee2c07bb62afb560d9b852371c9ae6e52f737c9336e2b615783f8795c1cdca", "role": "accepted result; V2 only"},
+    {"stage": "Stage 5", "version": "V1", "path": "reports/summary/stage5_qb2_proxy_audit_summary_V1.json", "sha256": "7c17acbe5bde25f37976c84255418228aedf4a7ba53a4deacf58bc8e6321aef7", "role": "accepted summary"},
+    {"stage": "Stage 5", "version": "V1", "path": "reports/generated/stage5_qb2_proxy_audit_V1.json", "sha256": "e606d8866f917a3dc06d9755b7d4225b2a2fc7f984f8997607fb53de1ca2b4bc", "role": "accepted result"},
+    {"stage": "Stage 6", "version": "V4", "path": "reports/summary/stage6_tabm_summary_V4.json", "sha256": "0e57505c960f16878fec733cf51fa341f583060b5adb2eded06e911203bd32e6", "role": "accepted summary; V4 only"},
+    {"stage": "Stage 6", "version": "V4", "path": "reports/generated/stage6_tabm_results_V4.json", "sha256": "1d27d9d9ab2cefcaa4aaf7cc269d5dcf19650bed3024975f7220cfbaff612ed1", "role": "accepted result; V4 only"},
+    {"stage": "Stage 7", "version": "V1", "path": "reports/summary/stage7_tabm_stacking_summary_V1.json", "sha256": "4812423441482363683832449d769aa953932651180541fcf51f60c4c25ba94e", "role": "accepted summary"},
+    {"stage": "Stage 7", "version": "V1", "path": "reports/generated/stage7_tabm_stacking_results_V1.json", "sha256": "5d268847d9b2025bcaa9e82444a5c2dff70d1d190da814b90fe82686d380a681", "role": "accepted result"},
+    {"stage": "Stage 8", "version": "V1", "path": "reports/summary/stage8_ft_transformer_summary_V1.json", "sha256": "c10c6d666eb1cd074b18637a8844676200311cec51f7385570b17d33638c8ff5", "role": "accepted summary"},
+    {"stage": "Stage 8", "version": "V1", "path": "reports/generated/stage8_ft_transformer_results_V1.json", "sha256": "a93ce8b9cc3983b7a90df6142cd3fdfc3ed80d93ad406e498259bc1dd5a91e66", "role": "accepted result"},
+    {"stage": "Stage 9", "version": "V1", "path": "reports/summary/stage9_rank_capacity_summary_V1.json", "sha256": "79e8eeaaed8ac3c10693d3db5cbc5a92a58784d9fae6a23895bf3f20185594e6", "role": "accepted summary"},
+    {"stage": "Stage 9", "version": "V1", "path": "reports/generated/stage9_rank_capacity_results_V1.json", "sha256": "0800567d7c2c69ff95ef99724d53d8d17ea7bf6f7ee2246cddebeb1bcaecaf8e", "role": "accepted result"},
+    {"stage": "Stage 10", "version": "V1", "path": "reports/summary/stage10_residual_model_reserve_summary_V1.json", "sha256": "49f08dda676a90d57f26eb8519876114447de2b53ebfc536c91e8fb91b6acdf4", "role": "accepted summary"},
+    {"stage": "Stage 10", "version": "V1", "path": "reports/generated/stage10_residual_model_reserve_results_V1.json", "sha256": "7654649517dedc6e15347543074aa9558e81c64431518624bc7e4cb518549720", "role": "accepted result"},
+    {"stage": "Stage 11", "version": "V1", "path": "reports/summary/stage11_realmlp_summary_V1.json", "sha256": "ba81627767ec2afea36cf23de53f4386c3bbac030da141878121d447cb36ecdd", "role": "accepted summary"},
+    {"stage": "Stage 11", "version": "V1", "path": "reports/generated/stage11_realmlp_results_V1.json", "sha256": "90c5f476a2a93ebfaf06496cd0fe0d1782b88f20d6d3ce04c481ce5baf2d746b", "role": "accepted result"}
+  ],
+  "source_notebooks": [
+    "notebooks/01_Новый_baseline_без_Q_B1_Q_B2_V2.ipynb",
+    "notebooks/02_Explainability_допустимых_признаков_V1.ipynb",
+    "notebooks/03_Анализ_ошибок_и_потерянного_сигнала_V1.ipynb",
+    "notebooks/04_Диагностика_потерянного_сигнала_Q_B1_Q_B2_V2.ipynb",
+    "notebooks/05_Аудит_proxy-сигнала_Q_B2_разрешёнными_признаками_V1.ipynb",
+    "notebooks/06_Сравнение_TabM_с_GBDT_baseline_V4.ipynb",
+    "notebooks/07_TabM_поверх_GBDT_stacking_V1.ipynb",
+    "notebooks/08_Сравнение_FT_Transformer_с_GBDT_baseline_V1.ipynb",
+    "notebooks/11_Сравнение_RealMLP_с_GBDT_baseline_V1.ipynb"
+  ],
+  "stage_versions_and_decisions": [
+    {"stage": "Stage 1", "version": "V2", "decision": "baseline_accepted"},
+    {"stage": "Stage 2", "version": "V1", "decision": "consensus_feature_core_accepted"},
+    {"stage": "Stage 3", "version": "V1", "decision": "common_blind_spot_localized"},
+    {"stage": "Stage 4", "version": "V2", "decision": "Q_B2_diagnostic_preferred_for_blind_spot"},
+    {"stage": "Stage 5", "version": "V1", "decision": "material_missing_signal"},
+    {"stage": "Stage 6", "version": "V4", "decision": "inferior"},
+    {"stage": "Stage 7", "version": "V1", "decision": "no_material_benefit"},
+    {"stage": "Stage 8", "version": "V1", "decision": "no_material_benefit"},
+    {"stage": "Stage 9", "version": "V1", "decision": "no_material_rank_complementarity"},
+    {"stage": "Stage 10", "version": "V1", "decision": "limited_residual_model_reserve"},
+    {"stage": "Stage 11", "version": "V1", "decision": "inferior"}
+  ],
+  "key_evidence": {
+    "baseline_oof_gini": {"XGBoost": 0.804, "CatBoost": 0.8038, "LightGBM": 0.8034},
+    "gbdt_mean_oof_gini": 0.8063993952124622,
+    "blind_spot": {"working_defaults": 28015, "deeply_missed_defaults": 1278, "common_blind_spot": 805, "strong_intermodel_disagreement_pct": 1.9},
+    "stage5_information_gap": {"oracle_q_b2_blind_auc": 0.7233817896667458, "proxy_blind_auc": 0.39805610212909665, "auc_gap": 0.3253256875376492, "decision": "material_missing_signal"},
+    "model_architecture_chain": {"tabm_gini": 0.7813100835018467, "ft_transformer_gini": 0.8015284308453956, "realmlp_gini": 0.7933249026702531, "realmlp_delta_gini": -0.013074492542209049, "ft_rescue_30pct": "9/805", "oracle_any_rescue_30pct": "15/805", "oracle_any_effective_union_capacity_pct": 37.446394166027885}
+  },
+  "final_test_used": false
+}
