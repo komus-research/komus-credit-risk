@@ -22,6 +22,15 @@ function Remove-ManagedBlock {
         $Text = $Text.Remove($startAt,($endAt + $End.Length) - $startAt)
     }
 }
+function Resolve-GhPath {
+    param([string]$ConfiguredPath)
+    $command = Get-Command gh -ErrorAction SilentlyContinue
+    if ($command -and (Test-Path -LiteralPath $command.Source -PathType Leaf)) { return [IO.Path]::GetFullPath($command.Source) }
+    foreach ($candidate in @($ConfiguredPath, (Join-Path $env:ProgramFiles 'GitHub CLI\gh.exe'), (Join-Path ${env:ProgramFiles(x86)} 'GitHub CLI\gh.exe'))) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate -PathType Leaf)) { return [IO.Path]::GetFullPath($candidate) }
+    }
+    return $null
+}
 function Get-ProfileBlock {
     param([string]$Helper,[string]$Config,[string]$Review)
     $h=$Helper.Replace("'","''"); $c=$Config.Replace("'","''"); $r=$Review.Replace("'","''")
@@ -64,7 +73,10 @@ try {
     $runtimeHelper=Join-Path $RuntimeRoot 'komus-git.ps1'; $runtimeReview=Join-Path $RuntimeRoot 'review.ps1'; $configPath=Join-Path $RuntimeRoot 'config.json'
     Copy-Item -LiteralPath $sourceHelper -Destination $runtimeHelper -Force
     $sourceReview=Join-Path $PSScriptRoot 'review.ps1'; if (Test-Path -LiteralPath $sourceReview -PathType Leaf) { Copy-Item -LiteralPath $sourceReview -Destination $runtimeReview -Force }
-    $config=[ordered]@{ working_repo=[IO.Path]::GetFullPath($WorkingRepo); institute_repo=[IO.Path]::GetFullPath($InstituteRepo); working_remote_url='https://github.com/komus-research/komus-credit-risk.git'; institute_remote_url='https://github.com/AIUniverstorage/commus.git'; institute_base_branch='Data_Komus'; institute_prefix='credit-scoring' }
+    $oldGhPath = $null
+    if (Test-Path -LiteralPath $configPath -PathType Leaf) { try { $oldGhPath = (Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json).gh_path } catch { } }
+    $ghPath = Resolve-GhPath ([string]$oldGhPath)
+    $config=[ordered]@{ working_repo=[IO.Path]::GetFullPath($WorkingRepo); institute_repo=[IO.Path]::GetFullPath($InstituteRepo); working_remote_url='https://github.com/komus-research/komus-credit-risk.git'; institute_remote_url='https://github.com/AIUniverstorage/commus.git'; institute_base_branch='Data_Komus'; institute_prefix='credit-scoring'; gh_path=$ghPath }
     [IO.File]::WriteAllText($configPath,($config | ConvertTo-Json -Depth 4),(New-Object Text.UTF8Encoding($true)))
     if (-not $ProfilePath -or $ProfilePath.Count -eq 0) { $ProfilePath=@([string]$PROFILE.CurrentUserAllHosts,[string]$PROFILE.CurrentUserCurrentHost) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique }
     $block=Get-ProfileBlock $runtimeHelper $configPath $runtimeReview
@@ -74,6 +86,6 @@ try {
         $new=(Remove-ManagedBlock $old '# >>> KOMUS GIT HELPER >>>' '# <<< KOMUS GIT HELPER <<<').TrimEnd(); if ($new) { $new += [Environment]::NewLine + [Environment]::NewLine }
         [IO.File]::WriteAllText($path,$new+$block+[Environment]::NewLine,(New-Object Text.UTF8Encoding($true)))
     }
-    Write-Host ''; Write-Host 'INSTALLATION COMPLETE' -ForegroundColor Green; Write-Host "Working repository: $($config.working_repo)"; Write-Host "Institute repository: $($config.institute_repo)"; Write-Host 'Commands: kpush, kinst, revs, revp'; Write-Host 'Reload this terminal with: . $PROFILE' -ForegroundColor Cyan; Write-Host ''
+    Write-Host ''; Write-Host 'INSTALLATION COMPLETE' -ForegroundColor Green; Write-Host "Working repository: $($config.working_repo)"; Write-Host "Institute repository: $($config.institute_repo)"; if ($ghPath) { Write-Host "GitHub CLI: $ghPath" }; Write-Host 'Commands: kpush, kinst, revs, revp'; Write-Host 'Reload this terminal with: . $PROFILE' -ForegroundColor Cyan; Write-Host ''
 }
 catch { Write-Host ''; Write-Host 'KOMUS Git Helper installation failed.' -ForegroundColor Red; Write-Host $_.Exception.Message; exit 1 }
