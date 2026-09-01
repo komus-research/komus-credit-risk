@@ -12,9 +12,11 @@
 
 ### D-001 — Основной репозиторий `komus-credit-risk`
 
-Создан отдельный private GitHub repository `alekseeva943-cloud/komus-credit-risk`.
+Текущий рабочий repository: `komus-research/komus-credit-risk`; рабочая ветка: `main`; локальная папка: `D:\Projects\komus-work`.
 
-Причина: новый этап должен иметь собственную воспроизводимую историю кода и решений, независимую от Colab-файлов и прошлых чатов.
+Историческая ссылка на personal repository более не является source of truth. `AIUniverstorage/commus` является repository Института / integration point, но не ежедневным research source of truth.
+
+Причина: исследование должно иметь собственную воспроизводимую историю кода и решений, независимую от Colab-файлов, прошлых чатов и интеграционных копий.
 
 ### D-002 — Основная среда VS Code + Git + GitHub + local venv + Jupyter
 
@@ -428,4 +430,31 @@ Stage 5 V1 закрыт со статусом `completed_accepted`. В рамк�
 
 Повторный ML-run для formal closure не требуется: решение опирается на уже сохранённые notebook outputs и machine-readable артефакты. Final test не использовался.
 
-Следствие: следующее направление исследования — проверить один новый внешний feature block. Это не является выбором конкретного источника или проектированием Stage 6.
+Следствие уточнено решениями Stages 6–11: data research остаётся открытым, но model-only architecture search на неизменных 47 признаках прекращён до появления valid reopen condition.
+
+---
+
+## 2026-09-01
+
+### D-046 — Остановить model-only search на текущих 47 признаках после Stage 11
+
+Принято решение:
+
+`CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`
+
+Evidence chain:
+
+- Stage 6 TabM standalone — inferior (OOF Gini **0.781310**);
+- Stage 7 TabM stacking — `no_material_benefit`, GBDT_mean **0.806399**;
+- Stage 8 FT-Transformer — `no_material_benefit`;
+- Stage 9 rank complementarity — FT rescue **9/805** против **0/805** у GBDT_mean, ниже material threshold;
+- Stage 10 oracle/residual reserve — **15/805**, Δ **+1.863 п.п.**, effective union capacity **37.446%**, `limited_residual_model_reserve`;
+- Stage 11 RealMLP — Gini **0.793325** против **0.806399**, Δ **-0.013074**, проигрыш **3/3** folds, `inferior`.
+
+Решение означает только то, что дальнейший model-only architecture search на текущем feature set имеет низкий ожидаемый information gain. Совокупность evidence сильнее поддерживает information/feature limitation, чем недостаток проверенных architectures.
+
+Решение не означает завершение проекта, доказанный математический потолок Gini или невозможность будущей более сильной модели. Оно также не снимает ограничение random CV: temporal stability не доказана.
+
+Следующий этап — Research Synthesis Stage 1–11 с итоговой таблицей, evidence/figures, FACT / INTERPRETATION / LIMITATION, закрытыми и blocked questions, reopen conditions и материалами для презентации/защиты.
+
+Data research остаётся открытым: СПАРК-пилот, новые признаки, связи, динамика и другие валидные источники информации могут открыть model research повторно. Reopen conditions: новый валидный feature source; row-level temporal anchor; сильный независимый противоречащий результат; новый business operating point; либо новая научная гипотеза, реально меняющая решение. Новый model shortlist ради количества не создаётся.

@@ -4,7 +4,7 @@
 
 Актуальная точка входа в проект. Обновляется после завершения значимого исследовательского этапа, изменения требований заказчика или смены source of truth.
 
-Дата фиксации: **2026-08-20**.
+Дата фиксации: **2026-09-01**.
 
 ---
 
@@ -31,15 +31,19 @@
 - локальная `.venv`;
 - Jupyter в VS Code.
 
-Репозиторий:
+Рабочий репозиторий:
 
-`alekseeva943-cloud/komus-credit-risk`
+`komus-research/komus-credit-risk`
 
-Текущая удалённая исследовательская ветка:
+Рабочая ветка:
 
-`research/stage5-qb2-proxy-audit`
+`main`
 
-На 2026-08-20 в эту ветку дополнительно внесены GitHub-изменения документации и summary-артефактов. Перед следующим локальным изменением пользователь должен сначала синхронизировать локальный checkout с `origin/research/stage5-qb2-proxy-audit` и заново проверить branch/HEAD/status.
+Локальная рабочая папка:
+
+`D:\Projects\komus-work`
+
+`AIUniverstorage/commus` — репозиторий Института / integration point, а не ежедневный research source of truth. Перед локальным изменением проверяются фактические branch/HEAD/status. При расхождении текущий repo, notebooks и accepted artifacts имеют приоритет над stale docs, старыми чатами и памятью.
 
 Colab остаётся дополнительной средой, но не source of truth текущего кода.
 
@@ -263,7 +267,22 @@ Summary:
 
 ---
 
-## 7. Research evidence и будущая презентация
+## 7. Stage 6–11: модельная проверка на текущих 47 признаках
+
+Все Stages использовали locked 47-feature protocol; final test не использовался.
+
+- Stage 6 V4: TabM standalone, OOF Gini **0.781310** — inferior.
+- Stage 7 V1: TabM stacking, GBDT_mean **0.806399**, hybrid **0.804260** — `no_material_benefit`.
+- Stage 8 V1: FT-Transformer, OOF Gini **0.801528**, Δ **-0.004871** к GBDT_mean — `no_material_benefit`.
+- Stage 9 V1: rank complementarity при capacity 30% — FT rescue **9/805**, GBDT_mean **0/805**; прирост ниже material threshold.
+- Stage 10 V1: oracle/residual reserve — **15/805**, Δ **+1.863 п.п.**, effective union capacity **37.446%** — `limited_residual_model_reserve`.
+- Stage 11 V1: RealMLP, OOF Gini **0.793325** против **0.806399** у GBDT_mean, Δ **-0.013074**; отрицательная разница на **3/3** folds — `inferior`.
+
+Решение: `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`. Architecture search без нового информационного основания на текущих 47 признаках остановлен: его ожидаемый information gain низок. Evidence сильнее поддерживает information/feature limitation, чем дефицит проверенных architectures. Это не доказывает математический потолок Gini, невозможность лучшей модели в будущем или temporal stability.
+
+---
+
+## 8. Research evidence и будущая презентация
 
 С 2026-08-20 введён отдельный контракт:
 
@@ -282,7 +301,7 @@ Summary:
 
 ---
 
-## 8. CPU, explainability и business policy
+## 9. CPU, explainability и business policy
 
 CPU — first-class критерий.
 
@@ -299,7 +318,7 @@ Explainability также обязательна. SHAP/permutation importance о
 
 ---
 
-## 9. Роль LLM
+## 10. Роль LLM
 
 Текущее решение: LLM не является кредитным predictor.
 
@@ -315,18 +334,33 @@ LLM не меняет рассчитанные метрики и не замен
 
 ---
 
-## 10. Текущие открытые вопросы
+## 11. Текущие открытые вопросы
 
 1. Утверждённое отношение/стоимость FN и FP.
 2. Допустимые локальные LLM и разрешение/запрет внешнего LLM API для обезличенных результатов.
 3. В сообщении заказчика упоминаются «7 внешних признаков 100% дефолта», но подтверждено только 6 внешних факторов; седьмой не додумывать.
 4. Temporal validation для текущего `Data_final` невозможна без дополнительной исторической структуры.
 5. Формальная связь ошибок/threshold-сценариев с целью ПДЗ `15% → 10%`.
-6. После закрытия Stage 5 — какой **один новый внешний feature block** первым проверять как источник недостающего blind-spot сигнала.
+6. Какие валидные новые источники информации и признаки доступны для data research (включая СПАРК-пилот, связи и динамику).
+7. Как собрать Research Synthesis Stage 1–11: итоговую таблицу, figures/evidence, FACT / INTERPRETATION / LIMITATION, closed/blocked questions, reopen conditions и материалы для защиты.
 
 ---
 
-## 11. Приоритет источников
+## 12. Reopen conditions для model research
+
+Model research может быть открыт повторно только при одном из условий:
+
+1. новый валидный feature source;
+2. row-level temporal anchor;
+3. сильный независимый противоречащий результат;
+4. новый business operating point;
+5. новая научная гипотеза, реально меняющая решение.
+
+Новый model shortlist ради количества не создаётся.
+
+---
+
+## 13. Приоритет источников
 
 При расхождении:
 
