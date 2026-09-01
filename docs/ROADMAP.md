@@ -6,7 +6,7 @@
 
 Перед крупным изменением проверяются branch/HEAD/status, данные и affected artifacts. Исследовательский Stage закрывается только после review результата и сохранения evidence package по правилам `docs/RESEARCH_RECORD.md`.
 
-Дата актуализации: **2026-08-20**.
+Дата актуализации: **2026-09-01**.
 
 ---
 
@@ -14,7 +14,8 @@
 
 Создан и проверен рабочий контур:
 
-- private GitHub repository `alekseeva943-cloud/komus-credit-risk`;
+- рабочий GitHub repository `komus-research/komus-credit-risk` на ветке `main`;
+- локальная рабочая папка `D:\Projects\komus-work`;
 - VS Code + Git + GitHub;
 - Python 3.12.2 + `uv` + `.venv` + Jupyter;
 - historical notebook №06 сохранён как frozen baseline;
@@ -28,6 +29,8 @@
 Проект можно открыть локально, однозначно определить environment/repository state и воспроизвести исследовательский путь без зависимости от Colab как source of truth.
 
 Критерий выполнен.
+
+`AIUniverstorage/commus` является repository Института / integration point, но не ежедневным research source of truth.
 
 ---
 
@@ -203,110 +206,47 @@ Stage 5 V1 имеет статус `completed_accepted`; `decision_class = mater
 
 ---
 
-## 6. Новый внешний feature block для blind spot — БУДУЩЕЕ НАПРАВЛЕНИЕ; STAGE 6 НЕ НАЧАТ
+## 6. Stage 6–11: model-only research на текущих 47 признаках — ЗАВЕРШЁН
 
-### Предварительный исследовательский вопрос
+| Stage | Направление | Результат |
+| --- | --- | --- |
+| 6 V4 | TabM standalone | OOF Gini **0.781310**; inferior. |
+| 7 V1 | TabM stacking | GBDT_mean **0.806399**, hybrid **0.804260**; `no_material_benefit`. |
+| 8 V1 | FT-Transformer | Gini **0.801528**, Δ **-0.004871**; `no_material_benefit`. |
+| 9 V1 | rank complementarity | FT rescue **9/805**, GBDT_mean **0/805** при 30%; ниже material threshold. |
+| 10 V1 | oracle/residual reserve | **15/805**, Δ **+1.863 п.п.**, effective union capacity **37.446%**; `limited_residual_model_reserve`. |
+| 11 V1 | RealMLP | Gini **0.793325** против **0.806399**, Δ **-0.013074**, проигрыш **3/3** folds; `inferior`. |
 
-Какой **один** новый прозрачный внешний feature block способен добавить информацию, которой нет в текущих 47 признаках, и улучшить ранжирование/coverage общей blind spot без использования закрытых `Q_B1/Q_B2`?
+Final test не использовался. Числа берутся из accepted artifacts `reports/summary/` и `reports/generated/`.
 
-### Приоритет направления
-
-На основании Stage 5 текущий приоритет — внешние сигналы должной осмотрительности / негативных событий, которые доступны до даты оценки и имеют проверяемый provenance.
-
-Конкретный блок ещё не выбран; его выбор и проектирование отдельного Stage 6 не выполнены.
-
-### Правило
-
-Одна связанная группа новых признаков → один controlled experiment → сравнение с baseline/OOF blind-spot diagnostics при неизменном split/CV/seed.
-
-Final test остаётся закрытым.
+Решение: `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`. Новый architecture search на неизменных 47 признаках не планируется: ожидаемый information gain низок. Это не является утверждением о завершении проекта, доказанном потолке Gini или невозможности более сильной модели при новых основаниях.
 
 ---
 
-## 7. Современные CPU-подходы — ПЛАНИРУЕТСЯ
+## 7. Research Synthesis Stage 1–11 — ТЕКУЩИЙ ЭТАП
 
-После проработки информационного gap исследуется минимум один содержательно иной CPU-подход относительно GBDT.
+Собрать presentation-ready evidence package:
 
-Перед реализацией проводится актуальный research по первичным источникам и фиксируется:
-
-- гипотеза;
-- отличие от GBDT;
-- CPU feasibility;
-- explainability;
-- контролируемый evaluation protocol.
-
-Не создаётся длинный leaderboard ради количества моделей.
+- итоговую таблицу Stage 1–11;
+- проверенные figures и evidence;
+- FACT / INTERPRETATION / LIMITATION;
+- закрытые и blocked questions;
+- reopen conditions;
+- материалы для презентации и защиты.
 
 ---
 
-## 8. Stability и controlled tuning — ПЛАНИРУЕТСЯ
+## 8. Data research — ОТКРЫТ
 
-Только после определения сильного feature/model candidate:
+СПАРК-пилот, новые признаки, связи, динамика и другие валидные источники информации остаются открытым направлением. Новый feature block формулируется только как проверяемая гипотеза с provenance и temporal admissibility; final test остаётся закрытым.
 
-- seed stability;
-- bootstrap;
-- ограниченный parameter search/Optuna;
-- calibration;
-- class weights только под отдельную гипотезу.
-
-Tuning не используется как бесконечный способ добывать тысячные без исследовательского смысла.
+Model research может быть открыт повторно при новом валидном feature source, row-level temporal anchor, сильном независимом противоречащем результате, новом business operating point или новой научной гипотезе, реально меняющей решение. Новый model shortlist ради количества не добавляется.
 
 ---
 
-## 9. Business Policy Engine — ПЛАНИРУЕТСЯ
+## 9. Business Policy / delivery — ПОСЛЕ SYNTHESIS И ПРИ НАЛИЧИИ ОСНОВАНИЯ
 
-Модель выдаёт probability, а business policy применяется отдельно:
-
-- manual threshold;
-- `C_FN/C_FP` или ratio;
-- manual review capacity;
-- review minutes per company;
-- FP/FN/Recall/Precision/cost/human-hours scenarios.
-
-Цель ПДЗ `15% → 10%` не превращается в выдуманную cost function без подтверждения заказчика.
-
----
-
-## 10. `ExperimentRunner` и reusable ML-core — ПЛАНИРУЕТСЯ ПО МЕРЕ ПОЯВЛЕНИЯ СТАБИЛЬНОЙ ПОВТОРЯЕМОЙ ЛОГИКИ
-
-Постепенно выносятся:
-
-- dataset validation/hash;
-- feature registry;
-- model registry;
-- CV/OOF;
-- metrics;
-- runtime;
-- artifact contract;
-- explainability;
-- experiment signature.
-
-Notebook остаётся research narrative.
-
----
-
-## 11. Backend / frontend / LLM Result Interpreter — ПОСЛЕ СТАБИЛИЗАЦИИ EXPERIMENT CORE
-
-Направление:
-
-`notebooks → reusable ML/data logic → ExperimentRunner → backend → frontend`
-
-LLM остаётся post-processing interpreter и не принимает кредитное решение.
-
----
-
-## 12. Итоговый отчёт и презентация — СОБИРАЮТСЯ ИЗ RESEARCH EVIDENCE
-
-Подготовка защиты не должна требовать заново восстанавливать историю экспериментов.
-
-Источник:
-
-- `docs/RESEARCH_RECORD.md`;
-- `reports/summary/`;
-- актуальные domain docs;
-- выбранные проверенные графики/таблицы из notebooks.
-
-Ближе к защите создаётся отдельный небольшой каталог финальных иллюстраций, а не коммитится весь `reports/generated/`.
+Business policy, reusable ML-core, backend/frontend и LLM Result Interpreter развиваются только по подтверждённой потребности. LLM остаётся post-processing interpreter и не принимает кредитное решение.
 
 ---
 

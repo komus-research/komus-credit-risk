@@ -1,9 +1,20 @@
 # KOMUS — CURRENT STATE
 
-Дата фиксации: **2026-08-26**
+Дата фиксации: **2026-09-01**
 
 Этот файл содержит только актуальное подтверждённое состояние проекта.
 Он обновляется после принятого исследовательского этапа или существенного изменения требований.
+
+---
+
+## Source of truth и рабочая среда
+
+- Рабочий репозиторий: `komus-research/komus-credit-risk`.
+- Рабочая ветка: `main`.
+- Локальная рабочая папка: `D:\Projects\komus-work`.
+- Точный `HEAD` и `git status` проверяются непосредственно перед изменением; они не фиксируются в этом документе.
+
+`AIUniverstorage/commus` — репозиторий Института и integration point, но не ежедневный source of truth для research. Фактические файлы текущего репозитория, accepted artifacts и notebooks имеют приоритет над stale docs, чатами и памятью.
 
 ---
 
@@ -220,63 +231,6 @@ Decision:
 
 ---
 
-## 10. Stage 6 V4 — TabM
-
-Статус: **ЗАВЕРШЁН И ПРИНЯТ**
-
-### FACTS
-
-* Выполнены **3/3** outer folds; runtime: **31 332.65 сек** (≈ **8 ч 42 мин**).
-* Полный OOF TabM: Gini **0.781310**, ROC-AUC **0.890655**, PR-AUC **0.567993**, Precision **0.737602**, Recall **0.280850**, F1 **0.406804**.
-* Delta TabM vs XGBoost: Gini **-0.022680**, ROC-AUC **-0.011340**, PR-AUC **-0.031280**, Precision **+0.025347**, Recall **-0.087596**, F1 **-0.078857**.
-* Final test не использован.
-
-### INTERPRETATION
-
-TabM уступила XGBoost baseline по Gini, ROC-AUC, PR-AUC, Recall и F1 на всех трёх folds; Precision выше. Stage 6 закрыт: оснований заменять GBDT baseline на TabM в текущем 47-feature protocol нет.
-
-### LIMITATIONS
-
-Random CV не доказывает temporal stability. Три фолда не являются statistical significance claim. Порог 0.5 диагностический. Final test не использован.
-
-### NEXT STEP
-
-Перейти к следующему отдельному исследовательскому вопросу по controlled experiment; новый TabM run не выполнять.
-
----
-
-## Stage 7 V1 — TabM поверх GBDT
-
-Статус: **ЗАВЕРШЁН И ПРИНЯТ**
-
-### FACTS
-
-* B* = **GBDT_mean**; его OOF Gini: **0.806399**.
-* Hybrid TabM OOF: Gini **0.804260**, ROC-AUC **0.902130**, PR-AUC **0.605662**, Precision **0.719060**, Recall **0.375585**, F1 **0.493435**.
-* Delta vs B*: Gini **-0.002139**, ROC-AUC **-0.001070**, PR-AUC **+0.001805**, Precision **-0.005566**, Recall **+0.011422**, F1 **+0.008710**.
-* Gini hybrid ниже B* на всех трёх outer folds.
-* Decision: **no_material_benefit**.
-* Runtime: **20 700.83 сек** (≈ **5 ч 45 мин**).
-* Final test не использован.
-
-### INTERPRETATION
-
-Stacking значительно улучшил TabM относительно standalone Stage 6, но TabM meta-model не дал материального преимущества относительно простого GBDT_mean. Оснований продолжать направление TabM в текущем locked design нет.
-
-### LIMITATIONS
-
-* Random CV не доказывает temporal stability.
-* Три folds не являются statistical significance claim.
-* Stacking не доказывает business benefit.
-* Порог 0.5 диагностический.
-* Final test не использован.
-
-### NEXT STEP
-
-Направление TabM закрыто. Следующий отдельный controlled experiment — FT-Transformer на тех же 47 разрешённых признаках.
-
----
-
 ## 11. Business constraints
 
 Recall около **69%** — подтверждённый бизнес-ориентир, а не цель, которую нужно максимизировать любой ценой.
@@ -297,72 +251,54 @@ Threshold и баланс FN/FP являются отдельной business pol
 
 ---
 
-## 12. Что больше не нужно повторять
+## 12. Stage 6–11: закрытая model-only chain на 47 признаках
 
-Без нового evidence не повторять:
+| Stage | Проверка | Принятый факт / решение |
+| --- | --- | --- |
+| 6 V4 | TabM standalone | OOF Gini **0.781310**; inferior относительно GBDT control. |
+| 7 V1 | TabM stacking | GBDT_mean Gini **0.806399**, hybrid **0.804260**; `no_material_benefit`. |
+| 8 V1 | FT-Transformer | OOF Gini **0.801528**, Δ к GBDT_mean **-0.004871**; `no_material_benefit`. |
+| 9 V1 | rank complementarity | При capacity 30% FT rescue **9/805**, GBDT_mean **0/805**; результат ниже material threshold. |
+| 10 V1 | oracle/residual reserve | Максимум **15/805**, Δ **+1.863 п.п.**; effective union capacity **37.446%**; `limited_residual_model_reserve`. |
+| 11 V1 | RealMLP | Gini **0.793325** против **0.806399** у GBDT_mean, Δ **-0.013074**; проигрыш **3/3** folds; `inferior`. |
 
-* сравнение тех же CatBoost/XGBoost/LightGBM как baseline;
-* бесконечный tuning этих моделей;
-* Stage 2 explainability;
-* Stage 3 blind-spot analysis;
-* Stage 4 диагностику Q_B1/Q_B2;
-* Stage 5 proxy Q_B2;
-* standalone TabM;
-* Stage 7 TabM stacking;
-* поиск row-level observation date;
-* historical enrichment текущими СПАРК/ФНС snapshots.
+Все числа — из accepted artifacts в `reports/summary/` и `reports/generated/`; final test в Stages 6–11 не использовался.
 
----
+### Решение
 
-## 13. Следующая исследовательская задача
+`CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`
 
-Основная диагностическая цепочка Stage 1–7 завершена.
+Model-only поиск на текущих 47 признаках остановлен: после проверок TabM standalone/stacking, FT-Transformer, rank complementarity, oracle/residual reserve и RealMLP дальнейший architecture search имеет низкий ожидаемый information gain. Evidence сильнее поддерживает limitation информации/признаков, чем недостаточность проверенных architectures.
 
-Следующий исследовательский шаг должен отвечать персональной задаче:
-
-> проверить **FT-Transformer** на тех же 47 разрешённых признаках и сопоставимом evaluation protocol.
-
-Stage 6 V4 и Stage 7 V1 закрыты: standalone TabM и TabM stacking не дали оснований заменить GBDT control. FT-Transformer выполнять только как отдельный controlled experiment.
-
-Порядок:
-
-1. Architect выбирает один следующий research question.
-2. Technical Coordinator проверяет предложение.
-3. Codex получает только узкое implementation task.
-4. Reviewer проверяет результат.
-5. После acceptance сохраняются evidence и следующий вывод.
-
-Не исследовать несколько новых подходов одновременно.
+Это не означает, что проект завершён, что доказан математический потолок Gini или что никакая модель никогда не сможет быть лучше. Random CV также не доказывает temporal stability.
 
 ---
 
-## 14. Git / artifacts
+## 13. Следующий этап: Research Synthesis Stage 1–11
 
-Рабочая ветка:
+Подготовить единый evidence package для презентации и защиты:
 
-`research/stage6-tabm-v1`
+- итоговую таблицу Stage 1–11;
+- проверенные evidence и figures;
+- разделение FACT / INTERPRETATION / LIMITATION;
+- реестр закрытых и blocked questions;
+- reopen conditions;
+- материалы для презентации/защиты.
 
-Точный HEAD и Git status всегда проверяются fresh через `git` непосредственно перед изменениями; они намеренно не фиксируются в этом документе.
-
-Evidence Stage 1–7 хранится в:
-
-* `notebooks/`;
-* `reports/summary/`;
-* `reports/generated/`;
-* `reports/figures/`;
-* `docs/RESEARCH_RECORD.md`;
-* `docs/DECISIONS.md`.
-
-Итоговую презентацию собирать из проверенных artifacts, а не по памяти старых чатов.
+Evidence хранится в `notebooks/`, `reports/summary/`, `reports/generated/`, `reports/figures/` и реестре `docs/RESEARCH_RECORD.md`. Итоговый рассказ собирается по этим артефактам, не по памяти.
 
 ---
 
-## 15. Текущий приоритет
+## 14. Открытый data research и условия повторного открытия model research
 
-Времени мало.
+Data research остаётся открытым: СПАРК-пилот, новые признаки, связи, динамика и другие валидные источники информации могут снова открыть model research.
 
-Порядок работы:
+Reopen conditions:
 
-**закончить core research → сохранить evidence → собрать презентацию → подготовиться к защите → только затем необязательный engineering polish.**
+1. новый валидный feature source;
+2. row-level temporal anchor;
+3. сильный независимый противоречащий результат;
+4. новый business operating point;
+5. новая научная гипотеза, реально меняющая решение.
 
-Не тратить время на организационные и косметические изменения, если они не помогают закончить исследование или защитить результат.
+Не добавлять новый model shortlist ради количества.

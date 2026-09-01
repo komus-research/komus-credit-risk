@@ -11,7 +11,9 @@
 
 Документ не заменяет `PROJECT_CONTEXT.md`, `ROADMAP.md`, `ARCHITECTURE.md`, `PRODUCT_SPEC.md`, `BUSINESS_RULES.md` или `DECISIONS.md`. Он отвечает только за **research evidence / presentation-ready record**.
 
-Дата введения правила: **2026-08-20**.
+Дата актуализации: **2026-09-01**.
+
+Рабочий source of truth: `komus-research/komus-credit-risk`, ветка `main`, локальная папка `D:\Projects\komus-work`. `AIUniverstorage/commus` — integration point Института, не ежедневный research source of truth. При конфликте фактические notebooks и accepted artifacts `reports/summary/` / `reports/generated/` выше stale documentation.
 
 ---
 
@@ -134,11 +136,9 @@ Summary не должен превращаться в копию notebook или
 
 ## 6. Политика веток для research evidence
 
-- `main` — стабильная интеграционная ветка.
-- Активный исследовательский Stage ведётся в отдельной `research/...` ветке.
-- Пока research-ветка опережает `main`, не нужно параллельно вносить те же документационные/артефактные изменения напрямую в `main`: это создаёт ненужное расхождение истории.
-- После review и готовности этапа изменения переносятся в `main` обычным merge/PR-процессом.
-- Перед локальным изменением после GitHub-edit сначала проверяются фактические branch/HEAD/status и выполняется безопасная синхронизация.
+- `main` — рабочая и интеграционная ветка текущего репозитория.
+- Для review может существовать вспомогательная ветка, но она не заменяет `main` как source of truth после integration.
+- Перед любым изменением проверяются фактические branch/HEAD/status.
 
 ---
 
@@ -186,6 +186,54 @@ Summary не должен превращаться в копию notebook или
 - Формальный статус: `completed_accepted`.
 - Решение: `decision_class = material_missing_signal`.
 - Ключевой факт: общий `Q_B2` частично восстанавливается из 47 разрешённых признаков (OOF Spearman ≈ **0.542**), но внутри blind spot proxy практически теряет связь (Spearman ≈ **0.024**) и сильно уступает oracle `Q_B2`. Это поддерживает наличие material information gap.
+
+---
+
+### Stage 6 V4 — TabM standalone
+
+- Notebook: `notebooks/06_Сравнение_TabM_с_GBDT_baseline_V4.ipynb`.
+- Summary: `reports/summary/stage6_tabm_summary_V4.json`; generated result: `reports/generated/stage6_tabm_results_V4.json`.
+- Факт: OOF Gini **0.781310**; Delta Gini относительно XGBoost **-0.022680**.
+- Решение: TabM standalone inferior для locked 47-feature protocol; final test не использован.
+
+### Stage 7 V1 — TabM stacking
+
+- Notebook: `notebooks/07_TabM_поверх_GBDT_stacking_V1.ipynb`.
+- Summary: `reports/summary/stage7_tabm_stacking_summary_V1.json`; OOF: `reports/generated/stage7_tabm_stacking_oof_V1.npz`.
+- Факт: B* = GBDT_mean с OOF Gini **0.806399**; hybrid TabM Gini **0.804260** и ниже B* на 3/3 outer folds.
+- Решение: `no_material_benefit`; final test не использован.
+
+### Stage 8 V1 — FT-Transformer
+
+- Notebook: `notebooks/08_Сравнение_FT_Transformer_с_GBDT_baseline_V1.ipynb`.
+- Summary: `reports/summary/stage8_ft_transformer_summary_V1.json`; OOF: `reports/generated/stage8_ft_transformer_oof_V1.npz`.
+- Факт: OOF Gini **0.801528**, Δ к GBDT_mean **-0.004871**.
+- Решение: `no_material_benefit`; final test не использован.
+
+### Stage 9 V1 — rank complementarity
+
+- Summary: `reports/summary/stage9_rank_capacity_summary_V1.json`; result: `reports/generated/stage9_rank_capacity_results_V1.json`.
+- Факт: при capacity 30% FT-Transformer rescue **9/805**, GBDT_mean **0/805**; Δ rescue **+1.118 п.п.**.
+- Решение: `no_material_rank_complementarity`: результат ниже material threshold; final test не использован.
+
+### Stage 10 V1 — oracle/residual model reserve
+
+- Summary: `reports/summary/stage10_residual_model_reserve_summary_V1.json`; result: `reports/generated/stage10_residual_model_reserve_results_V1.json`.
+- Факт: при nominal capacity 30% oracle-any rescue **15/805**, Δ **+1.863 п.п.**; actual union имеет effective capacity **37.446%**.
+- Решение: `limited_residual_model_reserve`. Это upper-bound diagnostic, а не production system с общей fixed capacity; final test не использован.
+
+### Stage 11 V1 — RealMLP
+
+- Notebook: `notebooks/11_Сравнение_RealMLP_с_GBDT_baseline_V1.ipynb`.
+- Summary: `reports/summary/stage11_realmlp_summary_V1.json`; results: `reports/generated/stage11_realmlp_results_V1.json` и `reports/generated/stage11_realmlp_oof_V1.npz`.
+- Факт: RealMLP OOF Gini **0.793325**, GBDT_mean **0.806399**, Δ **-0.013074**; fold deltas отрицательны на **3/3** folds.
+- Решение: `inferior`; final test не использован.
+
+### Сводное решение после Stage 11
+
+`CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`: model-only поиск на неизменных 47 признаках остановлен, поскольку дальнейший architecture search имеет низкий ожидаемый information gain. Evidence сильнее поддерживает information/feature limitation, чем недостаток проверенных architectures. Это не доказывает математический потолок Gini, невозможность будущего улучшения или temporal stability.
+
+Следующий record — Research Synthesis Stage 1–11: таблица итогов, evidence/figures, FACT / INTERPRETATION / LIMITATION, closed/blocked questions, reopen conditions и материалы для защиты. Model research открывается повторно только при новом валидном feature source, row-level temporal anchor, сильном независимом противоречащем результате, новом business operating point или новой научной гипотезе, реально меняющей решение.
 
 ---
 
