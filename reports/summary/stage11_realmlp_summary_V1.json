@@ -1,0 +1,18 @@
+{
+  "experiment": "Stage 11 V1",
+  "decision": "inferior",
+  "primary_metric": "OOF Gini",
+  "realmlp_oof_gini": 0.7933249026702531,
+  "gbdt_mean_oof_gini": 0.8063993952124622,
+  "delta_gini": -0.013074492542209049,
+  "fold_gini_deltas": [
+    -0.017779952585961212,
+    -0.007826182747420418,
+    -0.012121988444495413
+  ],
+  "final_test_used": false,
+  "result_artifacts": [
+    "reports\\generated\\stage11_realmlp_results_V1.json",
+    "reports\\generated\\stage11_realmlp_oof_V1.npz"
+  ]
+}
