@@ -1,0 +1,20 @@
+# Isolated Stage 14 V1 GPU environment only. Do not install into the project .venv.
+# Before any GPU model call, record the exact torch wheel, CUDA runtime and NVIDIA driver
+# in the notebook's environment manifest. CPU-only PyTorch is forbidden for this stage.
+tabpfn==8.5.0
+torch==2.8.0
+
+# Locked notebook/runtime dependencies.
+numpy==2.2.0
+pandas==2.2.3
+pyxlsb==1.0.10
+scikit-learn==1.6.0
+huggingface-hub==0.34.4
+safetensors==0.6.2
+psutil==6.1.1
+pynvml==12.0.0
+ipykernel==6.29.5
+
+# The operator must select a CUDA-enabled torch 2.8.0 wheel compatible with the
+# locked H100 host. `torch.cuda.is_available()` and the captured manifest are hard
+# gates; this file intentionally offers no CPU fallback.
