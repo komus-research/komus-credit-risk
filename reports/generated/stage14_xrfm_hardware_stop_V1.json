@@ -1,0 +1,28 @@
+{
+  "stage": "Stage 14 V1",
+  "experiment": "xRFM CPU_ONLY_RESEARCH_EXPERIMENT",
+  "status": "STOPPED_BY_COMPUTE_COST",
+  "reason": "HARDWARE_CONSTRAINT",
+  "quality": "UNKNOWN",
+  "environment_status": "PASS",
+  "pre_run_implementation_status": "ACCEPT",
+  "hardware_guard_triggered_before_model_fit": true,
+  "actual_hardware": {
+    "cpu": "AMD Ryzen 5 5500U with Radeon Graphics",
+    "physical_cores": 6,
+    "logical_processors": 12,
+    "physical_ram_gib_observed": 15.34,
+    "available_ram_gib_followup_probe": 4.14
+  },
+  "required_hardware": {
+    "minimum_physical_cores": 8,
+    "minimum_physical_ram_gib": 32,
+    "minimum_available_ram_before_feasibility_gib": 16
+  },
+  "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+  "feature_contract": "47 accepted features in accepted order; INN/Q_B1_norm/Q_B2_norm excluded as predictors",
+  "comparator": {"identity": "saved accepted GBDT_mean OOF", "gini": 0.8063993952},
+  "runtime": {"xrfm": "0.4.5", "torch": "2.8.0+cpu", "xrfm_wheel_sha256": "a75ed05f6be72e76d22546fa6594e4aa2d27734763a7155111a89c4d27ccb604"},
+  "frozen_lock_changed": false,
+  "execution": {"model_fit": false, "predict_proba": false, "smoke_completed": false, "feasibility_completed": false, "oof_completed": false, "final_test_used": false}
+}

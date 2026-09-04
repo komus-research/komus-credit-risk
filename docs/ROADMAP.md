@@ -275,11 +275,11 @@ Locked large-context TabPFN-3 contract требовал GPU/H100. Основно
 
 `notebooks/14_Сравнение_TabPFN3_с_GBDT_baseline_V1.ipynb` и `requirements-tabpfn3-v1.txt` остаются tracked historical rejected pre-run artifacts. Это не active Stage 14 implementation; запускать их не следует.
 
-## 12. Stage 14 V1 — xRFM CPU_ONLY_RESEARCH_EXPERIMENT — LOCKED
+## 12. Stage 14 V1 — xRFM historical pre-run plan — superseded
 
-Architect status: `XRFM_V1_LOCKED` / `READY_FOR_TECHNICAL_COORDINATOR`.
+Architect status `XRFM_V1_LOCKED` / `READY_FOR_TECHNICAL_COORDINATOR` относится только к historical pre-run plan; он superseded последующим hardware closeout.
 
-Это один narrow controlled reopen, не model-zoo: проверяется material reserve тех же 47 разрешённых features через iterative kernel / metric feature learning + supervised recursive localization. `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES` остаётся базовым решением.
+Это был один narrow controlled reopen, не model-zoo: планировалась проверка material reserve тех же 47 разрешённых features через iterative kernel / metric feature learning + supervised recursive localization. Он больше не является active roadmap state.
 
 Key implementation lock:
 
@@ -292,6 +292,12 @@ Key implementation lock:
 Сохраняются `Data_final.xlsb` и его SHA, 289614 working rows, `DefMark`, исключение `INN`, exact accepted 47 features, запрет `Q_B1_norm`/`Q_B2_norm` как predictors, same 3 folds seed 42, saved `GBDT_mean` Gini 0.8063993952 и закрытый final test. GPU-only experiment не становится следующим основным Stage без отдельного нового решения пользователя.
 
 При xRFM `no_material_benefit`/`inferior` default direction — data / feature / blind-spot research, не новая модель. Data research, presentation и defence остаются параллельными открытыми направлениями.
+
+## 13. Stage 14 V1 — xRFM — CLOSED: HARDWARE_CONSTRAINT
+
+Environment PASS и pre-run implementation ACCEPT, но guard остановил первый Smoke до model.fit: 6 physical cores / 15.34 GiB RAM не выполняют contract 8 cores / 32 GiB, а 16 GiB available RAM перед feasibility на этой машине невозможно. Статус `STOPPED_BY_COMPUTE_COST / HARDWARE_CONSTRAINT`, quality `UNKNOWN`; training, predict_proba, feasibility, OOF и final test отсутствуют. Новый model candidate автоматически не назначается.
+
+Следующий содержательный research direction: точнее охарактеризовать common blind spot текущих 47 features и тип недостающей информации — профиль 805 common blind-spot defaults, отличие от корректно поднятых defaults, устойчивые feature-space regions, missingness/pattern diagnostics и future valid feature-source hypotheses. Новый predictor в этом closeout не проектируется.
 
 ---
 

@@ -303,3 +303,21 @@ Stage 13 OOF/result artifacts отсутствуют, потому что full O
 `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES` остаётся действующим против обычного model-zoo search. TabPFN-3 Stage 14 candidate закрыт как `TABPFN3_STAGE14_REJECTED_BY_CPU_CONSTRAINT`: locked large-context path требовал GPU/H100, а основной research path CPU-only; уменьшение context/subsampling меняет hypothesis, GPU fallback запрещён. TabPFN-3 не запускался, OOF не выполнялся, quality `UNKNOWN` (не `inferior` и не `no_material_benefit`), final test не использовался. Его tracked notebook и requirements сохранены исключительно как historical rejected pre-run artifacts; запускать их не следует.
 
 Единственный narrow controlled reopen — Stage 14 V1: `xRFM CPU_ONLY_RESEARCH_EXPERIMENT`, Architect status `XRFM_V1_LOCKED` / `READY_FOR_TECHNICAL_COORDINATOR`. Hypothesis: iterative kernel / metric feature learning + supervised recursive localization. Lock включает `xrfm==0.4.5`, CPU `device='cpu'`, 8 threads, `split_method='linear'`, `n_trees=1`, `max_leaf_size=8192`, три leaf RFM iterations, отсутствие HPO, smoke → full Fold-1 feasibility → compute gate, manual review до full OOF и 12-hour CPU ceiling. `STOPPED_BY_COMPUTE_COST` не является quality verdict. Final test остаётся закрытым; при `no_material_benefit`/`inferior` default return — data / feature / blind-spot research, не новая модель.
+
+### Stage 14 V1 — xRFM hardware closeout
+
+#### FACTS
+
+Environment setup PASS и pre-run implementation ACCEPT. Первый разрешённый Smoke остановлен в hardware guard до model.fit: AMD Ryzen 5 5500U имеет 6 physical cores / 12 logical processors, 15.34 GiB physical RAM и 4.14 GiB available RAM; contract требует 8 cores, 32 GiB RAM и 16 GiB available перед feasibility. Training, predict_proba, smoke quality, feasibility и OOF не выполнялись; final test unused; quality `UNKNOWN`.
+
+#### INTERPRETATION
+
+Frozen full xRFM V1 нельзя честно исполнить на текущей машине без изменения experiment contract.
+
+#### LIMITATIONS
+
+Hardware stop ничего не говорит о predictive quality xRFM и не доказывает mathematical ceiling.
+
+#### NEXT STEP
+
+Восстановлен `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`; следующий content path — data / feature / blind-spot research.
