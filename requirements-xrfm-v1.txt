@@ -2,7 +2,9 @@
 # Do not install CUDA extras.
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.8.0+cpu
-xrfm==0.4.5 --hash=sha256:a75ed05f6be72e76d22546fa6594e4aa2d27734763a7155111a89c4d27ccb604
+# Locked xrfm==0.4.5 wheel SHA-256:
+# a75ed05f6be72e76d22546fa6594e4aa2d27734763a7155111a89c4d27ccb604
+xrfm==0.4.5
 numpy==2.2.5
 scikit-learn==1.6.1
 tqdm==4.67.1
@@ -10,3 +12,5 @@ pandas==2.2.3
 pyxlsb==1.0.10
 psutil==6.1.1
 threadpoolctl==3.5.0
+ipykernel==6.29.5
+ipython==8.30.0
