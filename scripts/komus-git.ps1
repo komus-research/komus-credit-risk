@@ -109,6 +109,40 @@ function Invoke-WorkingPush {
     Publish-Head $repo -AlreadyConfirmed
 }
 function New-IntegrationBranch { param([string]$Repo) return 'integration/credit-scoring-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + ([guid]::NewGuid().ToString('N').Substring(0,6)) }
+function Get-RepositoryName {
+    param([string]$Url)
+    $name = [IO.Path]::GetFileName($Url.Trim().TrimEnd('/')).Replace('.git','')
+    if ([string]::IsNullOrWhiteSpace($name)) { Stop-Helper "Cannot determine repository name from URL: $Url" }
+    return $name
+}
+function Rewrite-SubtreePullHistory {
+    param([string]$Repo,[string]$Prefix,[string]$BaseSha,[string]$SourceSha,[string]$TechnicalMessage,[string]$UserMessage)
+    $merge = Head-Info $Repo
+    $mergeParents = @((Invoke-Git $Repo @('show','-s','--format=%P',$merge.Sha)).Text.Trim().Split(@(' '),[StringSplitOptions]::RemoveEmptyEntries))
+    if ($mergeParents.Count -ne 2 -or $mergeParents[0] -ne $BaseSha) { Stop-Helper 'Unexpected git subtree merge topology; integration history was not rewritten.' }
+    $squash = $mergeParents[1]
+    $squashMessage = (Invoke-Git $Repo @('show','-s','--format=%B',$squash)).Text.TrimEnd()
+    $messageParts = $squashMessage -split '\r?\n\r?\n',2
+    if ($messageParts.Count -ne 2) { Stop-Helper 'Synthetic subtree commit has no metadata body; integration history was not rewritten.' }
+    $metadata = $messageParts[1]
+    $dirTrailer = [regex]::Escape("git-subtree-dir: $Prefix")
+    $splitTrailer = [regex]::Escape("git-subtree-split: $SourceSha")
+    if ($metadata -notmatch "(?m)^$dirTrailer\r?`$") { Stop-Helper 'Synthetic subtree commit has an unexpected prefix trailer; integration history was not rewritten.' }
+    if ($metadata -notmatch "(?m)^$splitTrailer\r?`$") { Stop-Helper 'Synthetic subtree commit does not match the validated source SHA; integration history was not rewritten.' }
+    $squashParents = @((Invoke-Git $Repo @('show','-s','--format=%P',$squash)).Text.Trim().Split(@(' '),[StringSplitOptions]::RemoveEmptyEntries))
+    $squashTree = (Invoke-Git $Repo @('show','-s','--format=%T',$squash)).Text.Trim()
+    $newSquashArgs = @('commit-tree',$squashTree)
+    foreach ($parent in $squashParents) { $newSquashArgs += @('-p',$parent) }
+    $newSquashArgs += @('-m',$TechnicalMessage,'-m',$metadata)
+    $newSquash = (Invoke-Git $Repo $newSquashArgs).Text.Trim()
+    $rewrittenSquashMessage = (Invoke-Git $Repo @('show','-s','--format=%B',$newSquash)).Text.TrimEnd()
+    if ($rewrittenSquashMessage -notmatch "(?m)^$dirTrailer\r?`$" -or $rewrittenSquashMessage -notmatch "(?m)^$splitTrailer\r?`$") { Stop-Helper 'Rewritten technical subtree commit does not preserve subtree trailers.' }
+    $mergeTree = (Invoke-Git $Repo @('show','-s','--format=%T',$merge.Sha)).Text.Trim()
+    $newMerge = (Invoke-Git $Repo @('commit-tree',$mergeTree,'-p',$mergeParents[0],'-p',$newSquash,'-m',$UserMessage)).Text.Trim()
+    Invoke-Git $Repo @('reset','--hard',$newMerge) | Out-Null
+    if ((Head-Info $Repo).Subject -ne $UserMessage) { Stop-Helper 'Integration commit message verification failed.' }
+    if ((Head-Info $Repo 'HEAD^2').Subject -ne $TechnicalMessage) { Stop-Helper 'Technical subtree commit message verification failed.' }
+}
 function Clear-IntegrationBranch {
     param([string]$Repo,[string]$Base,[string]$Branch)
     $switch = Invoke-Git $Repo @('switch',$Base) -AllowFailure
@@ -124,9 +158,6 @@ function Invoke-InstitutePush {
     Write-Host (U '0J/QoNCe0JLQldCg0JrQkA==') -ForegroundColor Cyan; Write-Host (U '0J/RgNC+0LLQtdGA0Y/RjiDRgNCw0LHQvtGH0LjQuSDRgNC10L/QvtC30LjRgtC+0YDQuNC5INC4INGA0LXQv9C+0LfQuNGC0YPRgtC+0YDQuNC5INCY0L3RgdGC0LjRgtGD0YLQsC4uLg==')
     Assert-Repo $work ([string]$Config.working_remote_url) 'Working'; Invoke-Git $work @('fetch','origin') | Out-Null; $source = Head-Info $work 'origin/main'
     Assert-Repo $inst ([string]$Config.institute_remote_url) 'Institute'
-    $ghPath = Resolve-GhPath ([string]$Config.gh_path)
-    if ([string]::IsNullOrWhiteSpace($ghPath)) { Stop-Helper ((U 'R2l0SHViIENMSSDQvdC1INC90LDQudC00LXQvS4=') + ' ' + (U '0J7QttC40LTQsNC70YHRjywg0L3QsNC/0YDQuNC80LXRgDo=') + ' C:\Program Files\GitHub CLI\gh.exe') }
-    Invoke-Gh $ghPath @('auth','status') | Out-Null
     $dirty = Invoke-Git $inst @('-c','core.quotepath=false','status','--porcelain'); if (-not [string]::IsNullOrWhiteSpace($dirty.Text)) { Stop-Helper "Institute repository is dirty:`n$($dirty.Text)" }
     $remote = Invoke-Git $inst @('remote','get-url','credit-risk') -AllowFailure
     if ($remote.ExitCode -eq 0 -and (Normalize-Url $remote.Text) -ne (Normalize-Url ([string]$Config.working_remote_url))) { Stop-Helper 'credit-risk remote URL does not match.' }
@@ -139,21 +170,23 @@ function Invoke-InstitutePush {
         if ($remote.ExitCode -ne 0) { Invoke-Git $inst @('remote','add','credit-risk',([string]$Config.working_remote_url)) | Out-Null }
         Invoke-Git $inst @('fetch','credit-risk','main') | Out-Null
         if ((Head-Info $inst 'credit-risk/main').Sha -ne $source.Sha) { Stop-Helper 'credit-risk/main does not equal working origin/main.' }
+        $baseSha = (Head-Info $inst $base).Sha
         Invoke-Git $inst @('switch','-c',$branch,$base) | Out-Null; $integrationCreated = $true
-        $oldEditor = $env:GIT_EDITOR; try { $env:GIT_EDITOR = 'true'; Invoke-Git $inst @('subtree','pull',('--prefix=' + $prefix),'--squash','-m',$Message,'credit-risk','main') | Out-Null } finally { if ($null -eq $oldEditor) { Remove-Item Env:GIT_EDITOR -ErrorAction SilentlyContinue } else { $env:GIT_EDITOR=$oldEditor } }
+        $oldEditor = $env:GIT_EDITOR; try { $env:GIT_EDITOR = 'true'; Invoke-Git $inst @('subtree','pull',('--prefix=' + $prefix),'--squash','credit-risk','main') | Out-Null } finally { if ($null -eq $oldEditor) { Remove-Item Env:GIT_EDITOR -ErrorAction SilentlyContinue } else { $env:GIT_EDITOR=$oldEditor } }
         $changed = Invoke-Git $inst @('-c','core.quotepath=false','diff','--name-only',($base + '...HEAD'))
         if ([string]::IsNullOrWhiteSpace($changed.Text)) { Clear-IntegrationBranch $inst $base $branch | Out-Null; $integrationCreated = $false; Write-Host (U '0JPQntCi0J7QktCe') -ForegroundColor Green; Write-Host (U '0KDQtdC/0L7Qt9C40YLQvtGA0LjQuSDQmNC90YHRgtC40YLRg9GC0LAg0YPQttC1INGB0L7QtNC10YDQttC40YIg0LjRgdGC0L7Rh9C90LjQui4='); return }
+        $technicalMessage = "sync ${prefix}: $(Get-RepositoryName ([string]$Config.working_remote_url))@$($source.Short)"
+        Rewrite-SubtreePullHistory $inst $prefix $baseSha $source.Sha $technicalMessage $Message
+        $changed = Invoke-Git $inst @('-c','core.quotepath=false','diff','--name-only',($base + '...HEAD'))
         $outside = @($changed.Lines | Where-Object { -not $_.StartsWith($prefix + '/') }); if ($outside.Count) { Stop-Helper ((U '0J7QsdC90LDRgNGD0LbQtdC90Ysg0LjQt9C80LXQvdC10L3QuNGPINCy0L3QtSBjcmVkaXQtc2NvcmluZzo=') + "`n$($outside -join "`n")") }
         $check = Invoke-Git $inst @('diff','--check',($base + '...HEAD')) -AllowFailure; if ($check.ExitCode -ne 0) { Stop-Helper "git diff --check failed: $($check.Text)" }
         Write-Host (U '0JPQntCi0J7QktCeINCaINCe0KLQn9Cg0JDQktCa0JU=') -ForegroundColor Green; Write-Host ((U '0JjRgdGC0L7Rh9C90LjQujo=') + " $($source.Sha)"); Write-Host ((U '0JLQtdGC0LrQsCDQuNC90YLQtdCz0YDQsNGG0LjQuDo=') + " $branch"); Write-Host ((U '0JjQt9C80LXQvdC10L3QviDRhNCw0LnQu9C+0LI6') + " $(@($changed.Lines).Count)"); Write-Host (U '0KLQvtC70YzQutC+IGNyZWRpdC1zY29yaW5nLzog0JTQkA==')
-        if (-not (Confirm-Yes (U '0KHQvtC30LTQsNCy0YwgUFI/IFt5L05d'))) { Clear-IntegrationBranch $inst $base $branch | Out-Null; $integrationCreated = $false; Write-Host (U '0J7RgtC80LXQvdC10L3Qvi4g0JLRgNC10LzQtdC90L3QsNGPIGludGVncmF0aW9uIGJyYW5jaCDRg9C00LDQu9C10L3QsC4=') -ForegroundColor Yellow; return }
-        Invoke-Git $inst @('push','-u','origin',$branch) | Out-Null; $pushed = $true
-        $repoName = ([string]$Config.institute_remote_url).Replace('https://github.com/','').Replace('.git',''); $body = "Source repository: $($Config.working_remote_url)`nSource branch: main`nSource SHA: $($source.Sha)`nSource commit: $($source.Subject)`nChanges are limited to $prefix/."
-        $url = (Invoke-Gh $ghPath @('pr','create','--repo',$repoName,'--base',$base,'--head',$branch,'--title',$Message,'--body',$body)).Text.Trim(); Write-Host ((U 'UFIg0YHQvtC30LTQsNC9Og==') + " $url") -ForegroundColor Green
-        if (-not (Confirm-Yes (U '0KHQu9C40YLRjCBQUiDQsiBEYXRhX0tvbXVzINGB0LXQudGH0LDRgT8gW3kvTl0='))) { return }
-        Invoke-Gh $ghPath @('pr','merge',$url,'--merge','--subject',$Message,'--delete-branch') | Out-Null; Invoke-Git $inst @('switch',$base) | Out-Null; Invoke-Git $inst @('pull','--ff-only','origin',$base) | Out-Null
+        if (-not (Confirm-Yes ("Push $branch to ${base}? [y/N]"))) { Clear-IntegrationBranch $inst $base $branch | Out-Null; $integrationCreated = $false; Write-Host (U '0J7RgtC80LXQvdC10L3Qvi4g0JLRgNC10LzQtdC90L3QsNGPIGludGVncmF0aW9uIGJyYW5jaCDRg9C00LDQu9C10L3QsC4=') -ForegroundColor Yellow; return }
+        Invoke-Git $inst @('push','origin',($branch + ':' + $base)) | Out-Null; $pushed = $true
+        Invoke-Git $inst @('switch',$base) | Out-Null; Invoke-Git $inst @('pull','--ff-only','origin',$base) | Out-Null
+        Clear-IntegrationBranch $inst $base $branch | Out-Null; $integrationCreated = $false
         if (-not [string]::IsNullOrWhiteSpace((Invoke-Git $inst @('status','--porcelain')).Text)) { Stop-Helper 'Institute working tree is not clean after merge.' }
-        Write-Host (U '0JPQntCi0J7QktCe') -ForegroundColor Green; Write-Host ((U 'Y3JlZGl0LXNjb3Jpbmcg0YHQuNC90YXRgNC+0L3QuNC30LjRgNC+0LLQsNC9Lg==') + " PR: $url")
+        Write-Host (U '0JPQntCi0J7QktCe') -ForegroundColor Green; Write-Host ((U 'Y3JlZGl0LXNjb3Jpbmcg0YHQuNC90YXRgNC+0L3QuNC30LjRgNC+0LLQsNC9Lg==') + " $base")
     }
     catch {
         if ($integrationCreated -and -not $pushed) { Clear-IntegrationBranch $inst $base $branch | Out-Null }
