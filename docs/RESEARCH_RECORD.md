@@ -11,7 +11,7 @@
 
 Документ не заменяет `PROJECT_CONTEXT.md`, `ROADMAP.md`, `ARCHITECTURE.md`, `PRODUCT_SPEC.md`, `BUSINESS_RULES.md` или `DECISIONS.md`. Он отвечает только за **research evidence / presentation-ready record**.
 
-Дата актуализации: **2026-09-01**.
+Дата актуализации: **2026-09-04**.
 
 Рабочий source of truth: `komus-research/komus-credit-risk`, ветка `main`, локальная папка `D:\Projects\komus-work`. `AIUniverstorage/commus` — integration point Института, не ежедневный research source of truth. При конфликте фактические notebooks и accepted artifacts `reports/summary/` / `reports/generated/` выше stale documentation.
 
@@ -276,3 +276,28 @@ operating point или новой научной гипотезе, реальн�
 10. только после этого считать Stage закрытым и переходить к следующему исследовательскому вопросу.
 
 Не нужно дублировать одинаковый текст во всех документах. Каждый факт хранится в своём source-of-truth, а этот реестр связывает Stage с доказательствами для будущего отчёта и презентации.
+
+---
+
+## 9. Stage 13 V1 — TabFM SAFE-RUN, operational closeout
+
+- Status: `STOPPED_BY_COMPUTE_COST`.
+- Notebook: `notebooks/13_Сравнение_TabFM_с_GBDT_baseline_V1.ipynb`.
+- Locked requirements: `requirements-tabfm-v1.txt`.
+- Setup helper: `scripts/prepare_stage13_tabfm.ps1`.
+- Operator runbook: `docs/STAGE13_TABFM_RUNBOOK.md`.
+- Machine-readable retrospective summary: `reports/summary/stage13_tabfm_summary_V1.json`.
+
+### Result
+
+Technical SAFE-RUN PASS: runtime/dataset guards, exact checkpoint SHA, locked model load, real inference preflight и single-call/chunked equivalence passed; `max_abs_diff = 0` при tolerance `<= 1e-5`. `RUN_FULL_OOF=False`; full 3-fold OOF отсутствует, quality comparison с `GBDT_mean` не разрешён, final test не использовался.
+
+На текущей CPU-среде observed inference cost делает full OOF operationally disproportionate; точный runtime не установлен из-за sleep/idle в части wall elapsed. Это не verdict качества TabFM.
+
+### Evidence boundary
+
+Stage 13 OOF/result artifacts отсутствуют, потому что full OOF не выполнялся. В частности, не созданы `reports/generated/stage13_tabfm_oof_V1.npz` и `reports/generated/stage13_tabfm_results_V1.json`; никакие TabFM OOF metrics не заявляются.
+
+### Next research status
+
+`CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES` остаётся действующим против обычного model-zoo search. Один narrow reopen зафиксирован как Stage 14 V1 — TabPFN-3 large-context hypothesis, `TO LOCK / NOT STARTED`; до implementation требуется отдельный Architect Experiment Lock. Data research остаётся открытым.

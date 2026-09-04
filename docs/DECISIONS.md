@@ -482,3 +482,27 @@ row-level temporal anchor при его появлении и presentation / def
 Reopen conditions сохраняются: новый валидный feature source; row-level temporal
 anchor; сильный независимый противоречащий результат; новый business operating point;
 либо новая научная гипотеза, реально меняющая решение.
+
+---
+
+## 2026-09-04
+
+### D-048 — Stage 13 TabFM full OOF остановлен по compute cost
+
+Locked technical pipeline Stage 13 V1 валидирован: runtime/dataset guards, exact checkpoint SHA, model load, real inference preflight и single-call/chunked equivalence passed. Однако full 3-fold OOF на текущей CPU-среде не запускается, поскольку наблюдаемая стоимость вычислений непропорциональна ожидаемому information gain.
+
+Статус: `STOPPED_BY_COMPUTE_COST`.
+
+Это не quality verdict TabFM: полного OOF нет, TabFM OOF metrics не заявляются, final test не использовался. `RUN_FULL_OOF=False` сохраняется.
+
+### D-049 — Model research не переоткрывается как model zoo
+
+`CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES` остаётся базовым решением для обычного architecture search на неизменных 47 разрешённых признаках. Stage 13 не отменяет и не переписывает это решение.
+
+Причина: technical feasibility одного locked TabFM path не является evidence quality gain и не создаёт основания для автоматического запуска близких TFM.
+
+### D-050 — Разрешён один narrow reopen: TabPFN-3 large-context hypothesis
+
+Разрешён ровно один следующий research question: даёт ли pretrained large-context TabPFN-3 дополнительное OOF-качество относительно accepted `GBDT_mean` на тех же 47 разрешённых признаках KOMUS?
+
+Причина: это новая scientific hypothesis о large-context pretrained ICL, а не очередная architecture. Stage 14 V1 имеет статус `TO LOCK / NOT STARTED`. До любой implementation обязателен отдельный Architect Experiment Lock с official version/repository/checkpoint, license, hardware/device, preprocessing, context construction, memory mode, ensemble/configuration, seeds/reproducibility, exact folds и acceptance/decision rule.

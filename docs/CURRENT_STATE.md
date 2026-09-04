@@ -1,6 +1,6 @@
 # KOMUS — CURRENT STATE
 
-Дата фиксации: **2026-09-01**
+Дата фиксации: **2026-09-04**
 
 Этот файл содержит только актуальное подтверждённое состояние проекта.
 Он обновляется после принятого исследовательского этапа или существенного изменения требований.
@@ -310,3 +310,30 @@ Reopen conditions:
 5. новая научная гипотеза, реально меняющая решение.
 
 Не добавлять новый model shortlist ради количества.
+
+---
+
+## 15. Stage 13 V1 — TabFM technical SAFE-RUN
+
+### FACTS
+
+- Dataset: `Data_final.xlsb`, SHA-256 `fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930`.
+- Working sample: **289 614** строк; 47 разрешённых признаков; `Q_B1_norm` и `Q_B2_norm` не являются predictors; final test не использовался.
+- Comparator: `GBDT_mean`, OOF Gini **0.8063993952**.
+- Locked TabFM provenance: Google Research TabFM release `1.0.1`, source commit `d8678b6895f1428a468d4cc299c1ff4cf704e726`, checkpoint `google/tabfm-1.0.0-pytorch` revision `77cb9cc1b4fd3a9c77fbb9552c218200bb4dab83`, checkpoint SHA-256 `928cb350becdc77cdb7a9e8c36deda88917bfd14a3091894a2dc516db58a2085`.
+- SAFE-RUN прошёл: runtime/dataset guards, exact checkpoint SHA, locked model load, real inference preflight и single-call/chunked equivalence. `max_abs_diff = 0` при tolerance `<= 1e-5`.
+- `RUN_FULL_OOF=False`; полный 3-fold OOF не запускался.
+
+### INTERPRETATION
+
+Зафиксированный TabFM path технически воспроизводим. Проверка не дала ответа на вопрос качества относительно `GBDT_mean`, так как полного OOF нет.
+
+### LIMITATIONS
+
+Наблюдаемая CPU inference throughput делает full OOF на текущей среде многодневной, потенциально многонедельной операцией. Точный runtime не установлен: часть wall elapsed была загрязнена sleep/idle. Это не является evidence, что TabFM хуже или лучше GBDT, и не даёт TabFM OOF metrics.
+
+### DECISION
+
+Статус Stage 13 V1: `STOPPED_BY_COMPUTE_COST`. Полный OOF на текущей CPU-среде не запускать; `RUN_FULL_OOF=False` сохранить. Воспроизводимый setup helper существует: `scripts/prepare_stage13_tabfm.ps1`.
+
+Следующий model question — только Stage 14 V1, TabPFN-3 large-context, со статусом `TO LOCK / NOT STARTED`: это narrow reopen по новой scientific hypothesis и требует отдельного Architect Experiment Lock до любой реализации. `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES` остаётся действующим для обычного architecture search на тех же 47 признаках. Data research остаётся открытым.

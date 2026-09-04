@@ -6,7 +6,7 @@
 
 Перед крупным изменением проверяются branch/HEAD/status, данные и affected artifacts. Исследовательский Stage закрывается только после review результата и сохранения evidence package по правилам `docs/RESEARCH_RECORD.md`.
 
-Дата актуализации: **2026-09-01**.
+Дата актуализации: **2026-09-04**.
 
 ---
 
@@ -252,6 +252,33 @@ Model research может быть открыт повторно при ново
 ## 9. Business Policy / delivery — ПОСЛЕ SYNTHESIS И ПРИ НАЛИЧИИ ОСНОВАНИЯ
 
 Business policy, reusable ML-core, backend/frontend и LLM Result Interpreter развиваются только по подтверждённой потребности. LLM остаётся post-processing interpreter и не принимает кредитное решение.
+
+---
+
+## 10. Stage 13 V1 — TabFM — ЗАКРЫТ OPERATIONALLY
+
+Статус: `STOPPED_BY_COMPUTE_COST`.
+
+Locked TabFM SAFE-RUN технически принят: dataset/checkpoint guards, model load, real inference preflight и single-call/chunked equivalence прошли. Полный 3-fold OOF не запускался (`RUN_FULL_OOF=False`), поэтому quality question относительно `GBDT_mean` остаётся неразрешённым; final test не использовался и TabFM OOF metrics отсутствуют.
+
+На текущем CPU full OOF не запускать: observed compute cost непропорционален information gain. Это не вывод о том, что TabFM хуже или лучше GBDT.
+
+Evidence: `docs/STAGE13_TABFM_RUNBOOK.md` и `reports/summary/stage13_tabfm_summary_V1.json`.
+
+---
+
+## 11. Stage 14 V1 — TabPFN-3 large-context hypothesis — TO LOCK / NOT STARTED
+
+Это единственный narrow reopen по новой scientific hypothesis: даёт ли pretrained large-context TabPFN-3 дополнительное OOF-качество относительно accepted `GBDT_mean` на тех же 47 разрешённых признаках KOMUS? Он качественно отличается от Stage 13 TabFM с bounded sampled context (`max_num_rows=100`) и не открывает model zoo.
+
+До implementation обязателен отдельный Architect Experiment Lock: official version/repository/checkpoint, license, hardware/device, preprocessing, context construction, memory mode, ensemble/configuration, seeds/reproducibility, exact folds и acceptance/decision rule. Никакой Stage 14 code сейчас не добавляется.
+
+Decision checkpoint:
+
+- при material gain foundation-model branch действительно переоткрывается;
+- при отсутствии material gain не запускать автоматически близкие TFM; вернуться к STOP либо отдельно решить вопрос xRFM как qualitatively different reserve.
+
+Data research, presentation и defence остаются параллельными открытыми направлениями.
 
 ---
 

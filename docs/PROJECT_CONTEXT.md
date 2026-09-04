@@ -4,7 +4,7 @@
 
 Актуальная точка входа в проект. Обновляется после завершения значимого исследовательского этапа, изменения требований заказчика или смены source of truth.
 
-Дата фиксации: **2026-09-01**.
+Дата фиксации: **2026-09-04**.
 
 ---
 
@@ -395,3 +395,13 @@ Model research может быть открыт повторно только п
 7. предыдущие чаты и summaries только как контекст.
 
 Historical baseline не переписывается задним числом. Новый вывод оформляется новым Stage/версией и новым артефактом.
+
+---
+
+## 15. Current model-research state after Stage 13 V1
+
+Stages 1–12 остаются accepted. Stage 13 TabFM V1 технически подтвердил locked SAFE-RUN: dataset/checkpoint guards, model load, real inference preflight и эквивалентность single-call/chunked inference (`max_abs_diff = 0`, tolerance `<= 1e-5`). Полный OOF не выполнялся, final test не использовался, а TabFM OOF metrics отсутствуют.
+
+Статус: `STOPPED_BY_COMPUTE_COST`. На текущем CPU full OOF операционно непропорционален ожидаемому information gain; это не quality verdict TabFM. Воспроизводимая подготовка доступна через `scripts/prepare_stage13_tabfm.ps1`; helper не загружает модель и не запускает SAFE-RUN или OOF.
+
+`CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES` сохраняется для обычного architecture/model-zoo search. Единственный зафиксированный narrow reopen — Stage 14 V1: TabPFN-3 large-context hypothesis (`TO LOCK / NOT STARTED`). До implementation обязателен отдельный Architect Experiment Lock: official repository/version/checkpoint, license, hardware/device, preprocessing, context construction, memory mode, ensemble/configuration, seeds, folds и acceptance/decision rule. Data research, presentation и defence evidence остаются открытыми параллельными направлениями.
