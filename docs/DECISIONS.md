@@ -528,3 +528,7 @@ GPU-only experiment не может стать следующим основны
 ### D-053 — Stage 14 xRFM V1 остановлен по hardware constraint
 
 Статус: `STOPPED_BY_COMPUTE_COST / HARDWARE_CONSTRAINT`. Environment setup прошёл, pre-run implementation принят. Hardware guard остановил Smoke до `model.fit()` на AMD Ryzen 5 5500U: 6 физических cores / 12 logical processors и 15.34 GiB physical RAM не соответствуют accepted contract 8 physical cores / 32 GiB RAM; 16 GiB available RAM перед feasibility физически недостижимы. Training, `predict_proba`, feasibility и OOF не выполнялись; quality `UNKNOWN`, final test не использовался. Frozen xRFM V1 не ослабляется и новый CPU-safe xRFM experiment не открывается. D-052 остаётся историческим разрешением narrow reopen; active default снова `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`, следующий путь — data / feature / blind-spot research.
+
+### D-054 — Model Research Coverage и обязательный FEASIBILITY_BEFORE_EXPERIMENT_LOCK
+
+Model zoo не является целью: full-protocol tested evidence, compute/hardware exclusions и not-opened candidates фиксируются раздельно; отсутствие run не является отрицательным quality evidence. Lessons TabPFN-3 и xRFM требуют future gate `FEASIBILITY_BEFORE_EXPERIMENT_LOCK` до implementation: novelty, actual CPU-only hardware (сейчас 6C / ~16 GiB), primary-source mechanics, честная full-protocol feasibility и expected information gain. `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES` сохраняется; mathematical ceiling не заявляется.

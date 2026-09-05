@@ -1,0 +1,9 @@
+{
+  "decision": "FEASIBILITY_BEFORE_EXPERIMENT_LOCK",
+  "default_compute_policy": "CPU_ONLY",
+  "actual_hardware": {"cpu": "AMD Ryzen 5 5500U", "physical_cores": 6, "logical_processors": 12, "ram_total_gib": 15.34},
+  "gate_sequence": ["scientific hypothesis / novelty", "actual hardware snapshot", "primary-source compute/runtime mechanics", "full-protocol feasibility", "no hidden hypothesis change through subsampling, reduced data, weakened config, changed features/folds, or GPU/API fallback", "expected information gain", "PASS -> Experiment Lock", "Coordinator -> Developer -> Reviewer -> run"],
+  "minimal_pre_lock_feasibility_probe": true,
+  "probe_policy": "Only when needed for compute evidence; before full Experiment Lock; minimal; no full notebook/model implementation; no hypothesis change.",
+  "unresolved_feasibility_status": "SCREENED_COMPUTE_RISK"
+}

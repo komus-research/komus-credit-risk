@@ -321,3 +321,21 @@ Hardware stop ничего не говорит о predictive quality xRFM и н�
 #### NEXT STEP
 
 Восстановлен `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`; следующий content path — data / feature / blind-spot research.
+
+### Model Research Coverage & Exclusion Register V1
+
+#### FACTS
+
+Несколько model families имеют full OOF evidence; TabFM остановлен по compute cost, TabPFN/xRFM имеют hardware/compute exclusions, modern shortlist screened. Quality непрогнанных candidates `UNKNOWN`.
+
+#### INTERPRETATION
+
+Coverage достаточен для сохранения current stopping rule; register не доказывает, что непрогнанные модели проиграли бы.
+
+#### LIMITATIONS
+
+Это не exhaustive model zoo; для non-run candidates нет quality evidence; random OOF не доказывает temporal stability.
+
+#### NEXT STEP
+
+Blind-spot / information-gap research после отдельного Experiment Lock.
