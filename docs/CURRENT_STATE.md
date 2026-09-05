@@ -347,3 +347,18 @@ Stage 14 V1 **был разрешён** как один narrow controlled reopen
 Статус: `STOPPED_BY_COMPUTE_COST / HARDWARE_CONSTRAINT`; quality: `UNKNOWN`. Environment setup прошёл, pre-run implementation принят, однако hardware guard остановил первый разрешённый Smoke до model.fit: AMD Ryzen 5 5500U имеет 6 физических cores и 15.34 GiB RAM при contract 8 cores / 32 GiB; требование 16 GiB available RAM перед feasibility на этой машине физически невыполнимо. Training, predict_proba, smoke quality, feasibility и OOF отсутствуют; final test не использован. Это ничего не утверждает о predictive quality xRFM. Frozen lock не ослабляется; active default восстановлен: `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`. Следующее направление — data / feature / blind-spot research.
 
 Создан Model Research Coverage & Exclusion Register V1 и действует `FEASIBILITY_BEFORE_EXPERIMENT_LOCK`. Новый Stage 15 не открыт; предполагаемый следующий вопрос — blind-spot / information-gap diagnostics.
+
+---
+
+## Current model-research status
+
+`CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`
+
+Подбор новых моделей остановлен. На текущем наборе признаков дальнейший поиск
+моделей имеет низкий ожидаемый информационный эффект: проверенные семейства
+моделей показали сходные ограничения, а общая зона ошибок не объясняется одной
+конкретной моделью. Следующий этап — анализ структуры общей зоны ошибок (blind
+spot) на сохранённых OOF и error artifacts.
+
+Это не является математическим доказательством потолка качества и не отменяет
+возможную пользу модели при новой проверяемой гипотезе.

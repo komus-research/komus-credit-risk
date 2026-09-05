@@ -532,3 +532,15 @@ GPU-only experiment не может стать следующим основны
 ### D-054 — Model Research Coverage и обязательный FEASIBILITY_BEFORE_EXPERIMENT_LOCK
 
 Model zoo не является целью: full-protocol tested evidence, compute/hardware exclusions и not-opened candidates фиксируются раздельно; отсутствие run не является отрицательным quality evidence. Lessons TabPFN-3 и xRFM требуют future gate `FEASIBILITY_BEFORE_EXPERIMENT_LOCK` до implementation: novelty, actual CPU-only hardware (сейчас 6C / ~16 GiB), primary-source mechanics, честная full-protocol feasibility и expected information gain. `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES` сохраняется; mathematical ceiling не заявляется.
+
+### D-055 — Transition from model search to blind-spot diagnostics
+
+Принято решение не открывать новые model experiments без новой проверяемой
+гипотезы, которая меняет основания для решения. Вместо дальнейшего перебора
+architectures начинается диагностика **805** общих ошибок моделей с
+использованием сохранённых OOF и error artifacts.
+
+Основание: на текущих 47 признаках разные проверенные семейства моделей показали
+сходные ограничения, поэтому дальнейший model search имеет низкий ожидаемый
+информационный эффект. Решение не утверждает математический потолок качества и
+не исключает будущую пользу модели при новой гипотезе.

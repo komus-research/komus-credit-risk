@@ -322,6 +322,33 @@ Hardware stop ничего не говорит о predictive quality xRFM и н�
 
 Восстановлен `CORE_MODEL_RESEARCH_STOPPED_CURRENT_47_FEATURES`; следующий content path — data / feature / blind-spot research.
 
+---
+
+## Transition: Model coverage → Blind spot information analysis
+
+### FACTS
+
+- Проверены несколько семейств моделей при текущем контракте из 47 признаков.
+- GBDT baseline остаётся устойчивым comparator.
+- Существует общая группа из **805** ошибок моделей.
+- Качество этой группы не объясняется одной конкретной моделью.
+
+### INTERPRETATION
+
+- Вероятное ограничение связано с доступной информацией, а не только с выбором
+  одной architecture.
+- Требуется анализ структуры ошибок и различий внутри общей blind spot.
+
+### LIMITATIONS
+
+- Не доказан математический потолок качества.
+- Не доказано отсутствие пользы новых моделей вообще.
+
+### NEXT STEP
+
+- Диагностика **805** blind spot без нового обучения, новых признаков или
+  изменения протокола.
+
 ### Model Research Coverage & Exclusion Register V1
 
 #### FACTS
