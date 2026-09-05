@@ -164,7 +164,7 @@ def base_result() -> dict[str, Any]:
             "per_query_row": None,
             "single_fold": None,
             "full_3fold_raw": None,
-            "safety_factor": SAFETY_FACTOR,
+            "safety_factor": None,
             "full_3fold_conservative": None,
         },
         "abort_reason": None,
@@ -190,6 +190,18 @@ def setup_blocked(result: dict[str, Any], reason: str) -> dict[str, Any]:
     result["status"] = "PROBE_SETUP_BLOCKED"
     result["abort_reason"] = reason
     return result
+
+
+def retain_contract_evidence(result: dict[str, Any], event: dict[str, Any]) -> None:
+    """Keep pre-model dataset/split facts if a parent-side guard stops the worker."""
+    result["dataset"]["actual_sha256"] = str(event["dataset_sha256"])
+    result["dataset"]["working_rows"] = int(event["working_rows"])
+    result["dataset"]["feature_count"] = int(event["feature_count"])
+    result["fold"]["working_index_sha256"] = str(event["working_split_sha256"])
+    result["fold"]["fold_number"] = int(event["fold_number"])
+    result["fold"]["train_rows"] = int(event["train_rows"])
+    result["fold"]["query_fold_rows"] = int(event["query_fold_rows"])
+    result["expected_context_rows"] = int(event["train_rows"])
 
 
 def likely_setup_problem(error: BaseException) -> bool:
@@ -293,7 +305,6 @@ def worker(repo_root_text: str, events: Any, results: Any) -> None:
         result["fold"]["train_rows"] = int(expected_context_rows)
         result["fold"]["query_fold_rows"] = int(len(query_fold_indices))
         result["expected_context_rows"] = int(expected_context_rows)
-        result["query_rows"] = int(len(x_query))
         if expected_context_rows + len(query_fold_indices) != WORKING_ROWS or x_train.shape[1] != FEATURE_COUNT or len(x_query) != QUERY_BLOCK_SIZE:
             results.put(setup_blocked(result, "FOLD_OR_QUERY_CONTRACT_MISMATCH"))
             return
@@ -410,6 +421,7 @@ def worker(repo_root_text: str, events: Any, results: Any) -> None:
             results.put(result)
             return
 
+        result["query_rows"] = int(probabilities.shape[0])
         per_query_row = query_seconds / QUERY_BLOCK_SIZE
         single_fold = result["timings_seconds"]["fit_full_context_kv_preparation"] + per_query_row * len(query_fold_indices)
         raw_projection = 3 * single_fold
@@ -742,6 +754,7 @@ def run_full_feasibility_probe(selected_mode: str, output_path: Path) -> int:
                     phase_step = int(event["step"])
                     phase_label = str(event["label"])
                 elif event.get("kind") == "contract":
+                    retain_contract_evidence(result, event)
                     print(
                         "Контракт: "
                         f"working={event['working_rows']}; train={event['train_rows']}; "
@@ -770,6 +783,13 @@ def run_full_feasibility_probe(selected_mode: str, output_path: Path) -> int:
                 last_heartbeat = now
             time.sleep(1.0)
         process.join(timeout=15)
+        while True:
+            try:
+                event = events.get_nowait()
+            except queue.Empty:
+                break
+            if event.get("kind") == "contract":
+                retain_contract_evidence(result, event)
         available = int(psutil.virtual_memory().available)
         minimum_available = min(minimum_available, available)
         peak_rss = max(peak_rss, process_tree_rss(psutil, process.pid))

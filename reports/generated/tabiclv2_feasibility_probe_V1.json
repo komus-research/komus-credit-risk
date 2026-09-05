@@ -1,0 +1,88 @@
+{
+  "probe_name": "MERITS_MINIMAL_PRE_LOCK_FEASIBILITY_PROBE",
+  "quality": "UNKNOWN",
+  "final_test_used": false,
+  "checkpoint": {
+    "name": "tabicl-classifier-v2-20260212.ckpt",
+    "sha256": null
+  },
+  "dataset": {
+    "filename": "Data_final.xlsb",
+    "expected_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+    "actual_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+    "working_rows": 289614,
+    "feature_count": 47,
+    "forbidden_predictors": [
+      "Q_B1_norm",
+      "Q_B2_norm"
+    ]
+  },
+  "fold": {
+    "working_split_identity": "saved Stage 3 working_indices from stage3_oof_predictions_V1.npz",
+    "working_index_sha256": "80430ce6290d0982d3641621ba1ed62f6fb495e8d32f7d23d9fca00091aadb45",
+    "outer_cv": {
+      "type": "StratifiedKFold",
+      "n_splits": 3,
+      "shuffle": true,
+      "random_state": 42
+    },
+    "fold_number": 1,
+    "train_rows": 193076,
+    "query_fold_rows": 96538
+  },
+  "model_configuration": {
+    "n_estimators": 8,
+    "device": "cpu",
+    "checkpoint_version": "tabicl-classifier-v2-20260212.ckpt",
+    "random_state": 42,
+    "offload_mode": "auto",
+    "n_jobs": 6,
+    "verbose": true,
+    "kv_cache": true,
+    "use_fa3": false
+  },
+  "expected_context_rows": 193076,
+  "effective_context_rows": null,
+  "query_rows": null,
+  "timings_seconds": {
+    "model_checkpoint_load": null,
+    "fit_full_context_kv_preparation": null,
+    "fit_total_including_load": null,
+    "predict_proba_query_block": null,
+    "total_wall": 156.20299999999997
+  },
+  "memory": {
+    "peak_process_tree_rss_bytes": 10154680320,
+    "peak_process_tree_rss_gib": 9.457,
+    "minimum_system_available_ram_bytes": 117628928,
+    "minimum_system_available_ram_gib": 0.11
+  },
+  "projection_seconds": {
+    "per_query_row": null,
+    "single_fold": null,
+    "full_3fold_raw": null,
+    "safety_factor": null,
+    "full_3fold_conservative": null
+  },
+  "abort_reason": "SYSTEM_AVAILABLE_RAM_BELOW_2_GIB",
+  "software": {
+    "python": "3.12.2",
+    "tabicl": "2.2.0",
+    "torch": "2.14.0",
+    "numpy": "2.2.0",
+    "scikit_learn": "1.6.0",
+    "psutil": "7.2.2",
+    "pandas": "2.2.3",
+    "pyxlsb": "1.0.10"
+  },
+  "hardware": {
+    "cpu": "AMD64 Family 23 Model 104 Stepping 1, AuthenticAMD",
+    "physical_cores": 6,
+    "logical_cores": 12,
+    "ram_total_bytes": 16469520384,
+    "ram_total_gib": 15.338,
+    "ram_available_bytes": 10260832256,
+    "ram_available_gib": 9.556
+  },
+  "status": "TABICLV2_REJECTED_BY_FEASIBILITY_GATE"
+}
