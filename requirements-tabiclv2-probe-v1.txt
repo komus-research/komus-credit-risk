@@ -1,0 +1,6 @@
+tabicl==2.2.0
+pandas==2.2.3
+pyxlsb==1.0.10
+numpy==2.2.0
+scikit-learn==1.6.0
+psutil==7.2.2
