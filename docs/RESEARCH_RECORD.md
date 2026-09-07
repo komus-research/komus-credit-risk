@@ -483,3 +483,84 @@ Stage 16 показал наблюдаемый профиль 805 common blind-s
 KMeans silhouette для `k=2..6` не показал сильного разделения, но это не является строгой проверкой устойчивости кластеров.
 
 Stage 16 также не доказывает, что 47 признаков объективно недостаточны. Более корректная формулировка: результаты Stage 16 мотивировали проверку гипотезы об ограничениях текущего информационного пространства, которая была уточнена в Stage 17.
+
+---
+
+## Stage 18 — FP/FN и operating modes
+
+Дата завершения: 2026-09-07
+
+Статус: `FP_FN_OPERATING_MAP_COMPLETE`
+
+Reviewer: `ACCEPT`.
+
+### Исследовательский вопрос
+
+Как меняется баланс False Positive и False Negative текущего baseline
+при разных operating modes и можно ли обоснованно выделить кандидата
+на зону дополнительной проверки?
+
+### FACTS
+
+Operating modes 10/15/20/25/30% были зафиксированы до просмотра FP/FN.
+
+При росте risk capacity Recall вырос с **57.42%** до **87.47%**,
+а FP — с **12 876** до **62 378**.
+
+`Moderate` 15%:
+Recall **69.94%**, Precision **45.10%**, FN **8 421**, FP **23 848**.
+Режим используется только как reference к бизнес-ориентиру около 69%.
+
+Common blind spot:
+
+- 0/805 captured при capacity 10–30%;
+- первый случай ≈ **50.11%** capacity;
+- 50% группы ≈ **63.51%** capacity.
+
+Model disagreement `rank_spread >= 0.25`:
+
+- 1 762 review candidates;
+- 32 FN;
+- 0.38% всех FN;
+- default enrichment 0.53x.
+
+Threshold review zone:
+
+- 2% workload → 8.95% всех ошибок;
+- 5% → 21.56%;
+- 10% → 41.04%.
+
+Error rate внутри зон: **45.72–49.88%**
+при общем Moderate error rate **11.14%**.
+
+### INTERPRETATION
+
+Один threshold не решает все виды ошибок.
+
+Boundary review zone поддерживается evidence как кандидат
+на дополнительную проверку пограничных решений.
+
+Common blind spot является отдельной задачей и требует другого сигнала
+или дополнительной информации.
+
+### LIMITATIONS
+
+Stage 18 не определяет business-optimal threshold или размер review zone.
+
+Не доказано, что ручная проверка исправит routed errors.
+
+Не доказана temporal stability.
+
+Не доказано, что другой disagreement/uncertainty signal будет бесполезен.
+
+Final test не использовался.
+Новые модели и признаки отсутствуют.
+
+### NEXT STEP
+
+Формализация универсального experiment pipeline для нового признака.
+
+Evidence:
+
+- `notebooks/18_FP_FN_и_operating_modes_baseline_V1.ipynb`
+- `reports/generated/stage18_fp_fn_operating_modes_V1.json`

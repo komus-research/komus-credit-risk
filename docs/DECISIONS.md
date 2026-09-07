@@ -581,3 +581,33 @@ Stage 17 не утверждает:
 - недостаточность всех 47 признаков;
 - причинную природу blind spot;
 - гарантированный gain от новых источников.
+
+---
+
+## 2026-09-07
+
+### D-058 — Stage 18 принят: FP/FN рассматриваются как отдельный operating layer
+
+Статус:
+
+`FP_FN_OPERATING_MAP_COMPLETE`
+
+Reviewer verdict: `ACCEPT`.
+
+Принято разделение трёх механизмов:
+
+1. **Operating threshold** — управляет общим Recall / Precision / FN / FP trade-off.
+2. **Boundary review zone** — кандидат на дополнительную проверку, поскольку около threshold ошибки концентрируются в 4+ раза сильнее среднего.
+3. **Common blind spot** — отдельная проблема, не решаемая практически одним снижением threshold.
+
+`Moderate` 15% используется только как reference к бизнес-ориентиру Recall около 69% и не является оптимальным threshold.
+
+Правило `rank_spread >= 0.25` не принимается как practical FN review signal на текущем evidence.
+
+Размер review zone не выбирается до появления business cost / workload constraints.
+
+Следующий research priority:
+универсальный controlled pipeline проверки нового признака.
+
+Это соответствует финальной рамке проекта:
+не model zoo, а воспроизводимый процесс проверки новых ML/ИИ-подходов и новых факторов.

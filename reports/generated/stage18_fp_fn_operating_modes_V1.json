@@ -1,0 +1,486 @@
+{
+  "stage": "Stage 18",
+  "version": "V1",
+  "research_question": "Как меняется баланс False Positive и False Negative текущего baseline при разных operating modes и можно ли обоснованно выделить кандидата на зону дополнительной проверки?",
+  "status": "FP_FN_OPERATING_MAP_COMPLETE",
+  "experiment_flags": {
+    "model_training": false,
+    "new_features_created": false,
+    "final_test_used": false,
+    "threshold_optimization_performed": false,
+    "review_zone_widths_optimized": false,
+    "new_disagreement_threshold_selected": false
+  },
+  "data_identity": {
+    "working_rows": 289614,
+    "defaults": 28015,
+    "non_defaults": 261599,
+    "common_blind_spot": 805
+  },
+  "baseline_identity": {
+    "name": "GBDT_mean",
+    "source": "Mean of saved CatBoost, XGBoost and LightGBM working-sample OOF probabilities",
+    "oof_gini_reconstructed": 0.8063993934386131,
+    "accepted_oof_gini_reference": 0.8063993952,
+    "gini_tolerance": 1e-08
+  },
+  "operating_modes": [
+    {
+      "Режим": "Narrow",
+      "Плановая risk capacity": 0.1,
+      "Threshold": 0.2945221919987989,
+      "Фактическая доля risk decision": 0.10000207172305206,
+      "Количество risk decision": 28962
+    },
+    {
+      "Режим": "Moderate",
+      "Плановая risk capacity": 0.15,
+      "Threshold": 0.1827384762728923,
+      "Фактическая доля risk decision": 0.14999965471282464,
+      "Количество risk decision": 43442
+    },
+    {
+      "Режим": "Balanced",
+      "Плановая risk capacity": 0.2,
+      "Threshold": 0.12382141849768909,
+      "Фактическая доля risk decision": 0.2000006905743507,
+      "Количество risk decision": 57923
+    },
+    {
+      "Режим": "Broad",
+      "Плановая risk capacity": 0.25,
+      "Threshold": 0.08877613253645085,
+      "Фактическая доля risk decision": 0.2500017264358767,
+      "Количество risk decision": 72404
+    },
+    {
+      "Режим": "High-recall",
+      "Плановая risk capacity": 0.3,
+      "Threshold": 0.06622442164004134,
+      "Фактическая доля risk decision": 0.2999993094256493,
+      "Количество risk decision": 86884
+    }
+  ],
+  "fp_fn_map": [
+    {
+      "Режим": "Narrow",
+      "Threshold": 0.2945221919987989,
+      "Risk capacity": 0.10000207172305206,
+      "TP": 16086,
+      "FN": 11929,
+      "FP": 12876,
+      "TN": 248723,
+      "Recall": 0.574192396930216,
+      "Precision": 0.5554174435467164,
+      "F1": 0.5646488934131316,
+      "FNR": 0.42580760306978405,
+      "FPR": 0.04922037163750626,
+      "Δ Recall до 69%": -0.115807603069784
+    },
+    {
+      "Режим": "Moderate",
+      "Threshold": 0.1827384762728923,
+      "Risk capacity": 0.14999965471282464,
+      "TP": 19594,
+      "FN": 8421,
+      "FP": 23848,
+      "TN": 237751,
+      "Recall": 0.6994110298054613,
+      "Precision": 0.4510381658303025,
+      "F1": 0.5484137313349287,
+      "FNR": 0.3005889701945386,
+      "FPR": 0.09116242799093269,
+      "Δ Recall до 69%": 0.00941102980546138
+    },
+    {
+      "Режим": "Balanced",
+      "Threshold": 0.12382141849768909,
+      "Risk capacity": 0.2000006905743507,
+      "TP": 21864,
+      "FN": 6151,
+      "FP": 36059,
+      "TN": 225540,
+      "Recall": 0.780439050508656,
+      "Precision": 0.37746663674188147,
+      "F1": 0.5088319486141171,
+      "FNR": 0.21956094949134392,
+      "FPR": 0.13784074098142576,
+      "Δ Recall до 69%": 0.09043905050865608
+    },
+    {
+      "Режим": "Broad",
+      "Threshold": 0.08877613253645085,
+      "Risk capacity": 0.2500017264358767,
+      "TP": 23465,
+      "FN": 4550,
+      "FP": 48939,
+      "TN": 212660,
+      "Recall": 0.8375870069605569,
+      "Precision": 0.324084304734545,
+      "F1": 0.46734183770003684,
+      "FNR": 0.16241299303944315,
+      "FPR": 0.18707640319725993,
+      "Δ Recall до 69%": 0.14758700696055693
+    },
+    {
+      "Режим": "High-recall",
+      "Threshold": 0.06622442164004134,
+      "Risk capacity": 0.2999993094256493,
+      "TP": 24506,
+      "FN": 3509,
+      "FP": 62378,
+      "TN": 199221,
+      "Recall": 0.8747456719614493,
+      "Precision": 0.28205423323051426,
+      "F1": 0.42656594052167557,
+      "FNR": 0.12525432803855077,
+      "FPR": 0.23844892373441795,
+      "Δ Recall до 69%": 0.1847456719614493
+    }
+  ],
+  "common_blind_spot_by_operating_mode": [
+    {
+      "Режим": "Narrow",
+      "Threshold": 0.2945221919987989,
+      "Blind spot captured": 0,
+      "Blind spot missed": 805,
+      "Blind spot capture rate": 0.0
+    },
+    {
+      "Режим": "Moderate",
+      "Threshold": 0.1827384762728923,
+      "Blind spot captured": 0,
+      "Blind spot missed": 805,
+      "Blind spot capture rate": 0.0
+    },
+    {
+      "Режим": "Balanced",
+      "Threshold": 0.12382141849768909,
+      "Blind spot captured": 0,
+      "Blind spot missed": 805,
+      "Blind spot capture rate": 0.0
+    },
+    {
+      "Режим": "Broad",
+      "Threshold": 0.08877613253645085,
+      "Blind spot captured": 0,
+      "Blind spot missed": 805,
+      "Blind spot capture rate": 0.0
+    },
+    {
+      "Режим": "High-recall",
+      "Threshold": 0.06622442164004134,
+      "Blind spot captured": 0,
+      "Blind spot missed": 805,
+      "Blind spot capture rate": 0.0
+    }
+  ],
+  "common_blind_spot_capacity_cost": [
+    {
+      "Цель захвата blind spot": "Первый клиент",
+      "Минимум blind клиентов": 1,
+      "Требуемая risk capacity": 0.5010600316283053,
+      "Всего risk decisions": 145114,
+      "Blind captured": 1,
+      "TP всего": 26755,
+      "FP всего": 118359
+    },
+    {
+      "Цель захвата blind spot": "1%",
+      "Минимум blind клиентов": 9,
+      "Требуемая risk capacity": 0.5031939063719295,
+      "Всего risk decisions": 145732,
+      "Blind captured": 9,
+      "TP всего": 26772,
+      "FP всего": 118960
+    },
+    {
+      "Цель захвата blind spot": "10%",
+      "Минимум blind клиентов": 81,
+      "Требуемая risk capacity": 0.5209727430303783,
+      "Всего risk decisions": 150881,
+      "Blind captured": 81,
+      "TP всего": 26881,
+      "FP всего": 124000
+    },
+    {
+      "Цель захвата blind spot": "25%",
+      "Минимум blind клиентов": 202,
+      "Требуемая risk capacity": 0.5577872616655272,
+      "Всего risk decisions": 161543,
+      "Blind captured": 202,
+      "TP всего": 27071,
+      "FP всего": 134472
+    },
+    {
+      "Цель захвата blind spot": "50%",
+      "Минимум blind клиентов": 403,
+      "Требуемая risk capacity": 0.6351143245837563,
+      "Всего risk decisions": 183938,
+      "Blind captured": 403,
+      "TP всего": 27392,
+      "FP всего": 156546
+    },
+    {
+      "Цель захвата blind spot": "75%",
+      "Минимум blind клиентов": 604,
+      "Требуемая risk capacity": 0.7633988688392136,
+      "Всего risk decisions": 221091,
+      "Blind captured": 604,
+      "TP всего": 27729,
+      "FP всего": 193362
+    },
+    {
+      "Цель захвата blind spot": "100%",
+      "Минимум blind клиентов": 805,
+      "Требуемая risk capacity": 0.9839890336793111,
+      "Всего risk decisions": 284977,
+      "Blind captured": 805,
+      "TP всего": 28015,
+      "FP всего": 256962
+    }
+  ],
+  "model_disagreement_review_candidate": [
+    {
+      "Reference mode": "Moderate",
+      "Recall reference mode": 0.6994110298054613,
+      "Negative decisions": 246172,
+      "FN всего": 8421,
+      "Review candidates": 1762,
+      "Review load от всей выборки": 0.006083960029556582,
+      "Review load среди negative decisions": 0.007157597127211868,
+      "FN routed to review": 32,
+      "Доля FN routed to review": 0.0038000237501484386,
+      "Недефолты в review": 1730,
+      "Default rate среди negative decisions": 0.034207789675511434,
+      "Default rate в review zone": 0.018161180476730987,
+      "Default enrichment": 0.5309077449611471,
+      "Common blind routed": 0
+    }
+  ],
+  "threshold_review_zones": [
+    {
+      "Review zone": "2%",
+      "Нижняя граница ranking": 0.13999999999999999,
+      "Верхняя граница ranking": 0.16,
+      "Review clients": 5792,
+      "Defaults in review": 1103,
+      "Non-defaults in review": 4689,
+      "FN in review": 548,
+      "Доля всех FN": 0.06507540672129201,
+      "FP in review": 2341,
+      "Доля всех FP": 0.09816336799731634,
+      "Всего ошибок в review": 2889,
+      "Error rate в review": 0.4987914364640884
+    },
+    {
+      "Review zone": "5%",
+      "Нижняя граница ranking": 0.125,
+      "Верхняя граница ranking": 0.175,
+      "Review clients": 14480,
+      "Defaults in review": 2811,
+      "Non-defaults in review": 11669,
+      "FN in review": 1264,
+      "Доля всех FN": 0.1501009381308633,
+      "FP in review": 5693,
+      "Доля всех FP": 0.23872022811137203,
+      "Всего ошибок в review": 6957,
+      "Error rate в review": 0.4804558011049724
+    },
+    {
+      "Review zone": "10%",
+      "Нижняя граница ranking": 0.09999999999999999,
+      "Верхняя граница ranking": 0.2,
+      "Review clients": 28962,
+      "Defaults in review": 5779,
+      "Non-defaults in review": 23183,
+      "FN in review": 2270,
+      "Доля всех FN": 0.26956418477615485,
+      "FP in review": 10972,
+      "Доля всех FP": 0.46008050989600807,
+      "Всего ошибок в review": 13242,
+      "Error rate в review": 0.4572198052620675
+    }
+  ],
+  "error_concentration": [
+    {
+      "Review zone": "2%",
+      "Review clients": 5792,
+      "Overall error rate": 0.11142071861166933,
+      "Error rate в review": 0.4987914364640884,
+      "Error rate вне review": 0.1035155837109174,
+      "Enrichment vs all": 4.476648891509204,
+      "Enrichment vs outside": 4.818515421378846
+    },
+    {
+      "Review zone": "5%",
+      "Review clients": 14480,
+      "Overall error rate": 0.11142071861166933,
+      "Error rate в review": 0.4804558011049724,
+      "Error rate вне review": 0.09199880785362768,
+      "Enrichment vs all": 4.312086720419457,
+      "Enrichment vs outside": 5.222413336805289
+    },
+    {
+      "Review zone": "10%",
+      "Review clients": 28962,
+      "Overall error rate": 0.11142071861166933,
+      "Error rate в review": 0.4572198052620675,
+      "Error rate вне review": 0.07299771342633089,
+      "Enrichment vs all": 4.103543855749122,
+      "Enrichment vs outside": 6.263481194154014
+    }
+  ],
+  "review_workload": [
+    {
+      "Review zone": "2%",
+      "Review clients": 5792,
+      "Review load": 0.01999903319590904,
+      "Ошибок направлено в review": 2889,
+      "Доля всех ошибок": 0.08952864978772196,
+      "Error capture / workload": 4.476648891509203
+    },
+    {
+      "Review zone": "5%",
+      "Review clients": 14480,
+      "Review load": 0.049997582989772596,
+      "Ошибок направлено в review": 6957,
+      "Доля всех ошибок": 0.21559391366326816,
+      "Error capture / workload": 4.312086720419457
+    },
+    {
+      "Review zone": "10%",
+      "Review clients": 28962,
+      "Review load": 0.10000207172305206,
+      "Ошибок направлено в review": 13242,
+      "Доля всех ошибок": 0.41036288698131335,
+      "Error capture / workload": 4.103543855749122
+    }
+  ],
+  "key_results": {
+    "moderate": {
+      "risk_capacity": 0.14999965471282464,
+      "threshold": 0.1827384762728923,
+      "recall": 0.6994110298054613,
+      "precision": 0.4510381658303025,
+      "fn": 8421,
+      "fp": 23848
+    },
+    "blind_spot": {
+      "captured_at_10_to_30_percent_capacity": 0,
+      "first_case_required_capacity": 0.5010600316283053,
+      "fifty_percent_required_capacity": 0.6351143245837563
+    },
+    "disagreement": {
+      "rule": "rank_spread >= 0.25",
+      "fn_routed_to_review": 32,
+      "fn_share_routed_to_review": 0.0038000237501484386,
+      "default_enrichment": 0.5309077449611471
+    },
+    "threshold_review_zone": {
+      "2_percent_error_rate": 0.4987914364640884,
+      "2_percent_error_capture": 0.08952864978772196,
+      "5_percent_error_capture": 0.21559391366326816,
+      "10_percent_error_capture": 0.41036288698131335
+    }
+  },
+  "facts": [
+    "При risk capacity 10–30% общий Recall растёт с 57.42% до 87.47%, одновременно растёт FP-нагрузка.",
+    "Moderate mode с capacity 15% дал Recall около 69.94%, но не признан оптимальным threshold.",
+    "Ни один из 805 common blind-spot defaults не попал в operating modes 10–30%.",
+    "Первый common blind case появляется только примерно после 50.11% общей risk capacity.",
+    "Принятое правило model disagreement rank_spread >= 0.25 не концентрирует FN.",
+    "Review zone вокруг Moderate threshold концентрирует ошибки значительно сильнее working sample в целом.",
+    "При review load 2%, 5% и 10% в review попадает примерно 8.95%, 21.56% и 41.04% всех ошибок Moderate mode."
+  ],
+  "interpretation": "FP/FN следует разделять на общий operating trade-off, пограничные ошибки около threshold и отдельный common blind spot. Threshold управляет общим Recall/FP balance; пограничная review zone является кандидатом на дополнительную проверку; common blind spot не решается практически одним снижением threshold.",
+  "limitations": [
+    "Stage 18 не определяет бизнес-оптимальный threshold без стоимости FN, FP и review workload.",
+    "Попадание ошибки в review zone не означает, что дополнительная проверка обязательно исправит решение.",
+    "Размеры review zone 2%, 5% и 10% не оптимизировались по метрикам.",
+    "Common blind spot определён через model ranks, поэтому его низкое положение в ranking частично связано с определением группы.",
+    "Model disagreement result относится к принятому правилу rank_spread >= 0.25 и не доказывает бесполезность любых uncertainty signals.",
+    "Random CV/OOF не доказывает temporal stability."
+  ],
+  "decision": {
+    "threshold": "Рассматривать как business operating parameter, а не как способ скрытой оптимизации модели.",
+    "review_zone": "Score-boundary zone поддерживается evidence как кандидат на дополнительную проверку; размер должен определяться business cost/capacity.",
+    "model_disagreement": "Принятое правило rank_spread >= 0.25 не поддерживается как practical FN review signal.",
+    "common_blind_spot": "Не смешивать с обычными пограничными ошибками; для него требуется отдельный информационный или иной механизм выявления.",
+    "next_research_stage": "Формализация универсального controlled pipeline для проверки нового признака."
+  },
+  "created_at_utc": "2026-09-07T14:22:49.453930+00:00",
+  "dataset_contract": {
+    "dataset": "Data_final.xlsb",
+    "dataset_sha256": "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930",
+    "target": "DefMark",
+    "identifier": "INN",
+    "working_rows": 289614,
+    "final_test_rows": 72404,
+    "working_index_sha256": "80430ce6290d0982d3641621ba1ed62f6fb495e8d32f7d23d9fca00091aadb45",
+    "final_test_index_sha256": "35ec963fe82918841f4a8acb012e8fc878aed66d2c5296ea6cb105177cafbb37",
+    "split": {
+      "working_share": 0.8,
+      "final_test_share": 0.2,
+      "seed": 42
+    }
+  },
+  "feature_contract": {
+    "allowed_feature_count": 47,
+    "allowed_features": [
+      "Q_A1_norm",
+      "Q_A2_norm",
+      "Q_A3_norm",
+      "Q_A4_norm",
+      "Q_A5_norm",
+      "Q_A6_norm",
+      "Q_A7_norm",
+      "Q_B3_norm",
+      "Q_B4_norm",
+      "Q_B5_norm",
+      "Q_C1_norm",
+      "Q_D1_norm",
+      "Q_D2_norm",
+      "Q_D3_norm",
+      "Q_D4_norm",
+      "Q_D5_norm",
+      "Q_D6_norm",
+      "A1_norm",
+      "A2_norm",
+      "A3_norm",
+      "A4_norm",
+      "A5_norm",
+      "A6_norm",
+      "B1_norm",
+      "B2_norm",
+      "B3_norm",
+      "C1_norm",
+      "C2_norm",
+      "C3_norm",
+      "C4_norm",
+      "D1_norm",
+      "D2_norm",
+      "D3_norm",
+      "D4_norm",
+      "D5_norm",
+      "E1_norm",
+      "E2_norm",
+      "E3_norm",
+      "F1_norm",
+      "F2_norm",
+      "F3_norm",
+      "F4_norm",
+      "G1_norm",
+      "G2_norm",
+      "G3_norm",
+      "G4_norm",
+      "G5_norm"
+    ],
+    "Q_B1_norm_used_as_predictor": false,
+    "Q_B2_norm_used_as_predictor": false
+  },
+  "evidence_sources": {
+    "oof_predictions": "reports/generated/stage3_oof_predictions_V1.npz",
+    "feature_contract_source": "reports/generated/stage17_information_gap_map_V1.json"
+  }
+}

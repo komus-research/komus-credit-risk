@@ -427,3 +427,94 @@ Evidence:
 
 - `notebooks/17_Карта_информационного_разрыва_V1.ipynb`
 - `reports/generated/stage17_information_gap_map_V1.json`
+
+---
+
+## 18. Stage 18 V1 — FP/FN и operating modes
+
+Статус:
+
+`FP_FN_OPERATING_MAP_COMPLETE`
+
+Reviewer verdict: `ACCEPT`.
+
+### FACTS
+
+Исследование выполнено только на сохранённом working-sample OOF:
+
+- working rows: **289 614**;
+- defaults: **28 015**;
+- final test не использовался;
+- новые модели не обучались;
+- новые признаки не создавались;
+- `Q_B1_norm` / `Q_B2_norm` не predictors;
+- threshold и размеры review zone не оптимизировались по результатам.
+
+Заранее были зафиксированы operating modes с risk capacity 10%, 15%, 20%, 25% и 30%.
+
+Ключевые результаты:
+
+- 10% capacity → Recall **57.42%**, Precision **55.54%**, FN **11 929**, FP **12 876**;
+- 15% → Recall **69.94%**, Precision **45.10%**, FN **8 421**, FP **23 848**;
+- 20% → Recall **78.04%**, Precision **37.75%**, FN **6 151**, FP **36 059**;
+- 25% → Recall **83.76%**, Precision **32.41%**, FN **4 550**, FP **48 939**;
+- 30% → Recall **87.47%**, Precision **28.21%**, FN **3 509**, FP **62 378**.
+
+Режим `Moderate` с capacity 15% используется только как reference,
+поскольку оказался близок к бизнес-ориентиру Recall около 69%.
+Он не признан оптимальным threshold.
+
+### Common blind spot
+
+При operating modes 10–30% захвачено **0 из 805** common blind-spot defaults.
+
+Первый blind case появляется примерно при **50.11%** risk capacity.
+Для захвата 50% группы требуется около **63.51%** risk capacity.
+
+Это не является доказательством невозможности обнаружения этой группы другими механизмами:
+blind spot изначально определён через низкий model rank.
+
+### Model disagreement
+
+Принятое правило Stage 3 `rank_spread >= 0.25`
+не показало полезной концентрации FN:
+
+- review candidates: **1 762**;
+- FN routed: **32**;
+- доля всех FN: **0.38%**;
+- default enrichment: **0.53x**.
+
+Вывод относится только к этому конкретному правилу disagreement.
+
+### Threshold review zone
+
+Зона вокруг Moderate boundary показала высокую концентрацию ошибок:
+
+- 2% review load → **8.95%** всех ошибок, error rate **49.88%**;
+- 5% → **21.56%** всех ошибок, error rate **48.05%**;
+- 10% → **41.04%** всех ошибок, error rate **45.72%**.
+
+Общий error rate Moderate составляет **11.14%**.
+
+### INTERPRETATION
+
+Stage 18 разделяет три разные задачи:
+
+1. threshold управляет общим компромиссом Recall / Precision / FN / FP;
+2. область около threshold является evidence-supported кандидатом на дополнительную проверку;
+3. common blind spot требует отдельного механизма и не решается практически одним снижением threshold.
+
+### DECISION
+
+Threshold рассматривается как business operating parameter.
+
+Размер review zone нельзя выбирать без стоимости FP/FN и допустимой операционной нагрузки.
+
+Следующий приоритет — формализовать универсальный controlled pipeline проверки нового признака:
+
+`provenance → temporal admissibility → one controlled change → OOF quality → FP/FN → review zone → blind spot → ACCEPT / REJECT`.
+
+Evidence:
+
+- `notebooks/18_FP_FN_и_operating_modes_baseline_V1.ipynb`
+- `reports/generated/stage18_fp_fn_operating_modes_V1.json`
