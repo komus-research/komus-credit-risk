@@ -558,3 +558,70 @@ final test не используется для выбора признака. �
 
 - `notebooks/19_Протокол_проверки_нового_признака_V1.ipynb`
 - `reports/generated/stage19_new_feature_protocol_V1.json`
+
+---
+
+## 20. Stage 20 V1 — ролевой интерпретатор результата GPT
+
+### D-060 — Stage 20 V1 принят: ролевой интерпретатор результата GPT
+
+Статус: `ROLE_BASED_RESULT_INTERPRETER_PROTOTYPE_READY`.
+
+Reviewer final verdict: `ACCEPT`.
+
+`accepted=true`.
+
+Stage 20 V1 — ролевой интерпретатор результата GPT — ACCEPTED.
+
+### Research question
+
+Можно ли при неизменном заранее рассчитанном ML-результате менять только форму и акценты объяснения для четырёх бизнес-ролей, сохраняя факты и не превращая LLM в кредитную модель или decision-maker.
+
+### Evidence
+
+- 2 frozen synthetic cards × 4 roles = 8 independent OpenAI Responses API calls;
+- model `gpt-5.6-luna`;
+- openai SDK `3.8.0`;
+- reasoning effort `none`;
+- `store=false`;
+- `tools=[]`;
+- реальные клиентские данные не использовались;
+- automated validation 8/8 PASS;
+- manual review 8/8 PASS;
+- Reviewer final verdict ACCEPT;
+- `accepted=true`;
+- final status `ROLE_BASED_RESULT_INTERPRETER_PROTOTYPE_READY`.
+
+### Artifacts
+
+- `notebooks/20_Ролевой_интерпретатор_результата_GPT_V1.ipynb`
+- `reports/generated/stage20_role_interpreter_V1.json`
+
+### Conclusion
+
+LLM подтверждён только как Result Interpreter заранее рассчитанного ML-результата.
+
+Ролевая адаптация объяснений показана для:
+
+- менеджера по продажам;
+- кредитного контролёра;
+- юриста;
+- информационной безопасности.
+
+### Limits
+
+Stage 20 не доказывает:
+
+- улучшение Gini/Recall/PR-AUC;
+- улучшение кредитного решения;
+- юридическую достаточность;
+- production/security readiness;
+- пользу для реальных пользователей;
+- детерминированность prose;
+- способность GPT самостоятельно строить объяснение без подготовленных фактов.
+
+`store=false` не трактуется как Zero Data Retention или гарантия отсутствия хранения.
+
+### Next
+
+Stage 20 закрыт. Новые API-вызовы не нужны. Следующий приоритет — итоговый research synthesis / evidence package / презентация для защиты.

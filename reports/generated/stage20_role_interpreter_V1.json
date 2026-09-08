@@ -1,0 +1,840 @@
+{
+  "stage": "Stage 20 V1",
+  "status": "ROLE_BASED_RESULT_INTERPRETER_PROTOTYPE_READY",
+  "accepted": true,
+  "contract": {
+    "requested_model_id": "gpt-5.6-luna",
+    "reasoning_effort": "none",
+    "store": false,
+    "tools": [],
+    "max_output_tokens": 800,
+    "real_client_data_used": false,
+    "frozen_synthetic_cards": [
+      "CASE_A",
+      "CASE_B"
+    ],
+    "roles": [
+      "sales_manager",
+      "credit_controller",
+      "lawyer",
+      "information_security"
+    ]
+  },
+  "master_prompt_sha256": "9aaeedb67a4e4c0bb8b1bb4bcb20eddd7fed3b94f685e9a06977bdbfb8285611",
+  "api_calls_executed": 8,
+  "automated_validation": {
+    "passed": 8,
+    "required": 8,
+    "status": "PASSED",
+    "input_card_invariants_by_scenario": {
+      "CASE_A": {
+        "model_result_canonical": true,
+        "non_role_card_canonical": true
+      },
+      "CASE_B": {
+        "model_result_canonical": true,
+        "non_role_card_canonical": true
+      }
+    }
+  },
+  "manual_review": {
+    "required": true,
+    "status": "COMPLETED",
+    "record": [
+      {
+        "scenario_id": "CASE_A",
+        "recipient_role": "sales_manager",
+        "invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+        "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+      },
+      {
+        "scenario_id": "CASE_A",
+        "recipient_role": "credit_controller",
+        "invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+        "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+      },
+      {
+        "scenario_id": "CASE_A",
+        "recipient_role": "lawyer",
+        "invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+        "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+      },
+      {
+        "scenario_id": "CASE_A",
+        "recipient_role": "information_security",
+        "invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+        "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+      },
+      {
+        "scenario_id": "CASE_B",
+        "recipient_role": "sales_manager",
+        "invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+        "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+      },
+      {
+        "scenario_id": "CASE_B",
+        "recipient_role": "credit_controller",
+        "invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+        "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+      },
+      {
+        "scenario_id": "CASE_B",
+        "recipient_role": "lawyer",
+        "invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+        "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+      },
+      {
+        "scenario_id": "CASE_B",
+        "recipient_role": "information_security",
+        "invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+        "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+      }
+    ]
+  },
+  "review_table": [
+    {
+      "сценарий": "CASE_A",
+      "роль": "sales_manager",
+      "структура_OK": true,
+      "факты_сохранены": true,
+      "новые_числа_отсутствуют": true,
+      "provenance_OK": true,
+      "ручная_проверка_invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+      "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+    },
+    {
+      "сценарий": "CASE_A",
+      "роль": "credit_controller",
+      "структура_OK": true,
+      "факты_сохранены": true,
+      "новые_числа_отсутствуют": true,
+      "provenance_OK": true,
+      "ручная_проверка_invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+      "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+    },
+    {
+      "сценарий": "CASE_A",
+      "роль": "lawyer",
+      "структура_OK": true,
+      "факты_сохранены": true,
+      "новые_числа_отсутствуют": true,
+      "provenance_OK": true,
+      "ручная_проверка_invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+      "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+    },
+    {
+      "сценарий": "CASE_A",
+      "роль": "information_security",
+      "структура_OK": true,
+      "факты_сохранены": true,
+      "новые_числа_отсутствуют": true,
+      "provenance_OK": true,
+      "ручная_проверка_invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+      "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+    },
+    {
+      "сценарий": "CASE_B",
+      "роль": "sales_manager",
+      "структура_OK": true,
+      "факты_сохранены": true,
+      "новые_числа_отсутствуют": true,
+      "provenance_OK": true,
+      "ручная_проверка_invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+      "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+    },
+    {
+      "сценарий": "CASE_B",
+      "роль": "credit_controller",
+      "структура_OK": true,
+      "факты_сохранены": true,
+      "новые_числа_отсутствуют": true,
+      "provenance_OK": true,
+      "ручная_проверка_invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+      "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+    },
+    {
+      "сценарий": "CASE_B",
+      "роль": "lawyer",
+      "структура_OK": true,
+      "факты_сохранены": true,
+      "новые_числа_отсутствуют": true,
+      "provenance_OK": true,
+      "ручная_проверка_invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+      "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+    },
+    {
+      "сценарий": "CASE_B",
+      "роль": "information_security",
+      "структура_OK": true,
+      "факты_сохранены": true,
+      "новые_числа_отсутствуют": true,
+      "provenance_OK": true,
+      "ручная_проверка_invented_factual_claims": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ",
+      "role_adaptation": "ПОДТВЕРЖДЕНО_РУЧНОЙ_ПРОВЕРКОЙ"
+    }
+  ],
+  "responses": [
+    {
+      "scenario_id": "CASE_A",
+      "recipient_role": "sales_manager",
+      "response": {
+        "scenario_id": "CASE_A",
+        "recipient_role": "sales_manager",
+        "preserved_result": {
+          "model_name": "SYNTHETIC_GBDT_DEMO",
+          "score": 0.32,
+          "threshold": 0.5,
+          "relative_to_threshold": "below",
+          "ml_decision": "standard_processing",
+          "additional_review": false
+        },
+        "statements": [
+          {
+            "kind": "fact",
+            "text": "Синтетическая модель SYNTHETIC_GBDT_DEMO вернула score 0.32, что ниже threshold 0.5. Зафиксированное решение модели — standard_processing; дополнительная проверка не требуется.",
+            "source_fact_ids": [
+              "model_result.model_name",
+              "model_result.score",
+              "model_result.threshold",
+              "model_result.relative_to_threshold",
+              "model_result.ml_decision",
+              "model_result.additional_review"
+            ]
+          },
+          {
+            "kind": "workflow_interpretation",
+            "text": "Для указанного workflow результат означает стандартную обработку без дополнительной проверки.",
+            "source_fact_ids": [
+              "model_result.ml_decision",
+              "model_result.additional_review",
+              "model_result.decision_mode"
+            ]
+          },
+          {
+            "kind": "limitation",
+            "text": "Карточка синтетическая и не содержит реальных клиентских данных; интерпретация не является кредитным решением и не включает расчёт кредитного риска.",
+            "source_fact_ids": [
+              "limitations.LIM_SYNTHETIC_ONLY",
+              "limitations.LIM_NO_CREDIT_DECISION",
+              "limitations.LIM_NO_RISK_CALCULATION"
+            ]
+          }
+        ],
+        "used_factor_ids": []
+      },
+      "validation": {
+        "ok": true,
+        "errors": []
+      },
+      "metadata": {
+        "requested_model_id": "gpt-5.6-luna",
+        "response_model": "gpt-5.6-luna",
+        "utc_timestamp": "2026-09-08T13:20:27.197728Z",
+        "sdk_version": "3.8.0",
+        "response_id": "resp_048f5ae9bbd97812016aa00b9b9fbc87d28fa0af4436bd3185",
+        "response_status": "completed",
+        "usage": {
+          "input_tokens": 1255,
+          "input_tokens_details": {
+            "cache_write_tokens": 1252,
+            "cached_tokens": 0
+          },
+          "output_tokens": 291,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1546
+        },
+        "master_prompt_sha256": "9aaeedb67a4e4c0bb8b1bb4bcb20eddd7fed3b94f685e9a06977bdbfb8285611",
+        "canonical_input_sha256": "e45e8743154d86bbbe596378076b7564ff8c347d85dfc4100c3a5b02b6356882"
+      }
+    },
+    {
+      "scenario_id": "CASE_A",
+      "recipient_role": "credit_controller",
+      "response": {
+        "scenario_id": "CASE_A",
+        "recipient_role": "credit_controller",
+        "preserved_result": {
+          "model_name": "SYNTHETIC_GBDT_DEMO",
+          "score": 0.32,
+          "threshold": 0.5,
+          "relative_to_threshold": "below",
+          "ml_decision": "standard_processing",
+          "additional_review": false
+        },
+        "statements": [
+          {
+            "kind": "fact",
+            "text": "Модель SYNTHETIC_GBDT_DEMO присвоила score 0.32 при threshold 0.5; score находится ниже threshold.",
+            "source_fact_ids": [
+              "model_result.model_name",
+              "model_result.score",
+              "model_result.threshold",
+              "model_result.relative_to_threshold"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "Зафиксированное решение модели: standard_processing. Дополнительная проверка не требуется по переданному результату.",
+            "source_fact_ids": [
+              "model_result.ml_decision",
+              "model_result.additional_review"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "Переданные локальные факторы: стабильная платёжная дисциплина и финансовая устойчивость без отмеченных отклонений.",
+            "source_fact_ids": [
+              "local_factors.LF_A_PAYMENT_DISCIPLINE",
+              "local_factors.LF_A_FINANCIAL_STABILITY"
+            ]
+          },
+          {
+            "kind": "limitation",
+            "text": "Карточка синтетическая и не содержит реальных клиентских данных; интерпретация не является кредитным решением, а GPT не рассчитывает кредитный риск.",
+            "source_fact_ids": [
+              "limitations.LIM_SYNTHETIC_ONLY",
+              "limitations.LIM_NO_CREDIT_DECISION",
+              "limitations.LIM_NO_RISK_CALCULATION"
+            ]
+          }
+        ],
+        "used_factor_ids": [
+          "LF_A_PAYMENT_DISCIPLINE",
+          "LF_A_FINANCIAL_STABILITY"
+        ]
+      },
+      "validation": {
+        "ok": true,
+        "errors": []
+      },
+      "metadata": {
+        "requested_model_id": "gpt-5.6-luna",
+        "response_model": "gpt-5.6-luna",
+        "utc_timestamp": "2026-09-08T13:20:31.324090Z",
+        "sdk_version": "3.8.0",
+        "response_id": "resp_01bb882597027adf016aa00b9f8cd487d29c3562ddda728507",
+        "response_status": "completed",
+        "usage": {
+          "input_tokens": 1255,
+          "input_tokens_details": {
+            "cache_write_tokens": 1252,
+            "cached_tokens": 0
+          },
+          "output_tokens": 340,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1595
+        },
+        "master_prompt_sha256": "9aaeedb67a4e4c0bb8b1bb4bcb20eddd7fed3b94f685e9a06977bdbfb8285611",
+        "canonical_input_sha256": "23af7abcdf051d3f8c16e70d38ee74b3c27b6402a85e07420e48b94fc65fb767"
+      }
+    },
+    {
+      "scenario_id": "CASE_A",
+      "recipient_role": "lawyer",
+      "response": {
+        "scenario_id": "CASE_A",
+        "recipient_role": "lawyer",
+        "preserved_result": {
+          "model_name": "SYNTHETIC_GBDT_DEMO",
+          "score": 0.32,
+          "threshold": 0.5,
+          "relative_to_threshold": "below",
+          "ml_decision": "standard_processing",
+          "additional_review": false
+        },
+        "statements": [
+          {
+            "kind": "fact",
+            "text": "Результат получен от синтетической модели SYNTHETIC_GBDT_DEMO в зафиксированном workflow-режиме из frozen card.",
+            "source_fact_ids": [
+              "model_result.model_name",
+              "model_result.decision_mode",
+              "synthetic"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "Модельный score равен 0.32; он ниже threshold 0.5. ML-решение указано как standard_processing, дополнительная проверка не требуется согласно карточке.",
+            "source_fact_ids": [
+              "model_result.score",
+              "model_result.threshold",
+              "model_result.relative_to_threshold",
+              "model_result.ml_decision",
+              "model_result.additional_review"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "В карточке указаны локальные факторы: стабильная платёжная дисциплина и финансовая устойчивость без отмеченных отклонений.",
+            "source_fact_ids": [
+              "local_factors.LF_A_PAYMENT_DISCIPLINE",
+              "local_factors.LF_A_FINANCIAL_STABILITY"
+            ]
+          },
+          {
+            "kind": "limitation",
+            "text": "Карточка синтетическая и не содержит реальных клиентских данных.",
+            "source_fact_ids": [
+              "limitations.LIM_SYNTHETIC_ONLY",
+              "execution_context.real_client_data_used"
+            ]
+          },
+          {
+            "kind": "limitation",
+            "text": "Интерпретация не является кредитным решением и не включает расчёт кредитного риска.",
+            "source_fact_ids": [
+              "limitations.LIM_NO_CREDIT_DECISION",
+              "limitations.LIM_NO_RISK_CALCULATION"
+            ]
+          },
+          {
+            "kind": "limitation",
+            "text": "Внешние инструменты не предоставлены.",
+            "source_fact_ids": [
+              "limitations.LIM_NO_EXTERNAL_TOOLS",
+              "execution_context.external_tools_provided"
+            ]
+          }
+        ],
+        "used_factor_ids": [
+          "LF_A_PAYMENT_DISCIPLINE",
+          "LF_A_FINANCIAL_STABILITY"
+        ]
+      },
+      "validation": {
+        "ok": true,
+        "errors": []
+      },
+      "metadata": {
+        "requested_model_id": "gpt-5.6-luna",
+        "response_model": "gpt-5.6-luna",
+        "utc_timestamp": "2026-09-08T13:20:34.860422Z",
+        "sdk_version": "3.8.0",
+        "response_id": "resp_06b837bec57ec3f1016aa00ba3e56c87d2a3866a0d742324d6",
+        "response_status": "completed",
+        "usage": {
+          "input_tokens": 1255,
+          "input_tokens_details": {
+            "cache_write_tokens": 1252,
+            "cached_tokens": 0
+          },
+          "output_tokens": 423,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1678
+        },
+        "master_prompt_sha256": "9aaeedb67a4e4c0bb8b1bb4bcb20eddd7fed3b94f685e9a06977bdbfb8285611",
+        "canonical_input_sha256": "7cb6cc64aa62925637f9a64d6cdd73d5aa071754b2ce8e3077f38fbbc1441b3c"
+      }
+    },
+    {
+      "scenario_id": "CASE_A",
+      "recipient_role": "information_security",
+      "response": {
+        "scenario_id": "CASE_A",
+        "recipient_role": "information_security",
+        "preserved_result": {
+          "model_name": "SYNTHETIC_GBDT_DEMO",
+          "score": 0.32,
+          "threshold": 0.5,
+          "relative_to_threshold": "below",
+          "ml_decision": "standard_processing",
+          "additional_review": false
+        },
+        "statements": [
+          {
+            "kind": "fact",
+            "text": "В карточке указано, что использованы синтетические данные; реальные клиентские данные не использовались.",
+            "source_fact_ids": [
+              "execution_context.real_client_data_used",
+              "synthetic"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "Внешний поиск, file search и другие внешние инструменты не предоставлены.",
+            "source_fact_ids": [
+              "execution_context.web_search_provided",
+              "execution_context.file_search_provided",
+              "execution_context.external_tools_provided",
+              "limitations.LIM_NO_EXTERNAL_TOOLS"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "Параметр store установлен в значение false. Это не позволяет делать выводы об общем хранении или retention данных.",
+            "source_fact_ids": [
+              "execution_context.store"
+            ]
+          }
+        ],
+        "used_factor_ids": []
+      },
+      "validation": {
+        "ok": true,
+        "errors": []
+      },
+      "metadata": {
+        "requested_model_id": "gpt-5.6-luna",
+        "response_model": "gpt-5.6-luna",
+        "utc_timestamp": "2026-09-08T13:20:40.640287Z",
+        "sdk_version": "3.8.0",
+        "response_id": "resp_017af6e9019dbf50016aa00ba93b9487d2ab5eb2974e494e8c",
+        "response_status": "completed",
+        "usage": {
+          "input_tokens": 1255,
+          "input_tokens_details": {
+            "cache_write_tokens": 1252,
+            "cached_tokens": 0
+          },
+          "output_tokens": 223,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1478
+        },
+        "master_prompt_sha256": "9aaeedb67a4e4c0bb8b1bb4bcb20eddd7fed3b94f685e9a06977bdbfb8285611",
+        "canonical_input_sha256": "050666b31c37106846350be43aa9d27dd485f0f5971445232f28f889307d5165"
+      }
+    },
+    {
+      "scenario_id": "CASE_B",
+      "recipient_role": "sales_manager",
+      "response": {
+        "scenario_id": "CASE_B",
+        "recipient_role": "sales_manager",
+        "preserved_result": {
+          "model_name": "SYNTHETIC_GBDT_DEMO",
+          "score": 0.49,
+          "threshold": 0.5,
+          "relative_to_threshold": "below",
+          "ml_decision": "additional_review",
+          "additional_review": true
+        },
+        "statements": [
+          {
+            "kind": "fact",
+            "text": "Модель SYNTHETIC_GBDT_DEMO выдала score 0.49 при threshold 0.5; score находится ниже threshold.",
+            "source_fact_ids": [
+              "model_result.model_name",
+              "model_result.score",
+              "model_result.threshold",
+              "model_result.relative_to_threshold"
+            ]
+          },
+          {
+            "kind": "workflow_interpretation",
+            "text": "Зафиксированный результат workflow — additional_review: требуется дополнительное рассмотрение.",
+            "source_fact_ids": [
+              "model_result.ml_decision",
+              "model_result.additional_review",
+              "model_result.decision_mode"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "В карточке локально переданы факторы: платёжная дисциплина и финансовая устойчивость; оба требуют дополнительного внимания.",
+            "source_fact_ids": [
+              "local_factors.LF_B_PAYMENT_DISCIPLINE",
+              "local_factors.LF_B_FINANCIAL_STABILITY"
+            ]
+          },
+          {
+            "kind": "limitation",
+            "text": "Карточка синтетическая и не содержит реальных клиентских данных; интерпретация не является кредитным решением.",
+            "source_fact_ids": [
+              "synthetic",
+              "execution_context.real_client_data_used",
+              "limitations.LIM_SYNTHETIC_ONLY",
+              "limitations.LIM_NO_CREDIT_DECISION"
+            ]
+          }
+        ],
+        "used_factor_ids": [
+          "LF_B_PAYMENT_DISCIPLINE",
+          "LF_B_FINANCIAL_STABILITY"
+        ]
+      },
+      "validation": {
+        "ok": true,
+        "errors": []
+      },
+      "metadata": {
+        "requested_model_id": "gpt-5.6-luna",
+        "response_model": "gpt-5.6-luna",
+        "utc_timestamp": "2026-09-08T13:20:43.573152Z",
+        "sdk_version": "3.8.0",
+        "response_id": "resp_02507f15f72a58e4016aa00babe14487d2bbf586c164d380da",
+        "response_status": "completed",
+        "usage": {
+          "input_tokens": 1255,
+          "input_tokens_details": {
+            "cache_write_tokens": 1252,
+            "cached_tokens": 0
+          },
+          "output_tokens": 331,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1586
+        },
+        "master_prompt_sha256": "9aaeedb67a4e4c0bb8b1bb4bcb20eddd7fed3b94f685e9a06977bdbfb8285611",
+        "canonical_input_sha256": "9ae684aac700e436b1d8430162708887117313f885192419bbeea3115246ad7d"
+      }
+    },
+    {
+      "scenario_id": "CASE_B",
+      "recipient_role": "credit_controller",
+      "response": {
+        "scenario_id": "CASE_B",
+        "recipient_role": "credit_controller",
+        "preserved_result": {
+          "model_name": "SYNTHETIC_GBDT_DEMO",
+          "score": 0.49,
+          "threshold": 0.5,
+          "relative_to_threshold": "below",
+          "ml_decision": "additional_review",
+          "additional_review": true
+        },
+        "statements": [
+          {
+            "kind": "fact",
+            "text": "Модель SYNTHETIC_GBDT_DEMO присвоила score 0.49 при threshold 0.5; score находится ниже threshold.",
+            "source_fact_ids": [
+              "model_result.model_name",
+              "model_result.score",
+              "model_result.threshold",
+              "model_result.relative_to_threshold"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "Зафиксированное решение модели — additional_review; дополнительная проверка указана как требуемая.",
+            "source_fact_ids": [
+              "model_result.ml_decision",
+              "model_result.additional_review"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "Переданные локальные факторы: платёжная дисциплина и финансовая устойчивость требуют дополнительного внимания.",
+            "source_fact_ids": [
+              "local_factors.LF_B_PAYMENT_DISCIPLINE",
+              "local_factors.LF_B_FINANCIAL_STABILITY"
+            ]
+          },
+          {
+            "kind": "limitation",
+            "text": "Карточка синтетическая и не содержит реальных клиентских данных. Интерпретация не является кредитным решением; GPT не рассчитывает кредитный риск. Внешние инструменты не предоставлены.",
+            "source_fact_ids": [
+              "limitations.LIM_SYNTHETIC_ONLY",
+              "limitations.LIM_NO_CREDIT_DECISION",
+              "limitations.LIM_NO_RISK_CALCULATION",
+              "limitations.LIM_NO_EXTERNAL_TOOLS"
+            ]
+          }
+        ],
+        "used_factor_ids": [
+          "LF_B_PAYMENT_DISCIPLINE",
+          "LF_B_FINANCIAL_STABILITY"
+        ]
+      },
+      "validation": {
+        "ok": true,
+        "errors": []
+      },
+      "metadata": {
+        "requested_model_id": "gpt-5.6-luna",
+        "response_model": "gpt-5.6-luna",
+        "utc_timestamp": "2026-09-08T13:20:47.150337Z",
+        "sdk_version": "3.8.0",
+        "response_id": "resp_03f26b82c0e9855d016aa00baf5f8c87d28cad1b1ae166064b",
+        "response_status": "completed",
+        "usage": {
+          "input_tokens": 1255,
+          "input_tokens_details": {
+            "cache_write_tokens": 1252,
+            "cached_tokens": 0
+          },
+          "output_tokens": 349,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1604
+        },
+        "master_prompt_sha256": "9aaeedb67a4e4c0bb8b1bb4bcb20eddd7fed3b94f685e9a06977bdbfb8285611",
+        "canonical_input_sha256": "0f772b1ee6430c2169499a68a7b26f924e25051d0a6fb263d8b88640bb816028"
+      }
+    },
+    {
+      "scenario_id": "CASE_B",
+      "recipient_role": "lawyer",
+      "response": {
+        "scenario_id": "CASE_B",
+        "recipient_role": "lawyer",
+        "preserved_result": {
+          "model_name": "SYNTHETIC_GBDT_DEMO",
+          "score": 0.49,
+          "threshold": 0.5,
+          "relative_to_threshold": "below",
+          "ml_decision": "additional_review",
+          "additional_review": true
+        },
+        "statements": [
+          {
+            "kind": "fact",
+            "text": "Результат получен моделью SYNTHETIC_GBDT_DEMO; score указан как синтетический модельный score из frozen card и находится ниже threshold.",
+            "source_fact_ids": [
+              "model_result.model_name",
+              "model_result.score",
+              "model_result.score_semantics",
+              "model_result.threshold",
+              "model_result.relative_to_threshold"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "В карточке зафиксирован ml_decision additional_review и признак additional_review=true.",
+            "source_fact_ids": [
+              "model_result.ml_decision",
+              "model_result.additional_review"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "В качестве локально переданных факторов указаны платёжная дисциплина и финансовая устойчивость; оба фактора требуют дополнительного внимания по переданным пояснениям.",
+            "source_fact_ids": [
+              "local_factors.LF_B_PAYMENT_DISCIPLINE",
+              "local_factors.LF_B_FINANCIAL_STABILITY"
+            ]
+          },
+          {
+            "kind": "limitation",
+            "text": "Карточка синтетическая и не содержит реальных клиентских данных. Интерпретация не является кредитным решением и не представляет собой расчёт кредитного риска.",
+            "source_fact_ids": [
+              "synthetic",
+              "execution_context.real_client_data_used",
+              "limitations.LIM_SYNTHETIC_ONLY",
+              "limitations.LIM_NO_CREDIT_DECISION",
+              "limitations.LIM_NO_RISK_CALCULATION"
+            ]
+          },
+          {
+            "kind": "limitation",
+            "text": "Внешние инструменты не предоставлены.",
+            "source_fact_ids": [
+              "execution_context.external_tools_provided",
+              "limitations.LIM_NO_EXTERNAL_TOOLS"
+            ]
+          }
+        ],
+        "used_factor_ids": [
+          "LF_B_PAYMENT_DISCIPLINE",
+          "LF_B_FINANCIAL_STABILITY"
+        ]
+      },
+      "validation": {
+        "ok": true,
+        "errors": []
+      },
+      "metadata": {
+        "requested_model_id": "gpt-5.6-luna",
+        "response_model": "gpt-5.6-luna",
+        "utc_timestamp": "2026-09-08T13:20:50.516574Z",
+        "sdk_version": "3.8.0",
+        "response_id": "resp_07ce21a6049fd3ba016aa00bb2ba2887d2b501653880642bdd",
+        "response_status": "completed",
+        "usage": {
+          "input_tokens": 1255,
+          "input_tokens_details": {
+            "cache_write_tokens": 1252,
+            "cached_tokens": 0
+          },
+          "output_tokens": 398,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1653
+        },
+        "master_prompt_sha256": "9aaeedb67a4e4c0bb8b1bb4bcb20eddd7fed3b94f685e9a06977bdbfb8285611",
+        "canonical_input_sha256": "8d57c452ec5f6d638abe4af22c0d499f831cd67a1baa65ee18c17bc4658f66f8"
+      }
+    },
+    {
+      "scenario_id": "CASE_B",
+      "recipient_role": "information_security",
+      "response": {
+        "scenario_id": "CASE_B",
+        "recipient_role": "information_security",
+        "preserved_result": {
+          "model_name": "SYNTHETIC_GBDT_DEMO",
+          "score": 0.49,
+          "threshold": 0.5,
+          "relative_to_threshold": "below",
+          "ml_decision": "additional_review",
+          "additional_review": true
+        },
+        "statements": [
+          {
+            "kind": "fact",
+            "text": "Карточка синтетическая и не содержит реальных клиентских данных.",
+            "source_fact_ids": [
+              "limitations.LIM_SYNTHETIC_ONLY",
+              "execution_context.real_client_data_used",
+              "synthetic"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "В текущем execution_context внешние инструменты, веб-поиск и file search не предоставлены.",
+            "source_fact_ids": [
+              "execution_context.external_tools_provided",
+              "execution_context.web_search_provided",
+              "execution_context.file_search_provided",
+              "limitations.LIM_NO_EXTERNAL_TOOLS"
+            ]
+          },
+          {
+            "kind": "fact",
+            "text": "Параметр store передан со значением false.",
+            "source_fact_ids": [
+              "execution_context.store"
+            ]
+          }
+        ],
+        "used_factor_ids": []
+      },
+      "validation": {
+        "ok": true,
+        "errors": []
+      },
+      "metadata": {
+        "requested_model_id": "gpt-5.6-luna",
+        "response_model": "gpt-5.6-luna",
+        "utc_timestamp": "2026-09-08T13:20:54.489684Z",
+        "sdk_version": "3.8.0",
+        "response_id": "resp_07ea3885acd99464016aa00bb6b0dc87d2be432bf3da2772a2",
+        "response_status": "completed",
+        "usage": {
+          "input_tokens": 1255,
+          "input_tokens_details": {
+            "cache_write_tokens": 1252,
+            "cached_tokens": 0
+          },
+          "output_tokens": 216,
+          "output_tokens_details": {
+            "reasoning_tokens": 0
+          },
+          "total_tokens": 1471
+        },
+        "master_prompt_sha256": "9aaeedb67a4e4c0bb8b1bb4bcb20eddd7fed3b94f685e9a06977bdbfb8285611",
+        "canonical_input_sha256": "f2b6cef767d883f51d4e153562d7d6f8bdc8ae066c1f7cd310f3c7f30cf9a333"
+      }
+    }
+  ]
+}
