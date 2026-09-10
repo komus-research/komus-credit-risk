@@ -36,10 +36,10 @@ Thumbs.db
 *.parquet
 *.feather
 *.arrow
-data/raw/
-data/private/
-data/external/
-data/cache/
+/data/raw/
+/data/private/
+/data/external/
+/data/cache/
 
 # Heavy model binaries and checkpoints
 *.pkl
@@ -50,15 +50,15 @@ data/cache/
 *.pth
 *.onnx
 *.safetensors
-artifacts/models/
-artifacts/checkpoints/
-artifacts/cache/
-models/
-checkpoints/
-cache/
+/artifacts/models/
+/artifacts/checkpoints/
+/artifacts/cache/
+/models/
+/checkpoints/
+/cache/
 
 # Run logs, temporary files and archives
-logs/
+/logs/
 *.log
 *.tmp
 *.temp
@@ -72,9 +72,9 @@ logs/
 # - reports/figures/
 # - reports/presentation/
 # Local research scratch / superseded generated files
-reports/generated/*.txt
-reports/generated/*_preliminary.*
-reports/generated/stage1_baseline_leaderboard.csv
-reports/generated/stage1_baseline_results.json
+/reports/generated/*.txt
+/reports/generated/*_preliminary.*
+/reports/generated/stage1_baseline_leaderboard.csv
+/reports/generated/stage1_baseline_results.json
 
-.review_bundle_build/
+/.review_bundle_build/
