@@ -132,7 +132,7 @@ data_analysis/
 05_Исследование дисбаланса классов в задаче кредитного скоринга.ipynb
 
 Папка:
-data_analysis/
+model_pipeline/
 
 ## Правило для Developer / Codex
 
