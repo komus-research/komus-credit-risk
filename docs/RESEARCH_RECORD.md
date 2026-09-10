@@ -621,3 +621,90 @@ feature source. Новый эксперимент на текущем historical
 
 - `notebooks/19_Протокол_проверки_нового_признака_V1.ipynb`
 - `reports/generated/stage19_new_feature_protocol_V1.json`
+
+---
+
+## Stage 20 — Ролевой интерпретатор результата GPT V1
+
+Дата завершения: 2026-09-08
+
+Статус: `ROLE_BASED_RESULT_INTERPRETER_PROTOTYPE_READY`
+
+Reviewer: `ACCEPT`.
+
+### Исследовательский вопрос
+
+Можно ли при неизменном заранее рассчитанном ML-результате менять только форму и акценты объяснения для четырёх бизнес-ролей, сохраняя факты и не превращая LLM в кредитную модель или decision-maker?
+
+### ФАКТЫ
+
+- 2 frozen synthetic cards;
+- 4 роли: `sales_manager`, `credit_controller`, `lawyer`, `information_security`;
+- 8 independent OpenAI Responses API calls;
+- model `gpt-5.6-luna`;
+- openai SDK `3.8.0`;
+- `reasoning.effort=none`;
+- `store=false`;
+- `tools=[]`;
+- реальные клиентские данные не использовались;
+- automated validation 8/8 PASS;
+- manual review 8/8 PASS;
+- preserved ML result подтверждён во всех 8 ответах;
+- `accepted=true`.
+
+### ИНТЕРПРЕТАЦИЯ
+
+Stage 20 подтверждает только контролируемую ролевую интерпретацию заранее рассчитанного ML-результата.
+
+LLM выступает как Result Interpreter: ML рассчитывает результат; GPT меняет форму и акценты объяснения для конкретной бизнес-роли.
+
+GPT не является кредитным predictor и не принимает кредитное решение.
+
+### ОГРАНИЧЕНИЯ
+
+Stage 20 не доказывает:
+
+- улучшение Gini / Recall / PR-AUC;
+- улучшение кредитного решения;
+- юридическую достаточность;
+- production/security readiness;
+- пользу для реальных пользователей;
+- детерминированность prose;
+- способность GPT самостоятельно строить explanation без подготовленных фактов.
+
+`store=false` не трактуется как Zero Data Retention или гарантия отсутствия хранения.
+
+### EVIDENCE
+
+- `notebooks/20_Ролевой_интерпретатор_результата_GPT_V1.ipynb`
+- `reports/generated/stage20_role_interpreter_V1.json`
+
+---
+
+## FINAL RESEARCH CLOSEOUT
+
+Основная исследовательская цепочка завершена.
+
+На текущем historical `Data_final.xlsb`:
+
+- model-only search остановлен;
+- historical external enrichment заблокирован отсутствием row-level temporal anchor;
+- FP/FN operating map построена;
+- протокол проверки будущего нового признака подготовлен;
+- ролевой LLM Result Interpreter проверен как отдельный post-processing prototype.
+
+Новые model/data experiments на текущем historical dataset не открываются без нового основания.
+
+Следующий приоритет:
+
+1. финальный synthesis;
+2. evidence package;
+3. презентация / защита;
+4. обсуждение нового временно корректного data design с заказчиком.
+
+Не утверждать:
+
+- математический потолок Gini;
+- temporal stability;
+- информационную недостаточность всех 47 признаков как доказанный факт;
+- production readiness.

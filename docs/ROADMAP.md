@@ -406,11 +406,42 @@ LLM остаётся отдельным Result Interpreter и не являет�
 эксперименте разрешено ровно одно новое изменение признака; final test не используется
 для выбора признака. Решение о принятии требует заранее определённого критерия.
 
-Следующий приоритет формулируется без открытия нового эксперимента:
+## 20. Stage 20 V1 — ролевой интерпретатор результата GPT — ЗАВЕРШЁН И ПРИНЯТ
 
-- не запускать новый эксперимент с признаком на текущем historical `Data_final.xlsb`;
-- практически применять протокол только при появлении нового временно корректного dataset / feature source;
-- сохранять presentation / defence evidence активным приоритетом;
-- выбирать следующий отдельный research/product stage отдельно.
+Статус: `ROLE_BASED_RESULT_INTERPRETER_PROTOTYPE_READY`.
 
-Stage 20 не объявляется, новая research hypothesis не формулируется.
+Reviewer: `ACCEPT`.
+
+Evidence:
+
+- 2 synthetic cards × 4 roles = 8 OpenAI Responses API calls;
+- automated validation 8/8 PASS;
+- manual review 8/8 PASS;
+- реальные клиентские данные не использовались;
+- GPT используется только как Result Interpreter заранее рассчитанного ML-результата;
+- notebook: `notebooks/20_Ролевой_интерпретатор_результата_GPT_V1.ipynb`;
+- artifact: `reports/generated/stage20_role_interpreter_V1.json`.
+
+---
+
+## 21. Final research closeout — следующий шаг
+
+Основная исследовательская цепочка на текущем historical dataset завершена.
+
+Новые model/data experiments на текущем `Data_final.xlsb` не открываются без нового основания.
+
+Следующий этап:
+
+- итоговый research synthesis;
+- evidence package;
+- презентация / защита;
+- обсуждение с заказчиком нового временно корректного data design.
+
+Новый research может быть открыт только при появлении нового валидного основания:
+
+- temporally valid dataset / feature source;
+- row-level temporal anchor;
+- нового business question;
+- иной новой гипотезы, реально меняющей исследовательское решение.
+
+Это не означает доказанный математический потолок модели.
