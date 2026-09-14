@@ -13,9 +13,28 @@ from komus_risk.contracts import ExperimentConfig, FeatureUsageStatus
 from komus_risk.data import LoadedDataset
 from komus_risk.experiments import EvaluationPopulation, ExperimentRunner
 from komus_risk.models import ModelAdapterFactory
+from komus_risk.planning.contracts import PlanningRequestMetadata
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 from .contracts import RunExperimentRequest
+
+
+def to_planning_request_metadata(request: RunExperimentRequest) -> PlanningRequestMetadata:
+    """Explicitly adapt an application request for the planning boundary."""
+    if not isinstance(request, RunExperimentRequest):
+        raise TypeError("request must be RunExperimentRequest.")
+    return PlanningRequestMetadata(
+        selected_feature_ids=request.selected_feature_ids,
+        model_id=request.model_id,
+        protocol_id=request.protocol_id,
+        protocol_version=request.protocol_version,
+        seed=request.seed,
+        folds=request.folds,
+        evaluation_level=request.evaluation_level,
+        reference_artifact_id=request.reference_artifact_id,
+        changed_dimension=request.changed_dimension,
+        changed_elements=request.changed_elements,
+    )
 
 
 class ExperimentApplicationService:
