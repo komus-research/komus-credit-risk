@@ -48,6 +48,17 @@ class FeatureView:
     group_id: str
     usage_status: FeatureUsageStatus
     selectable: bool
+    blocked_reason: str | None
+    display_order: int
+
+
+@dataclass(frozen=True, slots=True)
+class FeatureGroupView:
+    """Presentation metadata for one explicit FeatureRegistry group."""
+
+    group_id: str
+    name_ru: str
+    description_ru: str
     display_order: int
 
 

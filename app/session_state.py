@@ -1,0 +1,179 @@
+"""State transitions and invalidation rules for the sequential prototype wizard."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, MutableMapping
+from typing import Any
+
+from komus_risk.application import RunExperimentRequest
+from komus_risk.planning import ExperimentPlan, PlanningRequestMetadata
+
+
+_DEFAULTS = {
+    "current_step": 0,
+    "dataset_context": None,
+    "selected_feature_ids": (),
+    "selected_model_id": None,
+    "experiment_inputs": {},
+    "planning_request_snapshot": None,
+    "experiment_plan": None,
+    "loaded_artifact": None,
+    "comparison_result": None,
+    "context_revision": 0,
+}
+
+
+def initialize(state: MutableMapping[str, Any]) -> None:
+    for key, value in _DEFAULTS.items():
+        state.setdefault(key, value)
+
+
+def set_dataset_context(state: MutableMapping[str, Any], context: Any) -> None:
+    current = state.get("dataset_context")
+    current_id = getattr(current, "context_id", None)
+    current_fingerprint = getattr(getattr(current, "loaded_dataset", None), "contract", None)
+    next_fingerprint = getattr(getattr(context, "loaded_dataset", None), "contract", None)
+    if current_id == getattr(context, "context_id", None) and current_fingerprint == next_fingerprint:
+        return
+    state["dataset_context"] = context
+    state["selected_feature_ids"] = ()
+    state["selected_model_id"] = None
+    state["experiment_inputs"] = {}
+    state["context_revision"] = state.get("context_revision", 0) + 1
+    _clear_plan_and_result(state)
+
+
+def set_selected_feature_ids(state: MutableMapping[str, Any], feature_ids: Iterable[str]) -> None:
+    selected = tuple(feature_ids)
+    if selected == state.get("selected_feature_ids", ()):
+        return
+    if len(selected) != len(set(selected)):
+        raise ValueError("Выбранные признаки не должны повторяться.")
+    state["selected_feature_ids"] = selected
+    _clear_plan_and_result(state)
+
+
+def toggle_feature(state: MutableMapping[str, Any], feature_id: str, selected: bool) -> None:
+    current = list(state.get("selected_feature_ids", ()))
+    if selected and feature_id not in current:
+        current.append(feature_id)
+    elif not selected and feature_id in current:
+        current.remove(feature_id)
+    set_selected_feature_ids(state, current)
+
+
+def set_group_selection(state: MutableMapping[str, Any], group_feature_ids: Iterable[str], selected: bool) -> None:
+    current = list(state.get("selected_feature_ids", ()))
+    group_ids = tuple(group_feature_ids)
+    if selected:
+        current.extend(feature_id for feature_id in group_ids if feature_id not in current)
+    else:
+        current = [feature_id for feature_id in current if feature_id not in group_ids]
+    set_selected_feature_ids(state, current)
+
+
+def synchronize_feature_widgets(
+    state: MutableMapping[str, Any],
+    group_feature_ids: Iterable[str],
+    *,
+    group_widget_key: str,
+    feature_widget_keys: dict[str, str],
+) -> None:
+    """Mirror canonical selection into widgets before they are rendered."""
+    group_ids = tuple(group_feature_ids)
+    selected = set(state.get("selected_feature_ids", ()))
+    for feature_id in group_ids:
+        state[feature_widget_keys[feature_id]] = feature_id in selected
+    state[group_widget_key] = bool(group_ids) and all(feature_id in selected for feature_id in group_ids)
+
+
+def apply_group_widget_selection(
+    state: MutableMapping[str, Any],
+    group_feature_ids: Iterable[str],
+    *,
+    group_widget_key: str,
+    feature_widget_keys: dict[str, str],
+) -> None:
+    """Apply a group checkbox event, then synchronize every selectable child."""
+    set_group_selection(state, group_feature_ids, bool(state[group_widget_key]))
+    synchronize_feature_widgets(
+        state,
+        group_feature_ids,
+        group_widget_key=group_widget_key,
+        feature_widget_keys=feature_widget_keys,
+    )
+
+
+def apply_feature_widget_selection(
+    state: MutableMapping[str, Any],
+    feature_id: str,
+    group_feature_ids: Iterable[str],
+    *,
+    group_widget_key: str,
+    feature_widget_keys: dict[str, str],
+) -> None:
+    """Apply an individual checkbox event and refresh the aggregate group state."""
+    toggle_feature(state, feature_id, bool(state[feature_widget_keys[feature_id]]))
+    synchronize_feature_widgets(
+        state,
+        group_feature_ids,
+        group_widget_key=group_widget_key,
+        feature_widget_keys=feature_widget_keys,
+    )
+
+
+def set_selected_model_id(state: MutableMapping[str, Any], model_id: str | None) -> None:
+    if model_id == state.get("selected_model_id"):
+        return
+    state["selected_model_id"] = model_id
+    _clear_plan_and_result(state)
+
+
+def set_experiment_inputs(state: MutableMapping[str, Any], values: dict[str, Any]) -> None:
+    normalized = dict(values)
+    if normalized == state.get("experiment_inputs", {}):
+        return
+    state["experiment_inputs"] = normalized
+    _clear_plan_and_result(state)
+
+
+def save_plan(state: MutableMapping[str, Any], snapshot: PlanningRequestMetadata, plan: ExperimentPlan) -> None:
+    state["planning_request_snapshot"] = snapshot
+    state["experiment_plan"] = plan
+    state["loaded_artifact"] = None
+    state["comparison_result"] = None
+
+
+def can_run(state: MutableMapping[str, Any]) -> bool:
+    snapshot = state.get("planning_request_snapshot")
+    plan = state.get("experiment_plan")
+    return isinstance(snapshot, PlanningRequestMetadata) and isinstance(plan, ExperimentPlan) and plan.is_valid and plan.request == snapshot
+
+
+def run_request_from_snapshot(snapshot: PlanningRequestMetadata) -> RunExperimentRequest:
+    """Build the execution request only from the snapshot used by ExperimentPlan."""
+    return RunExperimentRequest(
+        selected_feature_ids=snapshot.selected_feature_ids,
+        model_id=snapshot.model_id,
+        protocol_id=snapshot.protocol_id,
+        protocol_version=snapshot.protocol_version,
+        seed=snapshot.seed,
+        folds=snapshot.folds,
+        evaluation_level=snapshot.evaluation_level,
+        reference_artifact_id=snapshot.reference_artifact_id,
+        changed_dimension=snapshot.changed_dimension,
+        changed_elements=snapshot.changed_elements,
+    )
+
+
+def save_artifact(state: MutableMapping[str, Any], artifact: Any, comparison: Any | None) -> None:
+    state["loaded_artifact"] = artifact
+    state["comparison_result"] = comparison
+    state["current_step"] = 4
+
+
+def _clear_plan_and_result(state: MutableMapping[str, Any]) -> None:
+    state["planning_request_snapshot"] = None
+    state["experiment_plan"] = None
+    state["loaded_artifact"] = None
+    state["comparison_result"] = None

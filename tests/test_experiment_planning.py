@@ -80,7 +80,10 @@ class ExperimentPlanningTests(unittest.TestCase):
 
         self.assertEqual([view.feature_id for view in views], ["forbidden", "b", "a"])
         self.assertFalse(views[0].selectable)
+        self.assertEqual(views[0].blocked_reason, "Blocked")
         self.assertTrue(views[1].selectable)
+        groups = self.service.list_feature_groups(self.features)
+        self.assertEqual([(group.group_id, group.name_ru) for group in groups], [("alpha", "Alpha"), ("zeta", "Zeta")])
 
     def test_build_plan_preserves_selected_order_and_never_runs_runner(self) -> None:
         request = self._request(("a", "b"))

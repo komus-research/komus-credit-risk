@@ -14,6 +14,7 @@ from komus_risk.registries import FeatureRegistry, ModelRegistry
 from .contracts import (
     DatasetPassport,
     ExperimentPlan,
+    FeatureGroupView,
     FeatureView,
     ModelView,
     PlanningRequestMetadata,
@@ -32,6 +33,13 @@ class ExperimentPlanningService:
         return tuple(
             self._feature_view(spec)
             for spec in sorted(feature_registry._features.values(), key=lambda item: (item.display_order, item.feature_id))
+        )
+
+    def list_feature_groups(self, feature_registry: FeatureRegistry) -> tuple[FeatureGroupView, ...]:
+        """Expose group presentation metadata without leaking registry internals to callers."""
+        return tuple(
+            FeatureGroupView(group.group_id, group.name_ru, group.description_ru, group.display_order)
+            for group in sorted(feature_registry._groups.values(), key=lambda item: (item.display_order, item.group_id))
         )
 
     def list_models(
@@ -111,7 +119,8 @@ class ExperimentPlanningService:
     def _feature_view(spec) -> FeatureView:
         return FeatureView(
             spec.feature_id, spec.column_name, spec.display_name_ru, spec.description_ru, spec.group_id,
-            spec.usage_status, spec.usage_status is FeatureUsageStatus.MODEL_ALLOWED, spec.display_order,
+            spec.usage_status, spec.usage_status is FeatureUsageStatus.MODEL_ALLOWED, spec.blocked_reason,
+            spec.display_order,
         )
 
     @staticmethod
