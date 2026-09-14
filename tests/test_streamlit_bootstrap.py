@@ -36,8 +36,10 @@ class FakeProvider:
         self.context = PreparedDatasetContext("synthetic", self.display_name, dataset, registry, EvaluationPopulation((0, 1, 2, 3), "working", "sha256:working", "working"))
         self.received_upload = None
 
-    def resolve(self, optional_uploaded_file=None) -> PreparedDatasetContext:
+    def resolve(self, optional_uploaded_file=None, progress_listener=None) -> PreparedDatasetContext:
         self.received_upload = optional_uploaded_file
+        if progress_listener is not None:
+            progress_listener("synthetic_context_ready")
         return self.context
 
 
@@ -102,6 +104,20 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertEqual(context.loaded_dataset.contract.feature_registry_hash, context.feature_registry.registry_hash)
         self.assertEqual(context.population.partition_role, "working")
 
+    def test_data_progress_reports_real_stages_and_never_reports_completion_on_load_error(self) -> None:
+        provider = HistoricalDatasetProvider(Path("synthetic.xlsb"))
+        events = []
+        with (
+            patch.object(provider, "_validate_source_identity"),
+            patch("app.bootstrap._load_accepted_working_split", return_value=object()),
+            patch("app.bootstrap.ReadyDatasetAdapter.load", side_effect=ValueError("unreadable")),
+        ):
+            with self.assertRaisesRegex(ValueError, "unreadable"):
+                provider.resolve(progress_listener=events.append)
+
+        self.assertEqual(events, ["checking_file_identity", "checking_working_split", "loading_dataset"])
+        self.assertNotIn("preparing_context", events)
+
     def test_generic_upload_and_unknown_context_are_rejected(self) -> None:
         provider = FakeProvider()
         providers = {provider.context_id: provider}
@@ -119,6 +135,13 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertTrue(callable(prototype.main))
         for forbidden in ("ExperimentRunner", "ExperimentArtifactStore", "FeatureRegistry._", "CatBoost", "XGBoost"):
             self.assertNotIn(forbidden, source)
+
+    def test_comparison_is_hidden_by_default_and_uses_the_session_reference(self) -> None:
+        import app.streamlit_app as prototype
+
+        source = Path(prototype.__file__).read_text(encoding="utf-8")
+        self.assertIn('st.expander("Сравнение с предыдущим успешным результатом", expanded=False)', source)
+        self.assertIn("st.session_state.last_successful_artifact_id", source)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -63,6 +64,15 @@ class ExperimentRunOutput:
     population_fingerprint: str
 
 
+@dataclass(frozen=True, slots=True)
+class ExperimentProgressEvent:
+    """Observational progress emitted by an experiment run; it never changes evidence."""
+
+    stage: str
+    fold_number: int | None
+    folds_total: int | None
+
+
 class ExperimentRunner:
     """Запускает только разрешённый stratified K-fold OOF path."""
 
@@ -86,8 +96,10 @@ class ExperimentRunner:
         loaded_dataset: LoadedDataset,
         config: ExperimentConfig,
         population: EvaluationPopulation,
+        progress_listener: Callable[[ExperimentProgressEvent], None] | None = None,
     ) -> ExperimentRunOutput:
         """Выполняет OOF без full-data обучения и без доступа adapter к y_valid."""
+        self._notify(progress_listener, ExperimentProgressEvent("run_started", None, config.folds))
         contract = loaded_dataset.contract
         dataframe = loaded_dataset.dataframe
         feature_specs = self._validate_before_fit(contract, dataframe, config, population)
@@ -106,8 +118,12 @@ class ExperimentRunner:
         fold_assignments = np.full(len(population_frame), -1, dtype=int)
         fold_metrics: list[dict[str, Any]] = []
         started_at = perf_counter()
+        progress_overhead_seconds = 0.0
 
         for fold_number, (train_indices, valid_indices) in enumerate(splitter.split(X, y_binary), start=1):
+            progress_overhead_seconds += self._notify(
+                progress_listener, ExperimentProgressEvent("fold_started", fold_number, config.folds)
+            )
             fold_seed = config.seed + fold_number
             adapter = self.adapter_factory.create(dict(config.model_parameters), fold_seed)
             fold_started_at = perf_counter()
@@ -130,10 +146,16 @@ class ExperimentRunner:
                     "runtime_seconds": fold_runtime,
                 }
             )
+            progress_overhead_seconds += self._notify(
+                progress_listener, ExperimentProgressEvent("fold_completed", fold_number, config.folds)
+            )
 
         if np.isnan(oof_positive_proba).any() or (fold_assignments < 1).any():
             raise RuntimeError("Не каждая строка популяции получила OOF prediction и fold assignment.")
 
+        progress_overhead_seconds += self._notify(
+            progress_listener, ExperimentProgressEvent("aggregate_metrics_started", None, config.folds)
+        )
         global_metrics = self._metrics(y_binary, oof_positive_proba)
         confusion = self._confusion(y_binary, oof_positive_proba)
         result = ExperimentResult(
@@ -155,7 +177,7 @@ class ExperimentRunner:
             metrics=global_metrics,
             confusion=confusion,
             fold_metrics=tuple(fold_metrics),
-            runtime_seconds=perf_counter() - started_at,
+            runtime_seconds=perf_counter() - started_at - progress_overhead_seconds,
             comparison={},
             code_version=self.code_version,
             created_at=datetime.now(timezone.utc).isoformat(),
@@ -173,6 +195,21 @@ class ExperimentRunner:
             population_id=population.population_id,
             population_fingerprint=population.population_fingerprint,
         )
+
+    @staticmethod
+    def _notify(
+        listener: Callable[[ExperimentProgressEvent], None] | None,
+        event: ExperimentProgressEvent,
+    ) -> float:
+        if listener is None:
+            return 0.0
+        started_at = perf_counter()
+        try:
+            listener(event)
+        except Exception:
+            # Progress is observational: a presentation failure must not alter a run.
+            pass
+        return perf_counter() - started_at
 
     def _validate_before_fit(self, contract, dataframe: pd.DataFrame, config: ExperimentConfig, population: EvaluationPopulation):
         if contract.validation_status != "validated":

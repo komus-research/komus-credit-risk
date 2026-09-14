@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from typing import Any
 from uuid import uuid4
@@ -11,7 +11,7 @@ from komus_risk.artifacts import ExperimentArtifactStore, LoadedExperimentArtifa
 from komus_risk.comparison import ComparisonResult, ExperimentComparisonService
 from komus_risk.contracts import ExperimentConfig, FeatureUsageStatus
 from komus_risk.data import LoadedDataset
-from komus_risk.experiments import EvaluationPopulation, ExperimentRunner
+from komus_risk.experiments import EvaluationPopulation, ExperimentProgressEvent, ExperimentRunner
 from komus_risk.models import ModelAdapterFactory
 from komus_risk.planning.contracts import PlanningRequestMetadata
 from komus_risk.registries import FeatureRegistry, ModelRegistry
@@ -70,6 +70,7 @@ class ExperimentApplicationService:
         feature_registry: FeatureRegistry,
         population: EvaluationPopulation,
         request: RunExperimentRequest,
+        progress_listener: Callable[[ExperimentProgressEvent], None] | None = None,
     ) -> LoadedExperimentArtifact:
         if not isinstance(request, RunExperimentRequest):
             raise TypeError("request must be RunExperimentRequest.")
@@ -120,13 +121,28 @@ class ExperimentApplicationService:
             adapter_factory=factory,
             code_version=self.code_version,
         )
-        run_output = runner.run(loaded_dataset, config, population)
-        return self.artifact_store.save(
+        run_output = runner.run(loaded_dataset, config, population, progress_listener=progress_listener)
+        self._notify_progress(progress_listener, ExperimentProgressEvent("persistence_started", None, request.folds))
+        artifact = self.artifact_store.save(
             config=config,
             dataset_contract=contract,
             population=population,
             run_output=run_output,
         )
+        self._notify_progress(progress_listener, ExperimentProgressEvent("completed", None, request.folds))
+        return artifact
+
+    @staticmethod
+    def _notify_progress(
+        listener: Callable[[ExperimentProgressEvent], None] | None,
+        event: ExperimentProgressEvent,
+    ) -> None:
+        if listener is None:
+            return
+        try:
+            listener(event)
+        except Exception:
+            return
 
     def load_experiment(self, artifact_id: str) -> LoadedExperimentArtifact:
         return self.artifact_store.load(artifact_id)

@@ -14,6 +14,7 @@ from app.session_state import (
     can_run,
     initialize,
     run_request_from_snapshot,
+    return_to_experiment,
     save_artifact,
     save_plan,
     set_dataset_context,
@@ -25,6 +26,21 @@ from komus_risk.planning import PlanningRequestMetadata
 
 
 _STEPS = ("Данные", "Признаки", "Модель", "Эксперимент", "Результат")
+_DATA_PROGRESS_LABELS = {
+    "checking_file_identity": "Проверка файла и его идентичности",
+    "checking_working_split": "Проверка рабочей выборки",
+    "loading_dataset": "Загрузка датасета",
+    "validating_target_split": "Проверка соответствия цели и выборки",
+    "preparing_context": "Подготовка рабочего контекста",
+}
+_EXPERIMENT_PROGRESS_LABELS = {
+    "run_started": "Подготовка эксперимента",
+    "fold_started": "Проверка на части данных",
+    "fold_completed": "Проверка части данных завершена",
+    "aggregate_metrics_started": "Расчёт итоговых метрик",
+    "persistence_started": "Сохранение результата",
+    "completed": "Эксперимент завершён",
+}
 
 
 @st.cache_resource
@@ -52,6 +68,39 @@ def main() -> None:
         _render_result_step()
 
 
+def _progress_description(event: Any, labels: Mapping[str, str]) -> str:
+    """Turn only emitted runtime stages into user-facing status text."""
+    stage = event if isinstance(event, str) else getattr(event, "stage", "")
+    description = labels.get(stage, "Выполняется подтверждённый этап")
+    fold_number = getattr(event, "fold_number", None)
+    folds_total = getattr(event, "folds_total", None)
+    if fold_number is not None and folds_total is not None:
+        return f"{description}: {fold_number} из {folds_total}"
+    return description
+
+
+def _run_with_progress(labels: Mapping[str, str], operation):
+    """Render observed stages; completion is shown only after the operation returns."""
+    status = st.status("Подготовка операции", expanded=True)
+
+    def report(event: Any) -> None:
+        description = _progress_description(event, labels)
+        stage = event if isinstance(event, str) else getattr(event, "stage", "")
+        status.write(description)
+        if stage == "completed":
+            status.update(label=description, state="complete", expanded=False)
+        else:
+            status.update(label=description, state="running")
+
+    try:
+        result = operation(report)
+    except Exception:
+        status.update(label="Операция не завершена", state="error", expanded=True)
+        raise
+    status.update(label="Операция успешно завершена", state="complete", expanded=False)
+    return result
+
+
 def _render_data_step() -> None:
     st.header("1. Данные")
     options = list_available_contexts()
@@ -75,7 +124,11 @@ def _render_data_step() -> None:
         )
     if st.button("Подготовить контекст", type="primary"):
         try:
-            set_dataset_context(st.session_state, resolve_context(selected_id, uploaded))
+            context = _run_with_progress(
+                _DATA_PROGRESS_LABELS,
+                lambda listener: resolve_context(selected_id, uploaded, progress_listener=listener),
+            )
+            set_dataset_context(st.session_state, context)
         except (FileNotFoundError, ValueError):
             st.error("Не удалось подготовить данные. Проверьте выбранный контекст и файл.")
 
@@ -86,15 +139,23 @@ def _render_data_step() -> None:
     passport = context.loaded_dataset.contract
     st.subheader(context.display_name)
     columns = st.columns(3)
-    columns[0].write(f"**Набор:** {passport.dataset_name} · {passport.dataset_version}")
-    columns[0].write(f"**Источник:** {passport.source_type}")
-    columns[1].write(f"**Строк / столбцов:** {passport.row_count:,} / {passport.column_count}")
-    columns[1].write(f"**Цель:** {passport.target_column}; положительный класс: {passport.positive_class}")
-    columns[2].write(f"**Идентификатор:** {passport.identifier_column}")
-    columns[2].write(f"**Статус:** {passport.validation_status}; final test locked: {'да' if passport.final_test_locked else 'нет'}")
-    st.caption(f"Fingerprint: {passport.dataset_fingerprint[:12]}…")
+    columns[0].metric("Организации / строки", f"{passport.row_count:,}")
+    columns[1].metric("Рабочая выборка", f"{len(context.population.row_positions):,}")
+    columns[2].metric("Защищённая контрольная выборка", f"{passport.row_count - len(context.population.row_positions):,}")
+    st.write("**Цель:** признак дефолта организации.")
+    st.info("Контрольная выборка не используется при выборе и настройке модели; она сохранена для финальной проверки.")
     with st.expander("Технические сведения"):
-        st.code(passport.dataset_fingerprint)
+        st.json({
+            "dataset_name": passport.dataset_name,
+            "dataset_version": passport.dataset_version,
+            "source_type": passport.source_type,
+            "dataset_fingerprint": passport.dataset_fingerprint,
+            "dataset_id": passport.dataset_id,
+            "target_column": passport.target_column,
+            "identifier_column": passport.identifier_column,
+            "validation_status": passport.validation_status,
+            "final_test_locked": passport.final_test_locked,
+        })
     if st.button("Далее: признаки", type="primary"):
         st.session_state.current_step = 1
         st.rerun()
@@ -135,18 +196,20 @@ def _render_features_step(runtime) -> None:
             on_change=_on_group_widget_change if selectable_ids else None,
             args=(selectable_ids, group_widget_key, feature_widget_keys) if selectable_ids else None,
         )
-        for view in group_views:
-            label = f"{view.display_name_ru} — {view.description_ru}"
-            if not view.selectable:
-                reason = view.blocked_reason or f"Статус: {view.usage_status.value}"
-                st.checkbox(label, value=False, disabled=True, key=f"prototype_{revision}_feature_{view.feature_id}", help=reason)
-                continue
-            st.checkbox(
-                label,
-                key=feature_widget_keys[view.feature_id],
-                on_change=_on_feature_widget_change,
-                args=(view.feature_id, selectable_ids, group_widget_key, feature_widget_keys),
-            )
+        containers = st.columns(3) if len(selectable_ids) > 12 else (st,)
+        for index, view in enumerate(group_views):
+            with containers[index % len(containers)]:
+                label = f"{view.display_name_ru} — {view.description_ru}"
+                if not view.selectable:
+                    reason = view.blocked_reason or f"Статус: {view.usage_status.value}"
+                    st.checkbox(label, value=False, disabled=True, key=f"prototype_{revision}_feature_{view.feature_id}", help=reason)
+                    continue
+                st.checkbox(
+                    label,
+                    key=feature_widget_keys[view.feature_id],
+                    on_change=_on_feature_widget_change,
+                    args=(view.feature_id, selectable_ids, group_widget_key, feature_widget_keys),
+                )
     if not st.session_state.selected_feature_ids:
         st.warning("Выберите хотя бы один разрешённый признак.")
     navigation = st.columns(2)
@@ -208,11 +271,14 @@ def _render_models_step(runtime) -> None:
     )
     set_selected_model_id(st.session_state, selected_id)
     model = by_id[selected_id]
+    st.subheader(model.display_name_ru)
     st.write(model.description_ru)
+    st.write("**Проверенная фиксированная конфигурация**")
     st.write(f"Версия: {model.model_version}")
-    st.json(_plain(model.runtime_requirements))
-    with st.expander("Замороженный профиль и технические сведения"):
+    with st.expander("Технические параметры"):
+        st.caption("Замороженный профиль и требования runtime доступны только для технической проверки.")
         st.json(_plain(model.default_profile))
+        st.json(_plain(model.runtime_requirements))
         st.caption(f"model_id: {model.model_id}; adapter version: {model.adapter_version}")
     navigation = st.columns(2)
     if navigation[0].button("Назад"):
@@ -232,33 +298,66 @@ def _render_experiment_step(runtime) -> None:
     previous = st.session_state.experiment_inputs
     revision = st.session_state.context_revision
     protocol = runtime.supported_protocol
-    st.text_input("Протокол", value=protocol.protocol_id, disabled=True, key=f"prototype_{revision}_protocol")
-    st.text_input("Версия протокола", value=protocol.protocol_version, disabled=True, key=f"prototype_{revision}_protocol_version")
-    seed = st.number_input("Seed", min_value=0, value=int(previous.get("seed", protocol.default_seed)), step=1, key=f"prototype_{revision}_seed")
-    folds = st.number_input("Фолды", min_value=protocol.minimum_folds, value=max(int(previous.get("folds", protocol.default_folds)), protocol.minimum_folds), step=1, key=f"prototype_{revision}_folds")
-    st.text_input("Уровень оценки", value=protocol.evaluation_level, disabled=True, key=f"prototype_{revision}_evaluation")
-    reference_artifact_id = st.text_input("Reference artifact ID (необязательно)", value=previous.get("reference_artifact_id", ""), key=f"prototype_{revision}_reference")
-    changed_dimension = st.selectbox(
-        "Изменённое измерение",
-        ("", "model", "feature_set"),
-        index=("", "model", "feature_set").index(previous.get("changed_dimension") or ""),
-        format_func=lambda value: "Не указано" if not value else value,
-        key=f"prototype_{revision}_changed_dimension",
+    with st.expander("Технические сведения протокола", expanded=False):
+        st.json({
+            "protocol_id": protocol.protocol_id,
+            "protocol_version": protocol.protocol_version,
+            "evaluation_level": protocol.evaluation_level,
+        })
+    seed = st.number_input(
+        "Случайное разбиение (seed)",
+        min_value=0,
+        value=int(previous.get("seed", protocol.default_seed)),
+        step=1,
+        help=(
+            "Что это: число, задающее случайное разбиение организаций на части проверки. "
+            "Зачем: позволяет воспроизвести один и тот же эксперимент. "
+            "Когда менять: только для заранее запланированной новой проверки. "
+            "Что изменится: разбиение, OOF-прогнозы и итоговые метрики могут измениться; "
+            "сопоставление с запуском на другом seed не является прямым. "
+            "Значение по умолчанию и рекомендуемое: 42."
+        ),
+        key=f"prototype_{revision}_seed",
     )
-    changed_elements_text = st.text_area(
-        "Изменённые элементы (по одному в строке)",
-        value="\n".join(previous.get("changed_elements", ())),
-        key=f"prototype_{revision}_changed_elements",
+    folds = st.number_input(
+        "Количество частей проверки",
+        min_value=protocol.minimum_folds,
+        value=max(int(previous.get("folds", protocol.default_folds)), protocol.minimum_folds),
+        step=1,
+        help=(
+            "Что это: количество частей OOF-проверки. "
+            "Зачем: каждая организация оценивается моделью, не обучавшейся на ней. "
+            "Когда менять: только при заранее запланированном изменении схемы проверки. "
+            "Что изменится: состав обучающих и проверочных частей, расчёт и итоговые метрики могут измениться; "
+            "сопоставление с запуском на другом числе частей не является прямым. "
+            "Значение по умолчанию и рекомендуемое: 3."
+        ),
+        key=f"prototype_{revision}_folds",
     )
+    st.info("OOF-оценка: для каждой организации прогноз получен моделью, которая не обучалась на этой организации.")
+    reference_default = previous.get("reference_artifact_id") or st.session_state.last_successful_artifact_id or ""
+    with st.expander("Сравнение с предыдущим успешным результатом", expanded=False):
+        compare_with_reference = st.checkbox(
+            "Включить сопоставление",
+            value=bool(previous.get("reference_artifact_id")),
+            key=f"prototype_{revision}_comparison_enabled",
+        )
+        reference_artifact_id = st.text_input(
+            "Идентификатор результата для сопоставления",
+            value=reference_default,
+            disabled=not compare_with_reference,
+            key=f"prototype_{revision}_reference",
+            help="По умолчанию используется последний успешно сохранённый результат этой сессии.",
+        )
     values = {
         "protocol_id": protocol.protocol_id,
         "protocol_version": protocol.protocol_version,
         "seed": int(seed),
         "folds": int(folds),
         "evaluation_level": protocol.evaluation_level,
-        "reference_artifact_id": reference_artifact_id.strip() or None,
-        "changed_dimension": changed_dimension or None,
-        "changed_elements": tuple(item.strip() for item in changed_elements_text.splitlines() if item.strip()),
+        "reference_artifact_id": reference_artifact_id.strip() if compare_with_reference and reference_artifact_id.strip() else None,
+        "changed_dimension": None,
+        "changed_elements": (),
     }
     set_experiment_inputs(st.session_state, values)
     if st.button("Построить план", type="primary"):
@@ -280,7 +379,7 @@ def _render_experiment_step(runtime) -> None:
             )
             run_request_from_snapshot(snapshot)
         except ValueError:
-            st.error("Проверьте параметры эксперимента и декларацию изменения для reference.")
+            st.error("Проверьте параметры эксперимента.")
             return
         try:
             plan = runtime.planning_service.build_plan(
@@ -308,11 +407,15 @@ def _render_experiment_step(runtime) -> None:
     if st.button("Запустить эксперимент", type="primary", disabled=not can_run(st.session_state)):
         snapshot = st.session_state.planning_request_snapshot
         try:
-            artifact = runtime.application_service.run_experiment(
-                loaded_dataset=context.loaded_dataset,
-                feature_registry=context.feature_registry,
-                population=context.population,
-                request=run_request_from_snapshot(snapshot),
+            artifact = _run_with_progress(
+                _EXPERIMENT_PROGRESS_LABELS,
+                lambda listener: runtime.application_service.run_experiment(
+                    loaded_dataset=context.loaded_dataset,
+                    feature_registry=context.feature_registry,
+                    population=context.population,
+                    request=run_request_from_snapshot(snapshot),
+                    progress_listener=listener,
+                ),
             )
             comparison = None
             if snapshot.reference_artifact_id:
@@ -326,19 +429,28 @@ def _render_experiment_step(runtime) -> None:
 
 def _render_plan(plan) -> None:
     st.subheader("Подтверждённый план")
-    st.write(f"Датасет: {plan.dataset.dataset_name} · {plan.dataset.dataset_version}; final test locked: {'да' if plan.dataset.final_test_locked else 'нет'}")
-    st.write(f"Признаки: {', '.join(plan.selected_feature_ids)}")
-    st.write(f"Группы: {', '.join(plan.feature_groups)}")
-    st.write(f"Модель: {plan.model.display_name_ru if plan.model else 'не найдена'}")
-    if plan.model:
-        with st.expander("Замороженный профиль модели"):
-            st.json(_plain(plan.model.default_profile))
     request = plan.request
-    st.write(f"Протокол: {request.protocol_id} v{request.protocol_version}; seed: {request.seed}; folds: {request.folds}; level: {request.evaluation_level}")
-    st.write(f"Популяция: {plan.population.population_id} · {plan.population.population_size:,} · {plan.population.partition_role}")
-    st.write(f"Reference: {request.reference_artifact_id or 'не задан'}")
-    st.write(f"Изменение: {request.changed_dimension or 'не задано'}; элементы: {', '.join(request.changed_elements) or 'не заданы'}")
-    st.write(f"Статус валидации: {'валиден' if plan.is_valid else 'невалиден'}")
+    with st.expander("Данные", expanded=True):
+        st.write(f"{plan.dataset.dataset_name} · версия {plan.dataset.dataset_version}")
+        st.write(f"Рабочая выборка: {plan.population.population_size:,} организаций.")
+        st.write(f"Финальная контрольная выборка закрыта: {'да' if plan.dataset.final_test_locked else 'нет'}.")
+    with st.expander("Признаки", expanded=True):
+        st.write(f"Выбрано: {len(plan.selected_features)}")
+        st.write(", ".join(feature.display_name_ru for feature in plan.selected_features))
+        st.caption("Группы: " + ", ".join(plan.feature_groups))
+    with st.expander("Модель", expanded=True):
+        st.write(plan.model.display_name_ru if plan.model else "Модель не найдена")
+        if plan.model:
+            st.caption(f"Версия: {plan.model.model_version}")
+            with st.expander("Технические параметры"):
+                st.json(_plain(plan.model.default_profile))
+    with st.expander("Проверка", expanded=True):
+        st.write(f"OOF · {request.folds} частей · seed {request.seed}")
+        with st.expander("Технические сведения протокола", expanded=False):
+            st.caption(f"{request.protocol_id} v{request.protocol_version}")
+    with st.expander("Сравнение", expanded=False):
+        st.write("Не выбрано" if request.reference_artifact_id is None else f"Reference: {request.reference_artifact_id}")
+    st.caption(f"Статус валидации: {'валиден' if plan.is_valid else 'невалиден'}")
 
 
 def _render_result_step() -> None:
@@ -352,29 +464,64 @@ def _render_result_step() -> None:
     st.header("5. Результат")
     result = artifact.run_output.result
     metrics = result.metrics
-    labels = (
-        ("gini", "Gini"), ("roc_auc", "ROC-AUC"), ("pr_auc", "PR-AUC"),
-        ("precision_at_0_5", "Precision@0.5"), ("recall_at_0_5", "Recall@0.5"), ("f1_at_0_5", "F1@0.5"),
-    )
+    st.subheader("Качество ранжирования")
+    labels = (("gini", "Gini"), ("roc_auc", "ROC-AUC"), ("pr_auc", "PR-AUC"))
     columns = st.columns(3)
     for index, (key, label) in enumerate(labels):
         columns[index % 3].metric(label, _number(metrics.get(key)))
-    st.subheader("Матрица ошибок")
-    st.json(_plain(result.confusion))
-    st.write(f"Runtime: {_number(result.runtime_seconds)} s; evaluation: {result.evaluation_level}")
-    with st.expander("Метрики фолдов"):
-        st.json(_plain(result.fold_metrics))
-    with st.expander("Ограничения"):
+    st.subheader("При фиксированном пороге 0.5")
+    threshold_columns = st.columns(3)
+    for index, (key, label) in enumerate((("precision_at_0_5", "Precision"), ("recall_at_0_5", "Recall"), ("f1_at_0_5", "F1"))):
+        threshold_columns[index].metric(label, _number(metrics.get(key)))
+    st.subheader("Ошибки модели")
+    errors = st.columns(4)
+    error_labels = (
+        ("tp", "Верно выявленные дефолты (TP)", "Модель предсказала дефолт, и дефолт действительно произошёл."),
+        ("tn", "Верно выявленные недефолты (TN)", "Модель не предсказала дефолт, и дефолта действительно не было."),
+        ("fp", "Ложные тревоги (FP)", "Модель предсказала дефолт, но дефолта не было."),
+        ("fn", "Пропущенные дефолты (FN)", "Модель не предсказала дефолт, хотя он произошёл."),
+    )
+    for index, (key, label, explanation) in enumerate(error_labels):
+        errors[index].metric(label, str(result.confusion[key]))
+        errors[index].caption(explanation)
+    st.subheader("Стабильность по частям проверки")
+    st.dataframe(
+        [
+            {
+                "Часть": fold["fold"],
+                "Gini": _number(fold.get("gini")),
+                "ROC-AUC": _number(fold.get("roc_auc")),
+                "Precision @ 0.5": _number(fold.get("precision_at_0_5")),
+                "Recall @ 0.5": _number(fold.get("recall_at_0_5")),
+            }
+            for fold in result.fold_metrics
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.subheader("Ограничения")
+    with st.expander("Показать ограничения", expanded=False):
         for limitation in result.limitations:
             st.write(f"- {limitation}")
-    st.caption(f"Artifact ID: {artifact.artifact_id}; Result ID: {result.result_id}")
+    st.subheader("Технические сведения")
+    with st.expander("Показать технические сведения", expanded=False):
+        st.json({
+            "artifact_id": artifact.artifact_id,
+            "result_id": result.result_id,
+            "runtime_seconds": result.runtime_seconds,
+            "evaluation_level": result.evaluation_level,
+            "confusion": _plain(result.confusion),
+            "fold_metrics": _plain(result.fold_metrics),
+        })
     comparison = st.session_state.comparison_result
     if comparison is not None:
-        st.subheader("Сопоставление с reference")
-        st.write(f"Сопоставимы: {'да' if comparison.is_comparable else 'нет'}")
-        st.write(f"Причины: {', '.join(comparison.reason_codes) or 'не указаны'}")
-        st.write(f"Изменённое измерение: {comparison.changed_dimension or 'не указано'}")
-        st.json({"metrics": comparison.metric_deltas, "confusion": comparison.confusion_deltas, "feature_change": comparison.feature_change, "model_change": comparison.model_change})
+        with st.expander("Сопоставление с reference", expanded=False):
+            st.write(f"Сопоставимы: {'да' if comparison.is_comparable else 'нет'}")
+            st.write(f"Причины: {', '.join(comparison.reason_codes) or 'не указаны'}")
+            st.json({"metrics": comparison.metric_deltas, "confusion": comparison.confusion_deltas, "feature_change": comparison.feature_change, "model_change": comparison.model_change})
+    if st.button("Новый эксперимент", type="primary"):
+        return_to_experiment(st.session_state)
+        st.rerun()
 
 
 def _context_or_previous_step():

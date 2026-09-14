@@ -9,7 +9,9 @@ from app.session_state import (
     apply_feature_widget_selection,
     apply_group_widget_selection,
     initialize,
+    return_to_experiment,
     run_request_from_snapshot,
+    save_artifact,
     set_dataset_context,
     set_experiment_inputs,
     set_group_selection,
@@ -121,6 +123,28 @@ class SessionStateTests(unittest.TestCase):
         self.assertEqual(request.reference_artifact_id, snapshot.reference_artifact_id)
         self.assertEqual(request.changed_dimension, snapshot.changed_dimension)
         self.assertEqual(request.changed_elements, ("removed/a", "added/b"))
+
+    def test_successful_artifact_is_available_as_the_session_comparison_reference(self) -> None:
+        artifact = SimpleNamespace(artifact_id="saved-artifact")
+
+        save_artifact(self.state, artifact, comparison=None)
+
+        self.assertEqual(self.state["last_successful_artifact_id"], "saved-artifact")
+        self.assertEqual(self.state["current_step"], 4)
+
+    def test_return_to_experiment_keeps_the_successful_reference_and_clears_current_result(self) -> None:
+        artifact = SimpleNamespace(artifact_id="saved-artifact")
+        self.state.update(planning_request_snapshot=object(), experiment_plan=object())
+        save_artifact(self.state, artifact, comparison=object())
+
+        return_to_experiment(self.state)
+
+        self.assertEqual(self.state["current_step"], 3)
+        self.assertIsNone(self.state["planning_request_snapshot"])
+        self.assertIsNone(self.state["experiment_plan"])
+        self.assertIsNone(self.state["loaded_artifact"])
+        self.assertIsNone(self.state["comparison_result"])
+        self.assertEqual(self.state["last_successful_artifact_id"], "saved-artifact")
 
 
 if __name__ == "__main__":

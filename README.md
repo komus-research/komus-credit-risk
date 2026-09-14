@@ -1,5 +1,11 @@
 # Komus Credit Risk
 
+## Streamlit prototype
+
+```powershell
+uv run python -m streamlit run app/streamlit_app.py
+```
+
 Исследовательский ML/DS-проект по прогнозированию дефолта коммерческих организаций РФ на горизонте 1 года для ООО «Комус».
 
 ## Текущий статус

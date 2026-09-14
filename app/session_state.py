@@ -19,6 +19,7 @@ _DEFAULTS = {
     "experiment_plan": None,
     "loaded_artifact": None,
     "comparison_result": None,
+    "last_successful_artifact_id": None,
     "context_revision": 0,
 }
 
@@ -169,7 +170,14 @@ def run_request_from_snapshot(snapshot: PlanningRequestMetadata) -> RunExperimen
 def save_artifact(state: MutableMapping[str, Any], artifact: Any, comparison: Any | None) -> None:
     state["loaded_artifact"] = artifact
     state["comparison_result"] = comparison
+    state["last_successful_artifact_id"] = artifact.artifact_id
     state["current_step"] = 4
+
+
+def return_to_experiment(state: MutableMapping[str, Any]) -> None:
+    """Start a new plan while preserving the session's saved comparison reference."""
+    _clear_plan_and_result(state)
+    state["current_step"] = 3
 
 
 def _clear_plan_and_result(state: MutableMapping[str, Any]) -> None:

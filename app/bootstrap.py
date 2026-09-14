@@ -7,7 +7,7 @@ services; it never constructs backend contracts itself.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -60,7 +60,11 @@ class DatasetContextProvider(Protocol):
     display_name: str
     upload_capable: bool
 
-    def resolve(self, optional_uploaded_file: Any | None = None) -> PreparedDatasetContext: ...
+    def resolve(
+        self,
+        optional_uploaded_file: Any | None = None,
+        progress_listener: Callable[[str], None] | None = None,
+    ) -> PreparedDatasetContext: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,13 +128,20 @@ class HistoricalDatasetProvider:
     def __init__(self, source_path: Path | None = None) -> None:
         self._source_path = source_path or Path(__file__).resolve().parents[1] / "data" / "raw" / "Data_final.xlsb"
 
-    def resolve(self, optional_uploaded_file: Any | None = None) -> PreparedDatasetContext:
+    def resolve(
+        self,
+        optional_uploaded_file: Any | None = None,
+        progress_listener: Callable[[str], None] | None = None,
+    ) -> PreparedDatasetContext:
         registry = self._feature_registry()
         temporary_upload: Path | None = None
         try:
             source_path, temporary_upload = self._source(optional_uploaded_file)
+            _notify_data_progress(progress_listener, "checking_file_identity")
             self._validate_source_identity(source_path)
+            _notify_data_progress(progress_listener, "checking_working_split")
             working_split = _load_accepted_working_split()
+            _notify_data_progress(progress_listener, "loading_dataset")
             loaded = ReadyDatasetAdapter().load(
                 source_path,
                 dataset_id="komus-historical-data-final",
@@ -147,7 +158,9 @@ class HistoricalDatasetProvider:
         finally:
             if temporary_upload is not None and temporary_upload.exists():
                 temporary_upload.unlink()
+        _notify_data_progress(progress_listener, "validating_target_split")
         self._validate_loaded_dataset(loaded, working_split)
+        _notify_data_progress(progress_listener, "preparing_context")
         return PreparedDatasetContext(
             self.context_id,
             self.display_name,
@@ -264,6 +277,7 @@ def resolve_context(
     optional_uploaded_file: Any | None = None,
     *,
     providers: Mapping[str, DatasetContextProvider] | None = None,
+    progress_listener: Callable[[str], None] | None = None,
 ) -> PreparedDatasetContext:
     """Resolve a selected provider; there is intentionally no generic upload path."""
     source = _PROVIDERS if providers is None else providers
@@ -273,7 +287,9 @@ def resolve_context(
         raise ValueError("Неизвестный подготовленный контекст данных.") from error
     if optional_uploaded_file is not None and not provider.upload_capable:
         raise ValueError("Выбранный контекст не поддерживает загрузку файла.")
-    return provider.resolve(optional_uploaded_file)
+    if progress_listener is None:
+        return provider.resolve(optional_uploaded_file)
+    return provider.resolve(optional_uploaded_file, progress_listener=progress_listener)
 
 
 def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:
@@ -348,6 +364,15 @@ def _sha256_file(path: Path) -> str:
 
 def _sha256_int64(values: np.ndarray) -> str:
     return sha256(np.asarray(values, dtype=np.int64).tobytes()).hexdigest()
+
+
+def _notify_data_progress(listener: Callable[[str], None] | None, stage: str) -> None:
+    if listener is None:
+        return
+    try:
+        listener(stage)
+    except Exception:
+        return
 
 
 def _repository_root() -> Path:

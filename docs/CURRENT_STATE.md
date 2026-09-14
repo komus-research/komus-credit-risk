@@ -1,6 +1,6 @@
 # KOMUS — CURRENT STATE
 
-Дата фиксации: **2026-09-08**
+Дата фиксации: **2026-09-14**
 
 Этот файл содержит только актуальное подтверждённое состояние проекта.
 Он обновляется после принятого исследовательского этапа или существенного изменения требований.
@@ -625,3 +625,72 @@ Stage 20 не доказывает:
 ### Next
 
 Stage 20 закрыт. Новые API-вызовы не нужны. Следующий приоритет — итоговый research synthesis / evidence package / презентация для защиты.
+
+---
+
+## PRODUCT / APPLICATION STATE
+
+Этот раздел фиксирует принятое product/application состояние и не является новым research Stage.
+
+### Архитектурная цепочка
+
+`READY DATASET → DATASET CONTRACT → FEATURE REGISTRY → MODEL REGISTRY → EXPERIMENT CONFIG → EXPERIMENT RUNNER → EXPERIMENT RESULT → FRONTEND`
+
+Также приняты:
+
+- Ready Dataset Adapter;
+- GBDT adapters;
+- GBDT_mean;
+- Comparison;
+- Artifact Persistence;
+- Application Service;
+- Planning Service;
+- Streamlit Prototype V1.
+
+Архитектурный invariant: ML-core не знает о Streamlit/SPARK. Frontend не знает о конкретных моделях и конкретном списке 47 признаков.
+
+### Streamlit Prototype V1
+
+Пользовательский flow:
+
+`Данные → Признаки → Модель → Эксперимент → Результат`
+
+Canonical launch:
+
+```powershell
+uv run python -m streamlit run app/streamlit_app.py
+```
+
+UX/runtime remediation имеет Reviewer verdict: `ACCEPT`.
+
+Принятые свойства:
+
+- подготовка данных показывает реальные стадии выполнения;
+- experiment run показывает реальные стадии: run, folds, aggregation, persistence;
+- fake percentages и ETA отсутствуют;
+- progress listener observational;
+- callback overhead не входит в `ExperimentResult.runtime_seconds`;
+- `completed` отправляется только после успешного persistence;
+- comparison скрыт по умолчанию;
+- last successful artifact можно использовать как same-session reference;
+- protocol technical metadata вынесены на второй уровень;
+- result сгруппирован человеческими разделами;
+- fold metrics представлены таблицей, raw metadata — в technical details.
+
+### Scientific/product invariants
+
+- Dataset / split / folds / seed semantics не изменены;
+- model profiles не изменены;
+- metrics contracts не изменены;
+- `Q_B1_norm` / `Q_B2_norm` не predictors;
+- final test не используется;
+- ArtifactStore / ComparisonService semantics не изменены.
+
+### Future / not implemented
+
+- SPARK Dataset Builder;
+- user model onboarding;
+- semantic taxonomy для всех features;
+- threshold optimization/calibration;
+- production auth/DB/deployment;
+- отдельный production frontend.

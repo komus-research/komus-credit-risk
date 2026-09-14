@@ -81,6 +81,33 @@ class ApplicationServiceTests(unittest.TestCase):
         self.assertEqual(artifact.population, self.population)
         self.assertEqual(artifact.run_output.row_positions, self.population.row_positions)
 
+    def test_completed_progress_is_emitted_only_after_a_successful_save(self) -> None:
+        events = []
+        artifact = self.service.run_experiment(
+            loaded_dataset=self.dataset,
+            feature_registry=self.features,
+            population=self.population,
+            request=self._request(("a",)),
+            progress_listener=events.append,
+        )
+
+        self.assertEqual(self.store.load(artifact.artifact_id).artifact_id, artifact.artifact_id)
+        self.assertEqual(events[-2].stage, "persistence_started")
+        self.assertEqual(events[-1].stage, "completed")
+
+        failed_events = []
+        with patch.object(self.store, "save", side_effect=OSError("disk unavailable")):
+            with self.assertRaisesRegex(OSError, "disk unavailable"):
+                self.service.run_experiment(
+                    loaded_dataset=self.dataset,
+                    feature_registry=self.features,
+                    population=self.population,
+                    request=self._request(("a",)),
+                    progress_listener=failed_events.append,
+                )
+        self.assertEqual(failed_events[-1].stage, "persistence_started")
+        self.assertNotIn("completed", [event.stage for event in failed_events])
+
     def test_request_protocol_fields_ids_and_reference_are_trusted(self) -> None:
         first = self.service.run_experiment(
             loaded_dataset=self.dataset, feature_registry=self.features, population=self.population,

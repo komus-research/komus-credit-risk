@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -161,6 +162,52 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertTrue(all(len(adapter.fit_calls) == 1 for adapter in self.factory.instances))
         self.assertEqual(len(output.result.fold_metrics), 3)
         self.assertEqual(output.result.comparison, {})
+
+    def test_progress_sequence_is_observational_and_does_not_change_oof_evidence(self) -> None:
+        without_listener = self.runner.run(self.loaded_dataset, self.config, self.population)
+        events = []
+        with_listener = self.runner.run(self.loaded_dataset, self.config, self.population, progress_listener=events.append)
+
+        self.assertEqual(
+            [(event.stage, event.fold_number, event.folds_total) for event in events],
+            [
+                ("run_started", None, 3),
+                ("fold_started", 1, 3), ("fold_completed", 1, 3),
+                ("fold_started", 2, 3), ("fold_completed", 2, 3),
+                ("fold_started", 3, 3), ("fold_completed", 3, 3),
+                ("aggregate_metrics_started", None, 3),
+            ],
+        )
+        np.testing.assert_array_equal(without_listener.oof_positive_proba, with_listener.oof_positive_proba)
+        np.testing.assert_array_equal(without_listener.fold_assignments, with_listener.fold_assignments)
+        self.assertEqual(without_listener.result.metrics, with_listener.result.metrics)
+        self.assertEqual(without_listener.result.confusion, with_listener.result.confusion)
+
+    def test_listener_overhead_is_excluded_from_reported_runtime(self) -> None:
+        class ControlledClock:
+            def __init__(self) -> None:
+                self.current = 0.0
+
+            def __call__(self) -> float:
+                return self.current
+
+            def advance(self, duration: float) -> None:
+                self.current += duration
+
+        clock = ControlledClock()
+
+        def slow_listener(_event) -> None:
+            clock.advance(10.0)
+
+        with patch("komus_risk.experiments.runner.perf_counter", clock):
+            output = self.runner.run(
+                self.loaded_dataset,
+                self.config,
+                self.population,
+                progress_listener=slow_listener,
+            )
+
+        self.assertEqual(output.result.runtime_seconds, 0.0)
 
     def test_same_seed_is_reproducible_and_changed_seed_changes_split(self) -> None:
         first = self.runner.run(self.loaded_dataset, self.config, self.population)
