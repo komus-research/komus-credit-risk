@@ -6,34 +6,44 @@ KOMUS Credit Risk — исследовательский прототип для
 
 Frontend: Streamlit.
 
-## Быстрый запуск
+## Как запустить
 
-Требования:
+Для первого запуска один раз скачайте проект, установите зависимости и команды KOMUS.
 
-- Git;
-- uv;
-- Windows и локальный запуск;
-- версия Python берётся из проекта: [`.python-version`](.python-version).
+### Первый запуск
 
 ```powershell
 git clone https://github.com/komus-research/komus-credit-risk.git
 cd komus-credit-risk
 uv sync
+.\scripts\install-komus-commands.ps1
+```
+
+После установки закройте и снова откройте PowerShell, затем выполните:
+
+```powershell
+comus
+```
+
+Теперь приложение можно запускать одной командой из любой папки.
+
+### Ручной запуск
+
+Canonical manual launch:
+
+```powershell
 uv run python -m streamlit run app/streamlit_app.py
 ```
 
-Репозиторий: [github.com/komus-research/komus-credit-risk](https://github.com/komus-research/komus-credit-risk).
-
 ## Датасет
 
-`Data_final.xlsb` не хранится в Git. Для полного historical flow нужен локальный accepted `Data_final.xlsb`.
+`Data_final.xlsb` не хранится в GitHub. Если файл у вас есть, после запуска `comus` его можно выбрать через кнопку выбора файла в приложении.
 
-Есть два способа указать файл:
+Либо положите его заранее по пути:
 
-- положить его по пути `data/raw/Data_final.xlsb`;
-- запустить приложение, выбрать «Другой локальный файл» и выбрать `Data_final` с диска.
+`data/raw/Data_final.xlsb`
 
-Другой локальный файл можно выбрать и проверить, но пока только accepted historical `Data_final` имеет готовые Dataset Contract и Evaluation Population и допускается к experiment flow.
+Для полного текущего эксперимента используется проверенная версия `Data_final`. Другой файл можно выбрать и проверить, но автоматическая подготовка совершенно нового датасета для ML пока находится в разработке.
 
 ## Что можно попробовать
 
