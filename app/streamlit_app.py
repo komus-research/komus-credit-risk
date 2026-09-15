@@ -8,6 +8,7 @@ from typing import Any
 import streamlit as st
 
 from app.bootstrap import create_runtime, list_available_contexts, resolve_context, validate_supported_protocol
+from app.feature_display import group_feature_ids_by_family
 from app.session_state import (
     apply_feature_widget_selection,
     apply_group_widget_selection,
@@ -40,6 +41,10 @@ _EXPERIMENT_PROGRESS_LABELS = {
     "aggregate_metrics_started": "Расчёт итоговых метрик",
     "persistence_started": "Сохранение результата",
     "completed": "Эксперимент завершён",
+}
+_SECONDARY_FEATURE_GROUP_LABELS = {
+    "protected_columns": "Служебные поля",
+    "restricted_signals": "Недоступные для модели признаки",
 }
 
 
@@ -169,47 +174,22 @@ def _render_features_step(runtime) -> None:
     views = runtime.planning_service.list_features(context.feature_registry)
     groups = runtime.planning_service.list_feature_groups(context.feature_registry)
     views_by_group = {group.group_id: [view for view in views if view.group_id == group.group_id] for group in groups}
-    selected = st.session_state.selected_feature_ids
     revision = st.session_state.context_revision
     for group in groups:
         group_views = views_by_group[group.group_id]
-        selectable_ids = tuple(view.feature_id for view in group_views if view.selectable)
-        group_widget_key = f"prototype_{revision}_group_{group.group_id}"
-        feature_widget_keys = {
-            feature_id: f"prototype_{revision}_feature_{feature_id}"
-            for feature_id in selectable_ids
-        }
-        if selectable_ids:
-            synchronize_feature_widgets(
-                st.session_state,
-                selectable_ids,
-                group_widget_key=group_widget_key,
-                feature_widget_keys=feature_widget_keys,
+        selectable_views = [view for view in group_views if view.selectable]
+        nonselectable_views = [view for view in group_views if not view.selectable]
+        if selectable_views:
+            st.subheader(group.name_ru)
+            st.caption(group.description_ru)
+            _render_selectable_feature_families(group.group_id, selectable_views, revision)
+        if nonselectable_views:
+            _render_nonselectable_feature_group(
+                _SECONDARY_FEATURE_GROUP_LABELS.get(group.group_id, group.name_ru),
+                group.description_ru,
+                nonselectable_views,
+                revision,
             )
-        selected_count = sum(feature_id in selected for feature_id in selectable_ids)
-        st.subheader(f"{group.name_ru} · {selected_count}/{len(selectable_ids)}")
-        st.caption(group.description_ru)
-        st.checkbox(
-            "Выбрать всю группу",
-            key=group_widget_key,
-            disabled=not selectable_ids,
-            on_change=_on_group_widget_change if selectable_ids else None,
-            args=(selectable_ids, group_widget_key, feature_widget_keys) if selectable_ids else None,
-        )
-        containers = st.columns(3) if len(selectable_ids) > 12 else (st,)
-        for index, view in enumerate(group_views):
-            with containers[index % len(containers)]:
-                label = f"{view.display_name_ru} — {view.description_ru}"
-                if not view.selectable:
-                    reason = view.blocked_reason or f"Статус: {view.usage_status.value}"
-                    st.checkbox(label, value=False, disabled=True, key=f"prototype_{revision}_feature_{view.feature_id}", help=reason)
-                    continue
-                st.checkbox(
-                    label,
-                    key=feature_widget_keys[view.feature_id],
-                    on_change=_on_feature_widget_change,
-                    args=(view.feature_id, selectable_ids, group_widget_key, feature_widget_keys),
-                )
     if not st.session_state.selected_feature_ids:
         st.warning("Выберите хотя бы один разрешённый признак.")
     navigation = st.columns(2)
@@ -219,6 +199,74 @@ def _render_features_step(runtime) -> None:
     if navigation[1].button("Далее: модель", type="primary", disabled=not st.session_state.selected_feature_ids):
         st.session_state.current_step = 2
         st.rerun()
+
+
+def _render_selectable_feature_families(group_id: str, selectable_views: list[Any], revision: int) -> None:
+    """Render display-only families without changing registry or selection order."""
+    views_by_id = {view.feature_id: view for view in selectable_views}
+    selectable_ids = tuple(views_by_id)
+    feature_widget_keys = {
+        feature_id: f"prototype_{revision}_feature_{feature_id}"
+        for feature_id in selectable_ids
+    }
+    global_widget_key = f"prototype_{revision}_all_{group_id}"
+    synchronize_feature_widgets(
+        st.session_state,
+        selectable_ids,
+        group_widget_key=global_widget_key,
+        feature_widget_keys=feature_widget_keys,
+    )
+    selected = set(st.session_state.selected_feature_ids)
+    selected_count = sum(feature_id in selected for feature_id in selectable_ids)
+    st.caption(f"Выбрано {selected_count} из {len(selectable_ids)}")
+    st.checkbox(
+        "Выбрать все разрешённые признаки",
+        key=global_widget_key,
+        on_change=_on_group_widget_change,
+        args=(selectable_ids, global_widget_key, feature_widget_keys),
+    )
+    columns = st.columns(4)
+    for index, family in enumerate(group_feature_ids_by_family(selectable_ids)):
+        family_ids = family.feature_ids
+        family_widget_key = f"prototype_{revision}_family_{group_id}_{family.family_id}"
+        synchronize_feature_widgets(
+            st.session_state,
+            family_ids,
+            group_widget_key=family_widget_key,
+            feature_widget_keys=feature_widget_keys,
+        )
+        selected_count = sum(feature_id in selected for feature_id in family_ids)
+        with columns[index % len(columns)]:
+            st.checkbox(
+                f"Группа {family.family_id} · {selected_count}/{len(family_ids)}",
+                key=family_widget_key,
+                on_change=_on_group_widget_change,
+                args=(family_ids, family_widget_key, feature_widget_keys),
+            )
+            with st.expander("Показать признаки", expanded=False):
+                for feature_id in family_ids:
+                    view = views_by_id[feature_id]
+                    st.checkbox(
+                        f"{view.display_name_ru} — {view.description_ru}",
+                        key=feature_widget_keys[feature_id],
+                        on_change=_on_feature_widget_change,
+                        args=(feature_id, family_ids, family_widget_key, feature_widget_keys),
+                    )
+
+
+def _render_nonselectable_feature_group(group_name: str, description: str, views: list[Any], revision: int) -> None:
+    """Keep protected and restricted registry sections visibly separate."""
+    with st.expander(group_name, expanded=False):
+        st.caption(description)
+        for view in views:
+            reason = view.blocked_reason or f"Статус: {view.usage_status.value}"
+            st.checkbox(
+                f"{view.display_name_ru} — {view.description_ru}",
+                value=False,
+                disabled=True,
+                key=f"prototype_{revision}_feature_{view.feature_id}",
+                help=reason,
+            )
 
 
 def _on_group_widget_change(

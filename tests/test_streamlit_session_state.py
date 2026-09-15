@@ -103,6 +103,65 @@ class SessionStateTests(unittest.TestCase):
         self.assertFalse(self.state["widget_a"])
         self.assertFalse(self.state["widget_b"])
 
+    def test_global_widget_selects_all_selectable_features_only(self) -> None:
+        selectable_ids = ("Q_A1_norm", "Q_B3_norm", "A1_norm")
+        restricted_or_service_ids = ("INN", "DefMark", "Q_B1_norm", "Q_B2_norm")
+        keys = {feature_id: f"widget_{feature_id}" for feature_id in selectable_ids}
+        global_key = "widget_all_allowed"
+        synchronize_feature_widgets(self.state, selectable_ids, group_widget_key=global_key, feature_widget_keys=keys)
+        self.state[global_key] = True
+
+        apply_group_widget_selection(self.state, selectable_ids, group_widget_key=global_key, feature_widget_keys=keys)
+
+        self.assertEqual(self.state["selected_feature_ids"], selectable_ids)
+        self.assertTrue(self.state[global_key])
+        self.assertTrue(all(feature_id not in self.state["selected_feature_ids"] for feature_id in restricted_or_service_ids))
+
+    def test_global_widget_deselects_all_selectable_features(self) -> None:
+        selectable_ids = ("Q_A1_norm", "Q_B3_norm", "A1_norm")
+        keys = {feature_id: f"widget_{feature_id}" for feature_id in selectable_ids}
+        global_key = "widget_all_allowed"
+        set_selected_feature_ids(self.state, selectable_ids)
+        synchronize_feature_widgets(self.state, selectable_ids, group_widget_key=global_key, feature_widget_keys=keys)
+        self.assertTrue(self.state[global_key])
+        self.state[global_key] = False
+
+        apply_group_widget_selection(self.state, selectable_ids, group_widget_key=global_key, feature_widget_keys=keys)
+
+        self.assertEqual(self.state["selected_feature_ids"], ())
+        self.assertFalse(self.state[global_key])
+
+    def test_family_group_widget_selects_only_its_own_features(self) -> None:
+        family_ids = ("Q_A1_norm", "Q_A2_norm")
+        keys = {feature_id: f"widget_{feature_id}" for feature_id in family_ids}
+        group_key = "widget_family_q_a"
+        set_selected_feature_ids(self.state, ("Q_B3_norm",))
+        synchronize_feature_widgets(self.state, family_ids, group_widget_key=group_key, feature_widget_keys=keys)
+        self.state[group_key] = True
+
+        apply_group_widget_selection(self.state, family_ids, group_widget_key=group_key, feature_widget_keys=keys)
+
+        self.assertEqual(self.state["selected_feature_ids"], ("Q_B3_norm", "Q_A1_norm", "Q_A2_norm"))
+
+    def test_family_individual_deselection_clears_full_family_state(self) -> None:
+        family_ids = ("A1_norm", "A2_norm")
+        keys = {feature_id: f"widget_{feature_id}" for feature_id in family_ids}
+        group_key = "widget_family_a"
+        set_selected_feature_ids(self.state, family_ids)
+        synchronize_feature_widgets(self.state, family_ids, group_widget_key=group_key, feature_widget_keys=keys)
+        self.state[keys["A1_norm"]] = False
+
+        apply_feature_widget_selection(
+            self.state,
+            "A1_norm",
+            family_ids,
+            group_widget_key=group_key,
+            feature_widget_keys=keys,
+        )
+
+        self.assertEqual(self.state["selected_feature_ids"], ("A2_norm",))
+        self.assertFalse(self.state[group_key])
+
     def test_run_request_is_an_exact_copy_of_the_confirmed_snapshot(self) -> None:
         snapshot = PlanningRequestMetadata(
             selected_feature_ids=("b", "a"), model_id="dynamic-model", protocol_id="protocol", protocol_version="2",
