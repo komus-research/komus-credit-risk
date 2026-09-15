@@ -11,8 +11,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from typing import Any, Protocol
+from typing import Any
 
 import numpy as np
 
@@ -49,22 +48,34 @@ class PreparedDatasetContext:
 
 
 @dataclass(frozen=True, slots=True)
-class ContextOption:
-    context_id: str
+class ResolvedDatasetSource:
+    """A local physical source, deliberately without scientific dataset semantics."""
+
+    source_kind: str
     display_name: str
-    upload_capable: bool
+    local_runtime_path: Path
+    file_name: str
+    physical_format: str
+    file_size: int
 
 
-class DatasetContextProvider(Protocol):
-    context_id: str
-    display_name: str
-    upload_capable: bool
+@dataclass(frozen=True, slots=True)
+class DatasetSourcePreparation:
+    """Result of resolving a source and, when identity permits, preparing it."""
 
-    def resolve(
-        self,
-        optional_uploaded_file: Any | None = None,
-        progress_listener: Callable[[str], None] | None = None,
-    ) -> PreparedDatasetContext: ...
+    source: ResolvedDatasetSource
+    preparation_status: str
+    context: PreparedDatasetContext | None
+
+    def __post_init__(self) -> None:
+        if self.preparation_status == "context_not_prepared" and self.context is not None:
+            raise ValueError("Неподготовленный источник не может иметь dataset context.")
+        if self.preparation_status == "historical_context_prepared" and self.context is None:
+            raise ValueError("Подготовленный historical source должен иметь dataset context.")
+
+    @property
+    def is_prepared(self) -> bool:
+        return self.context is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,46 +129,86 @@ SUPPORTED_PROTOCOL = SupportedProtocol(
 )
 
 
+class LocalDatasetSourceResolver:
+    """Resolve local physical files without inferring any dataset semantics."""
+
+    _FORMATS = {".csv": "csv", ".xlsx": "xlsx", ".xlsb": "xlsb", ".parquet": "parquet"}
+
+    def __init__(self, repository_data_final_path: Path | None = None) -> None:
+        self._repository_data_final_path = (
+            repository_data_final_path
+            or _repository_root() / "data" / "raw" / "Data_final.xlsb"
+        )
+
+    def resolve_repository_data_final(self) -> ResolvedDatasetSource:
+        return self._resolve(
+            self._repository_data_final_path,
+            source_kind="repository_local",
+            display_name="Принятый исторический Data_final",
+        )
+
+    def resolve_explicit_local_path(self, path: str | Path) -> ResolvedDatasetSource:
+        raw_path = str(path).strip()
+        if not raw_path:
+            raise ValueError("Укажите путь к локальному файлу.")
+        return self._resolve(
+            Path(raw_path),
+            source_kind="explicit_local",
+            display_name=f"Локальный файл: {Path(raw_path).name}",
+        )
+
+    def _resolve(self, path: Path, *, source_kind: str, display_name: str) -> ResolvedDatasetSource:
+        local_path = path.expanduser()
+        if not local_path.exists():
+            raise FileNotFoundError(f"Файл датасета не найден: «{local_path}».")
+        if not local_path.is_file():
+            raise ValueError(f"Путь к датасету должен указывать на файл: «{local_path}».")
+        try:
+            physical_format = self._FORMATS[local_path.suffix.lower()]
+        except KeyError as error:
+            supported = ", ".join(sorted(self._FORMATS))
+            raise ValueError(f"Неподдерживаемое расширение «{local_path.suffix}». Поддерживаются: {supported}.") from error
+        resolved_path = local_path.resolve()
+        return ResolvedDatasetSource(
+            source_kind=source_kind,
+            display_name=display_name,
+            local_runtime_path=resolved_path,
+            file_name=resolved_path.name,
+            physical_format=physical_format,
+            file_size=resolved_path.stat().st_size,
+        )
+
+
 class HistoricalDatasetProvider:
-    """One explicit provider for the accepted historical Pipeline V1 profile."""
+    """Prepare only the accepted historical Pipeline V1 profile."""
 
     context_id = "historical_data_final_v1"
     display_name = "Исторический Data_final — рабочая популяция"
-    upload_capable = True
-
-    def __init__(self, source_path: Path | None = None) -> None:
-        self._source_path = source_path or Path(__file__).resolve().parents[1] / "data" / "raw" / "Data_final.xlsb"
-
-    def resolve(
+    def prepare(
         self,
-        optional_uploaded_file: Any | None = None,
+        source: ResolvedDatasetSource,
         progress_listener: Callable[[str], None] | None = None,
     ) -> PreparedDatasetContext:
         registry = self._feature_registry()
-        temporary_upload: Path | None = None
-        try:
-            source_path, temporary_upload = self._source(optional_uploaded_file)
-            _notify_data_progress(progress_listener, "checking_file_identity")
-            self._validate_source_identity(source_path)
-            _notify_data_progress(progress_listener, "checking_working_split")
-            working_split = _load_accepted_working_split()
-            _notify_data_progress(progress_listener, "loading_dataset")
-            loaded = ReadyDatasetAdapter().load(
-                source_path,
-                dataset_id="komus-historical-data-final",
-                dataset_version="accepted-v1",
-                dataset_name="Data_final",
-                target_column="DefMark",
-                positive_class=1,
-                identifier_column="INN",
-                feature_registry_id=registry.registry_id,
-                feature_registry_hash=registry.registry_hash,
-                final_test_locked=True,
-                sheet_name="Data_final",
-            )
-        finally:
-            if temporary_upload is not None and temporary_upload.exists():
-                temporary_upload.unlink()
+        source_path = source.local_runtime_path
+        _notify_data_progress(progress_listener, "checking_file_identity")
+        self._validate_source_identity(source_path)
+        _notify_data_progress(progress_listener, "checking_working_split")
+        working_split = _load_accepted_working_split()
+        _notify_data_progress(progress_listener, "loading_dataset")
+        loaded = ReadyDatasetAdapter().load(
+            source_path,
+            dataset_id="komus-historical-data-final",
+            dataset_version="accepted-v1",
+            dataset_name="Data_final",
+            target_column="DefMark",
+            positive_class=1,
+            identifier_column="INN",
+            feature_registry_id=registry.registry_id,
+            feature_registry_hash=registry.registry_hash,
+            final_test_locked=True,
+            sheet_name="Data_final",
+        )
         _notify_data_progress(progress_listener, "validating_target_split")
         self._validate_loaded_dataset(loaded, working_split)
         _notify_data_progress(progress_listener, "preparing_context")
@@ -195,17 +246,6 @@ class HistoricalDatasetProvider:
         actual_target = loaded.dataframe.iloc[positions]["DefMark"].to_numpy(dtype=np.int8)
         if not np.array_equal(actual_target, working_split.target):
             raise ValueError("Working positions не согласованы с accepted Stage 3 evidence.")
-
-    def _source(self, optional_uploaded_file: Any | None) -> tuple[Path, Path | None]:
-        if optional_uploaded_file is None:
-            return self._source_path, None
-        if isinstance(optional_uploaded_file, (str, Path)):
-            return Path(optional_uploaded_file), None
-        name = getattr(optional_uploaded_file, "name", "uploaded")
-        content = optional_uploaded_file.getvalue()
-        with NamedTemporaryFile(delete=False, suffix=Path(name).suffix) as temporary:
-            temporary.write(content)
-            return Path(temporary.name), Path(temporary.name)
 
     @staticmethod
     def _feature_registry() -> FeatureRegistry:
@@ -256,40 +296,21 @@ class HistoricalDatasetProvider:
         )
 
 
-_PROVIDERS: Mapping[str, DatasetContextProvider] = {
-    HistoricalDatasetProvider.context_id: HistoricalDatasetProvider(),
-}
-
-
-def list_available_contexts(
-    providers: Mapping[str, DatasetContextProvider] | None = None,
-) -> tuple[ContextOption, ...]:
-    """List only explicit, composition-owned dataset contexts."""
-    source = _PROVIDERS if providers is None else providers
-    return tuple(
-        ContextOption(provider.context_id, provider.display_name, provider.upload_capable)
-        for provider in source.values()
-    )
-
-
-def resolve_context(
-    context_id: str,
-    optional_uploaded_file: Any | None = None,
+def prepare_resolved_source(
+    source: ResolvedDatasetSource,
     *,
-    providers: Mapping[str, DatasetContextProvider] | None = None,
+    historical_provider: HistoricalDatasetProvider | None = None,
     progress_listener: Callable[[str], None] | None = None,
-) -> PreparedDatasetContext:
-    """Resolve a selected provider; there is intentionally no generic upload path."""
-    source = _PROVIDERS if providers is None else providers
-    try:
-        provider = source[context_id]
-    except KeyError as error:
-        raise ValueError("Неизвестный подготовленный контекст данных.") from error
-    if optional_uploaded_file is not None and not provider.upload_capable:
-        raise ValueError("Выбранный контекст не поддерживает загрузку файла.")
-    if progress_listener is None:
-        return provider.resolve(optional_uploaded_file)
-    return provider.resolve(optional_uploaded_file, progress_listener=progress_listener)
+) -> DatasetSourcePreparation:
+    """Prepare only a source that passed the exact accepted Data_final gate."""
+    if _sha256_file(source.local_runtime_path) != _ACCEPTED_DATASET_SHA256:
+        return DatasetSourcePreparation(source, "context_not_prepared", None)
+    provider = historical_provider or HistoricalDatasetProvider()
+    return DatasetSourcePreparation(
+        source,
+        "historical_context_prepared",
+        provider.prepare(source, progress_listener=progress_listener),
+    )
 
 
 def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:
