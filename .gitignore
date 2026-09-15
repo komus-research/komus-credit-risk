@@ -78,3 +78,6 @@ Thumbs.db
 /reports/generated/stage1_baseline_results.json
 
 /.review_bundle_build/
+
+# Local Streamlit runtime artifacts
+/.streamlit-artifacts/
