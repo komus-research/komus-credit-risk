@@ -145,12 +145,71 @@ function Rewrite-SubtreePullHistory {
 }
 function Clear-IntegrationBranch {
     param([string]$Repo,[string]$Base,[string]$Branch)
+    $current = (Invoke-Git $Repo @('branch','--show-current') -AllowFailure).Text.Trim()
+    if ($current -eq $Branch) {
+        Invoke-Git $Repo @('reset','--hard') -AllowFailure | Out-Null
+        Invoke-Git $Repo @('clean','-fd','--','credit-scoring') -AllowFailure | Out-Null
+    }
     $switch = Invoke-Git $Repo @('switch',$Base) -AllowFailure
     if ($switch.ExitCode -ne 0) { Write-Host (U '0J3QtSDRg9C00LDQu9C+0YHRjCDQstC10YDQvdGD0YLRjCDRgNC10L/QvtC30LjRgtC+0YDQuNC5INCY0L3RgdGC0LjRgtGD0YLQsCDQvdCwIERhdGFfS29tdXMu') -ForegroundColor Yellow; return $false }
     $delete = Invoke-Git $Repo @('branch','-D',$Branch) -AllowFailure
     if ($delete.ExitCode -ne 0) { Write-Host ((U '0J3QtSDRg9C00LDQu9C+0YHRjCDQstC10YDQvdGD0YLRjCDRgNC10L/QvtC30LjRgtC+0YDQuNC5INCY0L3RgdGC0LjRgtGD0YLQsCDQvdCwIERhdGFfS29tdXMu') + " $($delete.Text)") -ForegroundColor Yellow; return $false }
     Write-Host ((U '0JLRgNC10LzQtdC90L3QsNGPIGludGVncmF0aW9uIGJyYW5jaCDRg9C00LDQu9C10L3QsDo=') + " $Branch") -ForegroundColor Yellow
     return $true
+}
+function Get-KomusSyncAnchor {
+    param([string]$Repo,[string]$Base,[string]$Prefix,[string]$SourceRef)
+    $history = Invoke-Git $Repo @('log',$Base,'--format=%H%n%B%n__KOMUS_SYNC_END__')
+    foreach ($entry in ($history.Text -split '(?m)^__KOMUS_SYNC_END__\r?$')) {
+        $record = $entry.Trim()
+        if ([string]::IsNullOrWhiteSpace($record)) { continue }
+        $parts = $record -split '\r?\n',2
+        if ($parts.Count -ne 2) { continue }
+        $commitSha = $parts[0].Trim(); $body = $parts[1]
+        $sourceMatch = [regex]::Match($body,'(?m)^komus-source:[ \t]*(?<sha>[0-9a-fA-F]{40})\r?$')
+        $prefixMatch = [regex]::Match($body,'(?m)^komus-prefix:[ \t]*(?<prefix>[^\r\n]+)\r?$')
+        if (-not $sourceMatch.Success -or -not $prefixMatch.Success -or $prefixMatch.Groups['prefix'].Value.Trim().TrimEnd('/') -ne $Prefix) { continue }
+        $sourceSha = $sourceMatch.Groups['sha'].Value.ToLowerInvariant()
+        if ((Invoke-Git $Repo @('cat-file','-e',($sourceSha + '^{commit}')) -AllowFailure).ExitCode -ne 0) { continue }
+        if (-not (Is-Ancestor $Repo $sourceSha $SourceRef)) { continue }
+        return [PSCustomObject]@{ InstituteCommit=$commitSha; SourceSha=$sourceSha; Prefix=$Prefix }
+    }
+    Stop-Helper "No valid komus sync marker for prefix '$Prefix' was found in $Base."
+}
+function Apply-SourceRangeToPrefix {
+    param([string]$Repo,[string]$Prefix,[string]$From,[string]$To)
+    $rawChanges = Invoke-Git $Repo @('diff','--name-status',$From,$To,'--')
+    if ([string]::IsNullOrWhiteSpace($rawChanges.Text)) { return $false }
+    $changes = @()
+    foreach ($line in $rawChanges.Lines) {
+        $parts = $line -split "`t",2
+        if ($parts.Count -ne 2 -or $parts[0] -notin @('A','M','D')) { Stop-Helper "Unsupported source change while syncing from ${From}: $line" }
+        $changes += [PSCustomObject]@{ Status=$parts[0]; SourcePath=$parts[1]; TargetPath=($Prefix + '/' + $parts[1]) }
+    }
+    foreach ($change in $changes) {
+        $anchorEntry = (Invoke-Git $Repo @('ls-tree',$From,'--',$change.SourcePath)).Text.Trim()
+        $targetEntry = (Invoke-Git $Repo @('ls-tree','HEAD','--',$change.TargetPath)).Text.Trim()
+        $anchorState = [regex]::Match($anchorEntry,'^(?<mode>\d+) blob (?<sha>[0-9a-fA-F]{40})\t')
+        $targetState = [regex]::Match($targetEntry,'^(?<mode>\d+) blob (?<sha>[0-9a-fA-F]{40})\t')
+        if ($change.Status -eq 'A') {
+            if ($anchorState.Success -or $targetState.Success) { Stop-Helper "Target prefix diverged before adding $($change.SourcePath)." }
+        }
+        elseif (-not $anchorState.Success -or -not $targetState.Success -or $anchorState.Groups['mode'].Value -ne $targetState.Groups['mode'].Value -or $anchorState.Groups['sha'].Value -ne $targetState.Groups['sha'].Value) { Stop-Helper "Target prefix diverged from sync anchor at $($change.SourcePath): Git mode or blob SHA differs." }
+    }
+    foreach ($change in $changes) {
+        if ($change.Status -eq 'D') { Invoke-Git $Repo @('rm','-f','--',$change.TargetPath) | Out-Null; continue }
+        $entry = (Invoke-Git $Repo @('ls-tree',$To,'--',$change.SourcePath)).Text.Trim()
+        $entryMatch = [regex]::Match($entry,'^(?<mode>\d+) blob (?<sha>[0-9a-fA-F]{40})\t')
+        if (-not $entryMatch.Success) { Stop-Helper "Cannot resolve source blob for $($change.SourcePath)." }
+        Invoke-Git $Repo @('update-index','--add','--cacheinfo',($entryMatch.Groups['mode'].Value + ',' + $entryMatch.Groups['sha'].Value + ',' + $change.TargetPath)) | Out-Null
+        Invoke-Git $Repo @('checkout-index','-f','--',$change.TargetPath) | Out-Null
+    }
+    return $true
+}
+function Assert-KomusSyncMarker {
+    param([string]$Repo,[string]$Commit,[string]$SourceSha,[string]$Prefix)
+    $body = (Invoke-Git $Repo @('show','-s','--format=%B',$Commit)).Text
+    if ($body -notmatch "(?m)^komus-source: $([regex]::Escape($SourceSha))\r?`$" -or $body -notmatch "(?m)^komus-prefix: $([regex]::Escape($Prefix))\r?`$") { Stop-Helper 'New Institute commit does not contain the expected KOMUS sync marker.' }
 }
 function Invoke-InstitutePush {
     param($Config,[string]$Message,[switch]$Preview)
@@ -162,25 +221,35 @@ function Invoke-InstitutePush {
     $remote = Invoke-Git $inst @('remote','get-url','credit-risk') -AllowFailure
     if ($remote.ExitCode -eq 0 -and (Normalize-Url $remote.Text) -ne (Normalize-Url ([string]$Config.working_remote_url))) { Stop-Helper 'credit-risk remote URL does not match.' }
     $branch = New-IntegrationBranch $inst
-    if ($Preview) { Write-Host ((U '0KHRg9GF0L7QuSDQt9Cw0L/Rg9GB0Lo6INC40YHRgtC+0YfQvdC40Lo=') + " $($source.Short); " + (U '0LLQtdGC0LrQsCDQuNC90YLQtdCz0YDQsNGG0LjQuA==') + " $branch; " + (U '0YHQvtGB0YLQvtGP0L3QuNC1INGA0LXQv9C+0LfQuNGC0L7RgNC40Y8g0L3QtSDQuNC30LzQtdC90LXQvdC+Lg==')) -ForegroundColor Cyan; return }
-    if ([string]::IsNullOrWhiteSpace($Message)) { $defaultMessage = (U '0KHQuNC90YXRgNC+0L3QuNC30LjRgNC+0LLQsNGC0YwgY3JlZGl0LXNjb3Jpbmc=') + " - $($source.Short)"; $Message = Read-Host ((U '0JrQvtC80LzQtdC90YLQsNGA0LjQuSDQuNC90YLQtdCz0YDQsNGG0LjQuA==') + " [$defaultMessage]"); if ([string]::IsNullOrWhiteSpace($Message)) { $Message = $defaultMessage } }
+    if ($Preview) {
+        if ($remote.ExitCode -ne 0) { Stop-Helper 'credit-risk remote is missing; dry run cannot validate source lineage.' }
+        Invoke-Git $inst @('fetch','origin') | Out-Null; Invoke-Git $inst @('fetch','credit-risk','main') | Out-Null
+        if ((Head-Info $inst 'credit-risk/main').Sha -ne $source.Sha) { Stop-Helper 'credit-risk/main does not equal working origin/main.' }
+        $anchor = Get-KomusSyncAnchor $inst ('origin/' + $base) $prefix 'credit-risk/main'
+        $pending = Invoke-Git $inst @('diff','--name-only',$anchor.SourceSha,$source.Sha,'--')
+        Write-Host "Dry run source: $($source.Sha)" -ForegroundColor Cyan; Write-Host "Dry run anchor: $($anchor.SourceSha)" -ForegroundColor Cyan; Write-Host "Files after anchor: $(@($pending.Lines).Count)" -ForegroundColor Cyan
+        return
+    }
     $integrationCreated = $false; $pushed = $false
     try {
         Invoke-Git $inst @('fetch','origin') | Out-Null; Invoke-Git $inst @('switch',$base) | Out-Null; Invoke-Git $inst @('pull','--ff-only','origin',$base) | Out-Null
         if ($remote.ExitCode -ne 0) { Invoke-Git $inst @('remote','add','credit-risk',([string]$Config.working_remote_url)) | Out-Null }
         Invoke-Git $inst @('fetch','credit-risk','main') | Out-Null
         if ((Head-Info $inst 'credit-risk/main').Sha -ne $source.Sha) { Stop-Helper 'credit-risk/main does not equal working origin/main.' }
-        $baseSha = (Head-Info $inst $base).Sha
+        $anchor = Get-KomusSyncAnchor $inst $base $prefix 'credit-risk/main'
+        if ([string]::IsNullOrWhiteSpace($Message)) { $defaultMessage = (U '0KHQuNC90YXRgNC+0L3QuNC30LjRgNC+0LLQsNGC0YwgY3JlZGl0LXNjb3Jpbmc=') + " - $($source.Short)"; $Message = Read-Host ((U '0JrQvtC80LzQtdC90YLQsNGA0LjQuSDQuNC90YLQtdCz0YDQsNGG0LjQuA==') + " [$defaultMessage]"); if ([string]::IsNullOrWhiteSpace($Message)) { $Message = $defaultMessage } }
         Invoke-Git $inst @('switch','-c',$branch,$base) | Out-Null; $integrationCreated = $true
-        $oldEditor = $env:GIT_EDITOR; try { $env:GIT_EDITOR = 'true'; Invoke-Git $inst @('subtree','pull',('--prefix=' + $prefix),'--squash','credit-risk','main') | Out-Null } finally { if ($null -eq $oldEditor) { Remove-Item Env:GIT_EDITOR -ErrorAction SilentlyContinue } else { $env:GIT_EDITOR=$oldEditor } }
-        $changed = Invoke-Git $inst @('-c','core.quotepath=false','diff','--name-only',($base + '...HEAD'))
-        if ([string]::IsNullOrWhiteSpace($changed.Text)) { Clear-IntegrationBranch $inst $base $branch | Out-Null; $integrationCreated = $false; Write-Host (U '0JPQntCi0J7QktCe') -ForegroundColor Green; Write-Host (U '0KDQtdC/0L7Qt9C40YLQvtGA0LjQuSDQmNC90YHRgtC40YLRg9GC0LAg0YPQttC1INGB0L7QtNC10YDQttC40YIg0LjRgdGC0L7Rh9C90LjQui4='); return }
-        $technicalMessage = "sync ${prefix}: $(Get-RepositoryName ([string]$Config.working_remote_url))@$($source.Short)"
-        Rewrite-SubtreePullHistory $inst $prefix $baseSha $source.Sha $technicalMessage $Message
+        $applied = Apply-SourceRangeToPrefix $inst $prefix $anchor.SourceSha $source.Sha
+        if (-not $applied) { Clear-IntegrationBranch $inst $base $branch | Out-Null; $integrationCreated = $false; Write-Host (U '0JPQntCi0J7QktCe') -ForegroundColor Green; Write-Host (U '0KDQtdC/0L7Qt9C40YLQvtGA0LjQuSDQmNC90YHRgtC40YLRg9GC0LAg0YPQttC1INGB0L7QtNC10YDQttC40YIg0LjRgdGC0L7Rh9C90LjQui4='); return }
+        $changed = Invoke-Git $inst @('-c','core.quotepath=false','diff','--cached','--name-only')
+        $outside = @($changed.Lines | Where-Object { -not $_.StartsWith($prefix + '/') }); if ($outside.Count) { Stop-Helper ((U '0J7QsdC90LDRgNGD0LbQtdC90Ysg0LjQt9C80LXQvdC10L3QuNGPINCy0L3QtSBjcmVkaXQtc2NvcmluZzo=') + "`n$($outside -join "`n")") }
+        $check = Invoke-Git $inst @('diff','--cached','--check') -AllowFailure; if ($check.ExitCode -ne 0) { Stop-Helper "git diff --check failed: $($check.Text)" }
+        Invoke-Git $inst @('commit','-m',$Message,'-m',("komus-source: $($source.Sha)`nkomus-prefix: $prefix")) | Out-Null
+        Assert-KomusSyncMarker $inst 'HEAD' $source.Sha $prefix
         $changed = Invoke-Git $inst @('-c','core.quotepath=false','diff','--name-only',($base + '...HEAD'))
         $outside = @($changed.Lines | Where-Object { -not $_.StartsWith($prefix + '/') }); if ($outside.Count) { Stop-Helper ((U '0J7QsdC90LDRgNGD0LbQtdC90Ysg0LjQt9C80LXQvdC10L3QuNGPINCy0L3QtSBjcmVkaXQtc2NvcmluZzo=') + "`n$($outside -join "`n")") }
         $check = Invoke-Git $inst @('diff','--check',($base + '...HEAD')) -AllowFailure; if ($check.ExitCode -ne 0) { Stop-Helper "git diff --check failed: $($check.Text)" }
-        Write-Host (U '0JPQntCi0J7QktCeINCaINCe0KLQn9Cg0JDQktCa0JU=') -ForegroundColor Green; Write-Host ((U '0JjRgdGC0L7Rh9C90LjQujo=') + " $($source.Sha)"); Write-Host ((U '0JLQtdGC0LrQsCDQuNC90YLQtdCz0YDQsNGG0LjQuDo=') + " $branch"); Write-Host ((U '0JjQt9C80LXQvdC10L3QviDRhNCw0LnQu9C+0LI6') + " $(@($changed.Lines).Count)"); Write-Host (U '0KLQvtC70YzQutC+IGNyZWRpdC1zY29yaW5nLzog0JTQkA==')
+        Write-Host (U '0JPQntCi0J7QktCeINCaINCe0KLQn9Cg0JDQktCa0JU=') -ForegroundColor Green; Write-Host ((U '0JjRgdGC0L7Rh9C90LjQujo=') + " $($source.Sha)"); Write-Host ("Anchor: " + $anchor.SourceSha); Write-Host ((U '0JLQtdGC0LrQsCDQuNC90YLQtdCz0YDQsNGG0LjQuDo=') + " $branch"); Write-Host ((U '0JjQt9C80LXQvdC10L3QviDRhNCw0LnQu9C+0LI6') + " $(@($changed.Lines).Count)"); Write-Host (U '0KLQvtC70YzQutC+IGNyZWRpdC1zY29yaW5nLzog0JTQkA==')
         if (-not (Confirm-Yes ("Push $branch to ${base}? [y/N]"))) { Clear-IntegrationBranch $inst $base $branch | Out-Null; $integrationCreated = $false; Write-Host (U '0J7RgtC80LXQvdC10L3Qvi4g0JLRgNC10LzQtdC90L3QsNGPIGludGVncmF0aW9uIGJyYW5jaCDRg9C00LDQu9C10L3QsC4=') -ForegroundColor Yellow; return }
         Invoke-Git $inst @('push','origin',($branch + ':' + $base)) | Out-Null; $pushed = $true
         Invoke-Git $inst @('switch',$base) | Out-Null; Invoke-Git $inst @('pull','--ff-only','origin',$base) | Out-Null
@@ -189,7 +258,7 @@ function Invoke-InstitutePush {
         Write-Host (U '0JPQntCi0J7QktCe') -ForegroundColor Green; Write-Host ((U 'Y3JlZGl0LXNjb3Jpbmcg0YHQuNC90YXRgNC+0L3QuNC30LjRgNC+0LLQsNC9Lg==') + " $base")
     }
     catch {
-        if ($integrationCreated -and -not $pushed) { Clear-IntegrationBranch $inst $base $branch | Out-Null }
+        if ($integrationCreated) { Clear-IntegrationBranch $inst $base $branch | Out-Null }
         throw
     }
 }
