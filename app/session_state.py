@@ -12,6 +12,7 @@ from komus_risk.planning import ExperimentPlan, PlanningRequestMetadata
 _DEFAULTS = {
     "current_step": 0,
     "dataset_context": None,
+    "dataset_source_preparation": None,
     "selected_feature_ids": (),
     "selected_model_id": None,
     "experiment_inputs": {},
@@ -21,12 +22,28 @@ _DEFAULTS = {
     "comparison_result": None,
     "last_successful_artifact_id": None,
     "context_revision": 0,
+    "highest_reached_step": 0,
 }
 
 
 def initialize(state: MutableMapping[str, Any]) -> None:
     for key, value in _DEFAULTS.items():
         state.setdefault(key, value)
+    if "highest_reached_step" not in state:
+        state["highest_reached_step"] = 0
+    state["highest_reached_step"] = max(
+        int(state["highest_reached_step"]),
+        int(state.get("current_step", 0)),
+        4 if state.get("loaded_artifact") is not None else 0,
+    )
+
+
+def navigate_to_step(state: MutableMapping[str, Any], step: int) -> None:
+    """Move through the wizard without changing any scientific or session state."""
+    if step not in range(5):
+        raise ValueError("Неизвестный шаг мастера.")
+    state["current_step"] = step
+    state["highest_reached_step"] = max(int(state.get("highest_reached_step", 0)), step)
 
 
 def set_dataset_context(state: MutableMapping[str, Any], context: Any) -> None:
@@ -37,10 +54,34 @@ def set_dataset_context(state: MutableMapping[str, Any], context: Any) -> None:
     if current_id == getattr(context, "context_id", None) and current_fingerprint == next_fingerprint:
         return
     state["dataset_context"] = context
+    state["dataset_source_preparation"] = None
     state["selected_feature_ids"] = ()
     state["selected_model_id"] = None
     state["experiment_inputs"] = {}
     state["context_revision"] = state.get("context_revision", 0) + 1
+    state["highest_reached_step"] = 0
+    _clear_plan_and_result(state)
+
+
+def set_dataset_source_preparation(state: MutableMapping[str, Any], preparation: Any) -> None:
+    """Store resolved-source state and expose a context only when it is prepared."""
+    current = state.get("dataset_source_preparation")
+    if (
+        getattr(current, "source", None) == getattr(preparation, "source", None)
+        and getattr(current, "preparation_status", None) == getattr(preparation, "preparation_status", None)
+    ):
+        return
+    if _same_prepared_dataset_identity(current, preparation):
+        state["dataset_source_preparation"] = preparation
+        return
+    state["dataset_source_preparation"] = preparation
+    state["dataset_context"] = getattr(preparation, "context", None)
+    state["selected_feature_ids"] = ()
+    state["selected_model_id"] = None
+    state["experiment_inputs"] = {}
+    state["current_step"] = 0
+    state["context_revision"] = state.get("context_revision", 0) + 1
+    state["highest_reached_step"] = 0
     _clear_plan_and_result(state)
 
 
@@ -172,6 +213,7 @@ def save_artifact(state: MutableMapping[str, Any], artifact: Any, comparison: An
     state["comparison_result"] = comparison
     state["last_successful_artifact_id"] = artifact.artifact_id
     state["current_step"] = 4
+    state["highest_reached_step"] = 4
 
 
 def return_to_experiment(state: MutableMapping[str, Any]) -> None:
@@ -185,3 +227,24 @@ def _clear_plan_and_result(state: MutableMapping[str, Any]) -> None:
     state["experiment_plan"] = None
     state["loaded_artifact"] = None
     state["comparison_result"] = None
+
+
+def _same_prepared_dataset_identity(current: Any, next_preparation: Any) -> bool:
+    """Recognize an accepted dataset copied to another local path without resetting work."""
+    current_context = getattr(current, "context", None)
+    next_context = getattr(next_preparation, "context", None)
+    if current_context is None or next_context is None:
+        return False
+    identity = _prepared_context_identity(current_context)
+    return identity != (None, None, None, None) and identity == _prepared_context_identity(next_context)
+
+
+def _prepared_context_identity(context: Any) -> tuple[Any, Any, Any, Any]:
+    contract = getattr(getattr(context, "loaded_dataset", None), "contract", None)
+    population = getattr(context, "population", None)
+    return (
+        getattr(context, "context_id", None),
+        getattr(contract, "dataset_id", contract),
+        getattr(contract, "dataset_fingerprint", None),
+        getattr(population, "population_fingerprint", None),
+    )

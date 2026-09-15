@@ -9,10 +9,12 @@ from app.session_state import (
     apply_feature_widget_selection,
     apply_group_widget_selection,
     initialize,
+    navigate_to_step,
     return_to_experiment,
     run_request_from_snapshot,
     save_artifact,
     set_dataset_context,
+    set_dataset_source_preparation,
     set_experiment_inputs,
     set_group_selection,
     set_selected_feature_ids,
@@ -20,6 +22,7 @@ from app.session_state import (
     synchronize_feature_widgets,
     toggle_feature,
 )
+from app.streamlit_app import _available_wizard_steps, _restore_source_controls, _source_control_locator, _synchronize_source_selection
 from komus_risk.planning import PlanningRequestMetadata
 
 
@@ -46,6 +49,264 @@ class SessionStateTests(unittest.TestCase):
         self.assertIsNone(self.state["experiment_plan"])
         self.assertIsNone(self.state["loaded_artifact"])
         self.assertIsNone(self.state["comparison_result"])
+
+    def test_unprepared_source_clears_context_and_blocks_downstream_state(self) -> None:
+        prepared_context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))
+        set_dataset_context(self.state, prepared_context)
+        self.state.update(
+            current_step=3,
+            selected_feature_ids=("Q_A1_norm",),
+            selected_model_id="model",
+            experiment_inputs={"seed": 42},
+        )
+        preparation = SimpleNamespace(
+            source=SimpleNamespace(local_runtime_path="arbitrary.csv"),
+            preparation_status="context_not_prepared",
+            context=None,
+        )
+
+        set_dataset_source_preparation(self.state, preparation)
+
+        self.assertIsNone(self.state["dataset_context"])
+        self.assertIs(self.state["dataset_source_preparation"], preparation)
+        self.assertEqual(self.state["current_step"], 0)
+        self.assertEqual(self.state["selected_feature_ids"], ())
+        self.assertIsNone(self.state["selected_model_id"])
+
+    def test_wizard_navigation_only_changes_the_current_step(self) -> None:
+        context = SimpleNamespace(context_id="accepted")
+        artifact = SimpleNamespace(artifact_id="saved-artifact")
+        self.state.update(
+            current_step=4,
+            dataset_context=context,
+            dataset_source_preparation=SimpleNamespace(context=context),
+            selected_feature_ids=("Q_A1_norm",),
+            selected_model_id="model",
+            experiment_inputs={"seed": 42},
+            experiment_plan=object(),
+            loaded_artifact=artifact,
+            comparison_result=object(),
+            highest_reached_step=4,
+        )
+
+        for target_step in (3, 0, 1):
+            navigate_to_step(self.state, target_step)
+
+            self.assertEqual(self.state["current_step"], target_step)
+            self.assertIs(self.state["dataset_context"], context)
+            self.assertEqual(self.state["selected_feature_ids"], ("Q_A1_norm",))
+            self.assertEqual(self.state["selected_model_id"], "model")
+            self.assertEqual(self.state["experiment_inputs"], {"seed": 42})
+            self.assertIs(self.state["loaded_artifact"], artifact)
+            self.assertEqual(self.state["highest_reached_step"], 4)
+
+    def test_wizard_navigation_rejects_an_unknown_step(self) -> None:
+        with self.assertRaises(ValueError):
+            navigate_to_step(self.state, 5)
+
+    def test_step_navigator_keeps_reached_destinations_available(self) -> None:
+        self.assertEqual(_available_wizard_steps(self.state), (True, False, False, False, False))
+
+        self.state["dataset_context"] = object()
+        navigate_to_step(self.state, 1)
+        self.assertEqual(_available_wizard_steps(self.state), (True, True, False, False, False))
+
+        self.state["selected_feature_ids"] = ("Q_A1_norm",)
+        navigate_to_step(self.state, 2)
+        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, False, False))
+
+        self.state["selected_model_id"] = "model"
+        navigate_to_step(self.state, 3)
+        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, True, False))
+
+        self.state["loaded_artifact"] = object()
+        navigate_to_step(self.state, 4)
+        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, True, True))
+
+    def test_return_to_data_restores_prepared_source_controls_without_stale_reset(self) -> None:
+        context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))
+        preparation = SimpleNamespace(
+            source=SimpleNamespace(source_kind="repository_local", local_runtime_path="Data_final.xlsb"),
+            preparation_status="historical_context_prepared",
+            context=context,
+            is_prepared=True,
+        )
+        locator = _source_control_locator("accepted_historical", "")
+        self.state.update(
+            current_step=3,
+            dataset_context=context,
+            dataset_source_preparation=preparation,
+            prototype_source_control_locator=locator,
+        )
+
+        navigate_to_step(self.state, 0)
+        self.state.pop("prototype_source_kind", None)  # Simulate Streamlit widget cleanup between steps.
+        _restore_source_controls(self.state)
+        _synchronize_source_selection(
+            self.state,
+            _source_control_locator(self.state["prototype_source_kind"], ""),
+        )
+
+        self.assertEqual(self.state["current_step"], 0)
+        self.assertEqual(self.state["prototype_source_kind"], "accepted_historical")
+        self.assertIs(self.state["dataset_source_preparation"], preparation)
+        self.assertIs(self.state["dataset_context"], context)
+        self.assertTrue(self.state["dataset_source_preparation"].is_prepared)
+
+    def test_return_to_data_restores_exact_local_data_final_instead_of_defaulting_source_kind(self) -> None:
+        context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))
+        preparation = SimpleNamespace(
+            source=SimpleNamespace(source_kind="explicit_local", local_runtime_path=r"C:\data\Data_final.xlsb"),
+            preparation_status="historical_context_prepared",
+            context=context,
+            is_prepared=True,
+        )
+        locator = _source_control_locator("explicit_local", r"C:\data\Data_final.xlsb")
+        self.state.update(
+            dataset_context=context,
+            dataset_source_preparation=preparation,
+            prototype_source_control_locator=locator,
+        )
+
+        navigate_to_step(self.state, 0)
+        self.state.pop("prototype_source_kind", None)
+        self.state["prototype_selected_local_file_path"] = r"C:\data\stale-picker-value.xlsb"
+        _restore_source_controls(self.state)
+        restored_locator = _source_control_locator(
+            self.state["prototype_source_kind"],
+            self.state["prototype_selected_local_file_path"],
+        )
+        _synchronize_source_selection(self.state, restored_locator)
+
+        self.assertEqual(restored_locator, locator)
+        self.assertEqual(self.state["prototype_selected_local_file_path"], locator[1])
+        self.assertIs(self.state["dataset_source_preparation"], preparation)
+        self.assertIs(self.state["dataset_context"], context)
+
+    def test_source_change_after_return_to_data_still_runs_stale_reset(self) -> None:
+        context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))
+        preparation = SimpleNamespace(source=SimpleNamespace(local_runtime_path="Data_final.xlsb"), context=context)
+        self.state.update(
+            dataset_context=context,
+            dataset_source_preparation=preparation,
+            prototype_source_control_locator=_source_control_locator("accepted_historical", ""),
+        )
+
+        navigate_to_step(self.state, 0)
+        _restore_source_controls(self.state)
+        _synchronize_source_selection(
+            self.state,
+            _source_control_locator("explicit_local", "other-source.xlsb"),
+        )
+
+        self.assertIsNone(self.state["dataset_source_preparation"])
+        self.assertIsNone(self.state["dataset_context"])
+
+    def test_same_prepared_identity_from_another_path_preserves_downstream_state(self) -> None:
+        contract = SimpleNamespace(dataset_id="historical", dataset_fingerprint="sha256:accepted")
+        population = SimpleNamespace(population_fingerprint="working-population")
+        current_context = SimpleNamespace(
+            context_id="historical_data_final_v1",
+            loaded_dataset=SimpleNamespace(contract=contract),
+            population=population,
+        )
+        next_context = SimpleNamespace(
+            context_id="historical_data_final_v1",
+            loaded_dataset=SimpleNamespace(contract=contract),
+            population=population,
+        )
+        current = SimpleNamespace(
+            source=SimpleNamespace(local_runtime_path="C:/original/Data_final.xlsb"),
+            preparation_status="historical_context_prepared",
+            context=current_context,
+        )
+        accepted_copy = SimpleNamespace(
+            source=SimpleNamespace(local_runtime_path="D:/copy/Data_final.xlsb"),
+            preparation_status="historical_context_prepared",
+            context=next_context,
+        )
+        artifact = object()
+        self.state.update(
+            dataset_source_preparation=current,
+            dataset_context=current_context,
+            selected_feature_ids=("Q_A1_norm",),
+            selected_model_id="model",
+            experiment_inputs={"seed": 42},
+            loaded_artifact=artifact,
+            highest_reached_step=4,
+        )
+
+        set_dataset_source_preparation(self.state, accepted_copy)
+
+        self.assertIs(self.state["dataset_source_preparation"], accepted_copy)
+        self.assertIs(self.state["dataset_context"], current_context)
+        self.assertEqual(self.state["selected_feature_ids"], ("Q_A1_norm",))
+        self.assertEqual(self.state["selected_model_id"], "model")
+        self.assertIs(self.state["loaded_artifact"], artifact)
+        self.assertEqual(self.state["highest_reached_step"], 4)
+
+    def test_switching_source_kind_immediately_clears_prepared_context(self) -> None:
+        historical_locator = _source_control_locator("accepted_historical", "")
+        prepared_context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))
+        preparation = SimpleNamespace(source=SimpleNamespace(local_runtime_path="Data_final.xlsb"), preparation_status="historical_context_prepared", context=prepared_context)
+        set_dataset_source_preparation(self.state, preparation)
+        self.state["prototype_source_control_locator"] = historical_locator
+        self.state.update(current_step=3, selected_feature_ids=("Q_A1_norm",), selected_model_id="model", experiment_plan=object())
+
+        _synchronize_source_selection(self.state, _source_control_locator("explicit_local", "other.xlsb"))
+
+        self.assertIsNone(self.state["dataset_source_preparation"])
+        self.assertIsNone(self.state["dataset_context"])
+        self.assertEqual(self.state["current_step"], 0)
+        self.assertEqual(self.state["selected_feature_ids"], ())
+        self.assertIsNone(self.state["selected_model_id"])
+        self.assertIsNone(self.state["experiment_plan"])
+
+    def test_failed_resolution_after_source_switch_does_not_restore_historical_context(self) -> None:
+        prepared_context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))
+        preparation = SimpleNamespace(source=SimpleNamespace(local_runtime_path="Data_final.xlsb"), preparation_status="historical_context_prepared", context=prepared_context)
+        set_dataset_source_preparation(self.state, preparation)
+        self.state["prototype_source_control_locator"] = _source_control_locator("accepted_historical", "")
+        self.state.update(current_step=2, selected_feature_ids=("Q_A1_norm",), selected_model_id="model")
+
+        _synchronize_source_selection(self.state, _source_control_locator("explicit_local", "missing-file.xlsb"))
+        # A source-resolution failure does not call set_dataset_source_preparation again.
+
+        self.assertIsNone(self.state["dataset_source_preparation"])
+        self.assertIsNone(self.state["dataset_context"])
+        self.assertEqual(self.state["current_step"], 0)
+        self.assertEqual(self.state["selected_feature_ids"], ())
+        self.assertIsNone(self.state["selected_model_id"])
+
+    def test_unchanged_source_controls_do_not_reset_prepared_context_on_rerun(self) -> None:
+        locator = _source_control_locator("accepted_historical", "")
+        prepared_context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))
+        preparation = SimpleNamespace(source=SimpleNamespace(local_runtime_path="Data_final.xlsb"), preparation_status="historical_context_prepared", context=prepared_context)
+        set_dataset_source_preparation(self.state, preparation)
+        self.state["prototype_source_control_locator"] = locator
+        self.state.update(current_step=2, selected_feature_ids=("Q_A1_norm",), selected_model_id="model")
+
+        _synchronize_source_selection(self.state, locator)
+
+        self.assertIs(self.state["dataset_context"], prepared_context)
+        self.assertIs(self.state["dataset_source_preparation"], preparation)
+        self.assertEqual(self.state["current_step"], 2)
+        self.assertEqual(self.state["selected_feature_ids"], ("Q_A1_norm",))
+        self.assertEqual(self.state["selected_model_id"], "model")
+
+    def test_changing_explicit_path_invalidates_previous_preparation_before_validation(self) -> None:
+        first_locator = _source_control_locator("explicit_local", "source-a.xlsb")
+        prepared_context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))
+        preparation = SimpleNamespace(source=SimpleNamespace(local_runtime_path="source-a.xlsb"), preparation_status="historical_context_prepared", context=prepared_context)
+        set_dataset_source_preparation(self.state, preparation)
+        self.state["prototype_source_control_locator"] = first_locator
+        self.state.update(current_step=1, selected_feature_ids=("Q_A1_norm",))
+
+        _synchronize_source_selection(self.state, _source_control_locator("explicit_local", "source-b.xlsb"))
+
+        self.assertIsNone(self.state["dataset_source_preparation"])
+        self.assertIsNone(self.state["dataset_context"])
+        self.assertEqual(self.state["current_step"], 0)
 
     def test_feature_model_and_input_changes_invalidate_an_old_plan(self) -> None:
         self.state.update(planning_request_snapshot=object(), experiment_plan=object(), loaded_artifact=object(), comparison_result=object())

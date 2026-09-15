@@ -2,23 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
 
-from app.bootstrap import create_runtime, list_available_contexts, resolve_context, validate_supported_protocol
+from app.bootstrap import LocalDatasetSourceResolver, create_runtime, prepare_resolved_source, validate_supported_protocol
 from app.feature_display import group_feature_ids_by_family
+from app.local_file_picker import NativeFilePickerUnavailable, choose_local_file
 from app.session_state import (
     apply_feature_widget_selection,
     apply_group_widget_selection,
     can_run,
     initialize,
+    navigate_to_step,
     run_request_from_snapshot,
-    return_to_experiment,
     save_artifact,
     save_plan,
-    set_dataset_context,
+    set_dataset_source_preparation,
     set_experiment_inputs,
     set_selected_model_id,
     synchronize_feature_widgets,
@@ -26,7 +28,6 @@ from app.session_state import (
 from komus_risk.planning import PlanningRequestMetadata
 
 
-_STEPS = ("Данные", "Признаки", "Модель", "Эксперимент", "Результат")
 _DATA_PROGRESS_LABELS = {
     "checking_file_identity": "Проверка файла и его идентичности",
     "checking_working_split": "Проверка рабочей выборки",
@@ -46,6 +47,15 @@ _SECONDARY_FEATURE_GROUP_LABELS = {
     "protected_columns": "Служебные поля",
     "restricted_signals": "Недоступные для модели признаки",
 }
+_SOURCE_CONTROL_LOCATOR_KEY = "prototype_source_control_locator"
+_SOURCE_KIND_WIDGET_KEY = "prototype_source_kind"
+_SELECTED_LOCAL_FILE_PATH_KEY = "prototype_selected_local_file_path"
+_MANUAL_LOCAL_FILE_PATH_KEY = "prototype_manual_local_file_path"
+_SOURCE_ERROR_KEY = "prototype_source_error"
+_SOURCE_RECHECK_INVALID_KEY = "prototype_source_recheck_invalid"
+_SUPPORTED_SOURCE_EXTENSIONS = tuple(LocalDatasetSourceResolver._FORMATS)
+_STEP_NAVIGATION_LABELS = ("Данные", "Признаки", "Модель", "Эксперимент", "Результат")
+_STEP_NAVIGATION_CONTAINER_KEY = "step-navigator"
 
 
 @st.cache_resource
@@ -59,7 +69,7 @@ def main() -> None:
     runtime = _runtime()
     step = st.session_state.current_step
     st.title("KOMUS · Experiment Prototype V1")
-    st.caption(" → ".join(f"{'●' if index == step else '○'} {name}" for index, name in enumerate(_STEPS)))
+    _render_step_navigation()
 
     if step == 0:
         _render_data_step()
@@ -84,9 +94,12 @@ def _progress_description(event: Any, labels: Mapping[str, str]) -> str:
     return description
 
 
-def _run_with_progress(labels: Mapping[str, str], operation):
+def _run_with_progress(
+    labels: Mapping[str, str], operation, *, initial_label: str = "Подготовка операции",
+    completion_label: str = "Операция успешно завершена",
+):
     """Render observed stages; completion is shown only after the operation returns."""
-    status = st.status("Подготовка операции", expanded=True)
+    status = st.status(initial_label, expanded=True)
 
     def report(event: Any) -> None:
         description = _progress_description(event, labels)
@@ -102,55 +115,212 @@ def _run_with_progress(labels: Mapping[str, str], operation):
     except Exception:
         status.update(label="Операция не завершена", state="error", expanded=True)
         raise
-    status.update(label="Операция успешно завершена", state="complete", expanded=False)
+    status.update(label=completion_label, state="complete", expanded=False)
     return result
 
 
 def _render_data_step() -> None:
     st.header("1. Данные")
-    options = list_available_contexts()
-    if not options:
-        st.error("Нет подготовленных контекстов данных.")
-        return
-    by_id = {option.context_id: option for option in options}
-    selected_id = st.selectbox(
-        "Подготовленный контекст",
-        tuple(by_id),
-        format_func=lambda context_id: by_id[context_id].display_name,
-        key="prototype_context_id",
+    st.write("Выберите данные, с которыми будет работать эксперимент.")
+    _restore_source_controls(st.session_state)
+    source_kind = st.radio(
+        "Какие данные использовать?",
+        ("accepted_historical", "explicit_local"),
+        format_func=lambda value: {
+            "accepted_historical": "Исторический набор данных",
+            "explicit_local": "Другой локальный файл",
+        }[value],
+        horizontal=True,
+        key=_SOURCE_KIND_WIDGET_KEY,
     )
-    option = by_id[selected_id]
-    uploaded = None
-    if option.upload_capable:
-        uploaded = st.file_uploader(
-            "Загрузить файл для выбранного контекста (необязательно)",
-            key="prototype_upload",
-            help="Файл проверяется только правилами выбранного подготовленного контекста.",
+    explicit_local_path = ""
+    if source_kind == "explicit_local":
+        explicit_local_path = _render_local_source_controls()
+    draft_locator = _source_control_locator(source_kind, explicit_local_path)
+    _render_source_check_action(source_kind, explicit_local_path, draft_locator)
+    preparation = st.session_state.dataset_source_preparation
+    is_display_ready = bool(preparation and preparation.is_prepared and not st.session_state.get(_SOURCE_RECHECK_INVALID_KEY))
+    if preparation is None or (preparation.is_prepared and not is_display_ready):
+        _render_unchecked_source(source_kind, explicit_local_path)
+    elif not preparation.is_prepared:
+        source = preparation.source
+        st.success("Источник успешно проверен")
+        st.subheader(source.file_name)
+        st.write(
+            "Этот набор данных ещё не подготовлен для эксперимента. "
+            "Для продолжения потребуется отдельная подготовка данных и признаков."
         )
-    if st.button("Подготовить контекст", type="primary"):
-        try:
-            context = _run_with_progress(
-                _DATA_PROGRESS_LABELS,
-                lambda listener: resolve_context(selected_id, uploaded, progress_listener=listener),
-            )
-            set_dataset_context(st.session_state, context)
-        except (FileNotFoundError, ValueError):
-            st.error("Не удалось подготовить данные. Проверьте выбранный контекст и файл.")
+    else:
+        _render_prepared_source(preparation, source_kind)
 
-    context = st.session_state.dataset_context
-    if context is None:
-        st.info("Выберите и подготовьте контекст данных, чтобы продолжить.")
+    ready_to_continue = is_display_ready
+    if not ready_to_continue and (preparation is None or st.session_state.get(_SOURCE_RECHECK_INVALID_KEY)):
+        st.caption("Сначала проверьте источник данных.")
+    _navigation_button(
+        st,
+        "Продолжить к признакам →",
+        1,
+        primary=True,
+        disabled=not ready_to_continue,
+    )
+
+
+def _render_local_source_controls() -> str:
+    """Render local-source selection without showing a host filesystem path."""
+    st.subheader("Другой локальный файл")
+    st.write("Выберите файл, который хотите проверить.")
+    st.caption("Новый файл не становится автоматически готовым к эксперименту.")
+    if st.button("Выбрать файл…", type="primary"):
+        try:
+            selected = choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)
+        except NativeFilePickerUnavailable:
+            st.warning("Не удалось открыть окно выбора файла. Укажите путь вручную ниже.")
+        else:
+            if selected:
+                st.session_state[_SELECTED_LOCAL_FILE_PATH_KEY] = selected
+                st.session_state[_MANUAL_LOCAL_FILE_PATH_KEY] = ""
+                st.session_state.pop(_SOURCE_ERROR_KEY, None)
+
+    selected_path = st.session_state.get(_SELECTED_LOCAL_FILE_PATH_KEY, "")
+    manual_path = ""
+    with st.expander("Указать путь вручную", expanded=False):
+        manual_path = st.text_input(
+            "Путь к файлу",
+            key=_MANUAL_LOCAL_FILE_PATH_KEY,
+            placeholder="Выберите файл или укажите его расположение",
+        )
+    effective_path = manual_path.strip() or selected_path
+    preparation = st.session_state.dataset_source_preparation
+    selected_is_checked = bool(
+        preparation
+        and getattr(preparation.source, "source_kind", None) == "explicit_local"
+        and _source_control_locator("explicit_local", effective_path)[1]
+        == str(preparation.source.local_runtime_path)
+    )
+    if effective_path and not selected_is_checked:
+        st.subheader("Выбран файл")
+        st.write(Path(effective_path).name)
+        st.write("**Статус:** файл выбран, но ещё не проверен")
+        st.button("Выбрать другой файл", on_click=_clear_local_file_selection)
+    return effective_path
+
+
+def _clear_local_file_selection() -> None:
+    """Reset local-file controls before Streamlit instantiates their widgets."""
+    st.session_state.pop(_SELECTED_LOCAL_FILE_PATH_KEY, None)
+    st.session_state[_MANUAL_LOCAL_FILE_PATH_KEY] = ""
+
+
+def _render_source_check_action(
+    source_kind: str, explicit_local_path: str, draft_locator: tuple[str, str],
+) -> None:
+    """Confirm a draft source before it can replace the active dataset state."""
+    preparation = st.session_state.dataset_source_preparation
+    has_selected_local_file = bool(explicit_local_path.strip())
+    already_checked = preparation is not None and draft_locator == st.session_state.get(_SOURCE_CONTROL_LOCATOR_KEY)
+    label = "Проверить повторно" if already_checked else "Проверить источник"
+    button_type = "secondary" if already_checked else "primary"
+    if not st.button(
+        label,
+        type=button_type,
+        disabled=source_kind == "explicit_local" and not has_selected_local_file,
+    ):
+        _render_source_error()
         return
+    st.session_state[_SOURCE_RECHECK_INVALID_KEY] = bool(preparation and preparation.is_prepared)
+    st.session_state.pop(_SOURCE_ERROR_KEY, None)
+    try:
+        resolver = LocalDatasetSourceResolver()
+        source = (
+            resolver.resolve_repository_data_final()
+            if source_kind == "accepted_historical"
+            else resolver.resolve_explicit_local_path(explicit_local_path)
+        )
+        preparation = _run_with_progress(
+            _DATA_PROGRESS_LABELS,
+            lambda listener: prepare_resolved_source(source, progress_listener=listener),
+            initial_label="Проверяем источник…",
+            completion_label="Проверка источника завершена",
+        )
+        _commit_source_preparation(st.session_state, draft_locator, preparation)
+        st.session_state[_SOURCE_RECHECK_INVALID_KEY] = False
+    except FileNotFoundError:
+        st.session_state[_SOURCE_ERROR_KEY] = (
+            "Файл не найден",
+            "Возможно, файл был перемещён или удалён. Выберите его заново или укажите другой файл.",
+        )
+    except ValueError as error:
+        if "Неподдерживаемое расширение" in str(error):
+            st.session_state[_SOURCE_ERROR_KEY] = (
+                "Формат файла не поддерживается",
+                f"Выберите файл поддерживаемого формата: {', '.join(_SUPPORTED_SOURCE_EXTENSIONS)}.",
+            )
+        else:
+            st.session_state[_SOURCE_ERROR_KEY] = (
+                "Не удалось проверить источник",
+                "Проверьте выбранный файл и повторите попытку.",
+            )
+    except OSError:
+        st.session_state[_SOURCE_ERROR_KEY] = (
+            "Не удалось проверить источник",
+            "Проверьте выбранный файл и повторите попытку.",
+        )
+    _render_source_error()
+
+
+def _commit_source_preparation(
+    state: MutableMapping[str, Any], locator: tuple[str, str], preparation: Any,
+) -> None:
+    """Commit only a successfully checked source; draft control changes remain harmless."""
+    set_dataset_source_preparation(state, preparation)
+    state[_SOURCE_CONTROL_LOCATOR_KEY] = locator
+
+
+def _render_source_error() -> None:
+    error = st.session_state.get(_SOURCE_ERROR_KEY)
+    if error:
+        title, detail = error
+        st.error(title)
+        st.write(detail)
+
+
+def _render_unchecked_source(source_kind: str, explicit_local_path: str) -> None:
+    if source_kind == "accepted_historical":
+        st.subheader("Исторический набор данных")
+        st.write("Data_final.xlsb")
+        st.caption("Подготовленный исторический набор для воспроизводимых экспериментов.")
+        st.write("**Статус:** требуется проверка")
+    elif not explicit_local_path:
+        st.info("Выберите файл, затем проверьте источник.")
+
+
+def _render_prepared_source(preparation: Any, source_kind: str) -> None:
+    """Show historical readiness without exposing source internals in the main UI."""
+    context = preparation.context
+    if context is None:
+        return
+    st.success("Данные готовы к эксперименту")
+    if source_kind == "explicit_local":
+        st.write("Выбранный файл распознан как исторический Data_final.")
+    st.subheader("Исторический Data_final — рабочая популяция")
     passport = context.loaded_dataset.contract
-    st.subheader(context.display_name)
     columns = st.columns(3)
     columns[0].metric("Организации / строки", f"{passport.row_count:,}")
     columns[1].metric("Рабочая выборка", f"{len(context.population.row_positions):,}")
     columns[2].metric("Защищённая контрольная выборка", f"{passport.row_count - len(context.population.row_positions):,}")
-    st.write("**Цель:** признак дефолта организации.")
-    st.info("Контрольная выборка не используется при выборе и настройке модели; она сохранена для финальной проверки.")
-    with st.expander("Технические сведения"):
+    st.write("**Цель:** признак дефолта организации")
+    st.info("Контрольная выборка не используется при выборе и настройке модели; она сохраняется для финальной проверки.")
+    with st.expander("Технические сведения", expanded=False):
         st.json({
+            "source": {
+                "source_kind": preparation.source.source_kind,
+                "display_name": preparation.source.display_name,
+                "local_runtime_path": str(preparation.source.local_runtime_path),
+                "file_name": preparation.source.file_name,
+                "physical_format": preparation.source.physical_format,
+                "file_size": preparation.source.file_size,
+                "preparation_status": preparation.preparation_status,
+            },
             "dataset_name": passport.dataset_name,
             "dataset_version": passport.dataset_version,
             "source_type": passport.source_type,
@@ -161,9 +331,50 @@ def _render_data_step() -> None:
             "validation_status": passport.validation_status,
             "final_test_locked": passport.final_test_locked,
         })
-    if st.button("Далее: признаки", type="primary"):
-        st.session_state.current_step = 1
-        st.rerun()
+
+
+def _source_control_locator(source_kind: str, explicit_local_path: str) -> tuple[str, str]:
+    """Return a stable locator for source controls without resolving a dataset."""
+    if source_kind == "accepted_historical":
+        return source_kind, ""
+    path = explicit_local_path.strip()
+    return source_kind, str(Path(path).expanduser().resolve(strict=False)) if path else ""
+
+
+def _restore_source_controls(state: MutableMapping[str, Any]) -> None:
+    """Restore source widgets from their durable locator after leaving the Data step.
+
+    Streamlit can discard widget state for controls that were not rendered on
+    later wizard steps.  The locator is application-owned state and therefore
+    remains the authoritative UI selection until the user changes it.
+    """
+    locator = state.get(_SOURCE_CONTROL_LOCATOR_KEY)
+    if not isinstance(locator, tuple) or len(locator) != 2:
+        return
+    source_kind, local_path = locator
+    if source_kind not in {"accepted_historical", "explicit_local"}:
+        return
+    restoring_after_navigation = _SOURCE_KIND_WIDGET_KEY not in state
+    if restoring_after_navigation:
+        state[_SOURCE_KIND_WIDGET_KEY] = source_kind
+    if source_kind == "explicit_local" and local_path and (
+        restoring_after_navigation or _MANUAL_LOCAL_FILE_PATH_KEY not in state
+    ):
+        state[_SELECTED_LOCAL_FILE_PATH_KEY] = local_path
+
+
+def _synchronize_source_selection(state: MutableMapping[str, Any], locator: tuple[str, str]) -> None:
+    """Invalidate a prepared context only when source controls actually change."""
+    previous = state.get(_SOURCE_CONTROL_LOCATOR_KEY)
+    if previous is None:
+        state[_SOURCE_CONTROL_LOCATOR_KEY] = locator
+        return
+    if previous == locator:
+        return
+    set_dataset_source_preparation(state, None)
+    state.pop(_SOURCE_ERROR_KEY, None)
+    state.pop(_SOURCE_RECHECK_INVALID_KEY, None)
+    state[_SOURCE_CONTROL_LOCATOR_KEY] = locator
 
 
 def _render_features_step(runtime) -> None:
@@ -193,12 +404,14 @@ def _render_features_step(runtime) -> None:
     if not st.session_state.selected_feature_ids:
         st.warning("Выберите хотя бы один разрешённый признак.")
     navigation = st.columns(2)
-    if navigation[0].button("Назад"):
-        st.session_state.current_step = 0
-        st.rerun()
-    if navigation[1].button("Далее: модель", type="primary", disabled=not st.session_state.selected_feature_ids):
-        st.session_state.current_step = 2
-        st.rerun()
+    _navigation_button(navigation[0], "← Назад", 0)
+    _navigation_button(
+        navigation[1],
+        "Далее: модель →",
+        2,
+        primary=True,
+        disabled=not st.session_state.selected_feature_ids,
+    )
 
 
 def _render_selectable_feature_families(group_id: str, selectable_views: list[Any], revision: int) -> None:
@@ -328,13 +541,10 @@ def _render_models_step(runtime) -> None:
         st.json(_plain(model.default_profile))
         st.json(_plain(model.runtime_requirements))
         st.caption(f"model_id: {model.model_id}; adapter version: {model.adapter_version}")
-    navigation = st.columns(2)
-    if navigation[0].button("Назад"):
-        st.session_state.current_step = 1
-        st.rerun()
-    if navigation[1].button("Далее: эксперимент", type="primary"):
-        st.session_state.current_step = 3
-        st.rerun()
+    navigation = st.columns(3)
+    _navigation_button(navigation[0], "← Назад", 1)
+    _navigation_button(navigation[1], "В начало", 0)
+    _navigation_button(navigation[2], "Далее: эксперимент →", 3, primary=True)
 
 
 def _render_experiment_step(runtime) -> None:
@@ -343,6 +553,9 @@ def _render_experiment_step(runtime) -> None:
         st.warning("Сначала подтвердите признаки и модель.")
         return
     st.header("4. Эксперимент")
+    navigation = st.columns(3)
+    _navigation_button(navigation[0], "← Назад", 2)
+    _navigation_button(navigation[1], "В начало", 0)
     previous = st.session_state.experiment_inputs
     revision = st.session_state.context_revision
     protocol = runtime.supported_protocol
@@ -505,9 +718,7 @@ def _render_result_step() -> None:
     artifact = st.session_state.loaded_artifact
     if artifact is None:
         st.info("Текущего успешного результата нет.")
-        if st.button("Вернуться к эксперименту"):
-            st.session_state.current_step = 3
-            st.rerun()
+        _navigation_button(st, "← Назад", 3)
         return
     st.header("5. Результат")
     result = artifact.run_output.result
@@ -567,9 +778,75 @@ def _render_result_step() -> None:
             st.write(f"Сопоставимы: {'да' if comparison.is_comparable else 'нет'}")
             st.write(f"Причины: {', '.join(comparison.reason_codes) or 'не указаны'}")
             st.json({"metrics": comparison.metric_deltas, "confusion": comparison.confusion_deltas, "feature_change": comparison.feature_change, "model_change": comparison.model_change})
-    if st.button("Новый эксперимент", type="primary"):
-        return_to_experiment(st.session_state)
+    navigation = st.columns(3)
+    _navigation_button(navigation[0], "← Назад", 3)
+    _navigation_button(navigation[1], "В начало", 0)
+    _navigation_button(navigation[2], "Новый эксперимент", 3, primary=True)
+
+
+def _navigation_button(
+    container: Any, label: str, target_step: int, *, primary: bool = False, disabled: bool = False,
+) -> None:
+    """Render a non-destructive wizard transition in the supplied layout slot."""
+    if container.button(label, type="primary" if primary else "secondary", disabled=disabled):
+        navigate_to_step(st.session_state, target_step)
         st.rerun()
+
+
+def _available_wizard_steps(state: Mapping[str, Any]) -> tuple[bool, bool, bool, bool, bool]:
+    """Keep every reached tab directly accessible until an actual source change resets it."""
+    highest_reached = min(max(int(state.get("highest_reached_step", 0)), 0), len(_STEP_NAVIGATION_LABELS) - 1)
+    return tuple(step <= highest_reached for step in range(len(_STEP_NAVIGATION_LABELS)))
+
+
+def _render_step_navigation() -> None:
+    """Render the compact step row with in-session navigation callbacks."""
+    current_step = st.session_state.current_step
+    available = _available_wizard_steps(st.session_state)
+    st.html(
+        """
+        <style>
+        .st-key-step-navigator {
+            width: fit-content !important; gap: 0.25rem !important; align-items: baseline !important;
+            flex-wrap: nowrap !important;
+        }
+        .st-key-step-navigator > * { flex: 0 0 auto !important; width: fit-content !important; }
+        .st-key-step-navigator [data-testid="stButton"] {
+            width: fit-content !important; margin: 0 !important; padding: 0 !important;
+        }
+        .st-key-step-navigator [data-testid="stButton"] > button {
+            min-height: 0 !important; margin: 0 !important; padding: 0 !important;
+            border: 0 !important; background: transparent !important; box-shadow: none !important;
+            color: inherit !important; font: inherit !important; font-size: 0.875rem !important;
+            line-height: 1.2 !important; opacity: 0.6 !important;
+        }
+        .st-key-step-navigator [data-testid="stButton"] > button:hover,
+        .st-key-step-navigator [data-testid="stButton"] > button:active {
+            border: 0 !important; background: transparent !important; box-shadow: none !important;
+            color: inherit !important;
+        }
+        </style>
+        """
+    )
+    navigation = st.container(
+        horizontal=True,
+        gap=None,
+        key=_STEP_NAVIGATION_CONTAINER_KEY,
+    )
+    for step, (label, is_available) in enumerate(zip(_STEP_NAVIGATION_LABELS, available, strict=True)):
+        text = f"{'●' if step == current_step else '○'} {label}"
+        if is_available:
+            navigation.button(
+                text,
+                key=f"{_STEP_NAVIGATION_CONTAINER_KEY}-{step}",
+                type="tertiary",
+                on_click=navigate_to_step,
+                args=(st.session_state, step),
+            )
+        else:
+            navigation.caption(text)
+        if step < len(_STEP_NAVIGATION_LABELS) - 1:
+            navigation.caption("→")
 
 
 def _context_or_previous_step():
@@ -577,9 +854,7 @@ def _context_or_previous_step():
     if context is not None:
         return context
     st.warning("Сначала подготовьте контекст данных.")
-    if st.button("К данным"):
-        st.session_state.current_step = 0
-        st.rerun()
+    _navigation_button(st, "К данным", 0)
     return None
 
 
