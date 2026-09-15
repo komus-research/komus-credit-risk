@@ -1,20 +1,65 @@
 # Komus Credit Risk
 
-## Streamlit prototype
+KOMUS Credit Risk — исследовательский прототип для воспроизводимых ML-экспериментов по прогнозированию дефолта организаций.
+
+Текущий пользовательский flow: Данные → Признаки → Модель → Эксперимент → Результат.
+
+Frontend: Streamlit.
+
+## Быстрый запуск
+
+Требования:
+
+- Git;
+- uv;
+- Windows и локальный запуск;
+- версия Python берётся из проекта: [`.python-version`](.python-version).
 
 ```powershell
+git clone https://github.com/komus-research/komus-credit-risk.git
+cd komus-credit-risk
+uv sync
 uv run python -m streamlit run app/streamlit_app.py
 ```
 
-Исследовательский ML/DS-проект по прогнозированию дефолта коммерческих организаций РФ на горизонте 1 года для ООО «Комус».
+Репозиторий: [github.com/komus-research/komus-credit-risk](https://github.com/komus-research/komus-credit-risk).
+
+## Датасет
+
+`Data_final.xlsb` не хранится в Git. Для полного historical flow нужен локальный accepted `Data_final.xlsb`.
+
+Есть два способа указать файл:
+
+- положить его по пути `data/raw/Data_final.xlsb`;
+- запустить приложение, выбрать «Другой локальный файл» и выбрать `Data_final` с диска.
+
+Другой локальный файл можно выбрать и проверить, но пока только accepted historical `Data_final` имеет готовые Dataset Contract и Evaluation Population и допускается к experiment flow.
+
+## Что можно попробовать
+
+- выбрать источник данных;
+- включать и выключать группы и отдельные признаки;
+- выбрать CatBoost, XGBoost, LightGBM или `GBDT_mean`;
+- настроить experiment config;
+- посмотреть plan перед запуском;
+- запустить 3-fold OOF experiment;
+- посмотреть и сравнить сохранённый результат;
+- свободно переходить между уже достигнутыми этапами.
+
+## Текущие ограничения
+
+- arbitrary dataset onboarding ещё не реализован;
+- новый dataset требует собственного Dataset Contract, Feature Registry и Evaluation Population;
+- `Q_B1_norm` и `Q_B2_norm` не являются predictors;
+- final test не используется для выбора модели;
+- LLM Result Interpreter не является credit predictor;
+- пользовательское LLM-объяснение в текущий Streamlit flow ещё не подключено как готовая функция.
 
 ## Текущий статус
 
-Проект ведётся как воспроизводимое исследование в связке **VS Code + Git + GitHub + Python virtual environment + Jupyter**.
-
-Исторический baseline сохранён отдельно. Текущая исследовательская цепочка строится на 47 разрешённых признаках после полного исключения `Q_B1_norm` и `Q_B2_norm` из финальной рабочей модели.
-
-На текущей ветке завершены и приняты Stage 4 V2 и **Stage 5 V1 — аудит proxy-сигнала `Q_B2` разрешёнными признаками**. Stage 5 зафиксировал `decision_class = material_missing_signal`: текущие 47 разрешённых признаков частично воспроизводят общий сигнал `Q_B2`, но не его существенную для Stage 3 blind spot часть.
+- core model research Stage 1–20 закрыт и зафиксирован согласно текущим project docs;
+- текущая разработка — reproducible experiment pipeline и пользовательский prototype;
+- следующий product direction: new dataset preparation / feature onboarding, model onboarding и result interpretation.
 
 ## Главная цель
 
