@@ -1,31 +1,40 @@
 # Dataset Onboarding V1
 
-PHASE: DESIGN
+PHASE: READY_FOR_REVIEW
 
 ## PURPOSE
 
-Организовать и зафиксировать работу по направлению подготовки нового набора данных для KOMUS.
+Реализовать backend-этап: произвольный поддерживаемый табличный источник → factual inspection → `DatasetPreparationProposal` → STOP.
 
-## ACCEPTED
+## ACCEPTED INPUTS
 
-- Нет доступных принятых документов.
+- `01_ARCHITECT_LOCK.md` — архитектурная граница.
+- `02_BACKEND_DESIGN.md` — backend contracts и module boundaries с принятым factual-contract delta.
+- `03_UX_FLOW.md` — полный пользовательский путь; confirmation/materialization относятся к следующему этапу.
+- `04_ANALYZER_POLICY.md` — детерминированные правила Analyzer V1.
 
-## IN PROGRESS
+## IMPLEMENTATION
 
-- Исходные материалы для `01_ARCHITECT_LOCK.md`, `02_BACKEND_DESIGN.md`, `03_UX_FLOW.md` и `04_ANALYZER_POLICY.md` не были переданы вместе с задачей.
+- Реализован backend pipeline `TabularReader → DatasetInspector → DatasetPreparationAnalyzer → DatasetPreparationProposal → STOP`.
+- Reviewer FIX: policy hash покрывает используемую policy-конфигурацию; edge cases relation blocks, role precedence, datetime warnings, insufficient data, safe examples и русские explanations исправлены.
+- Targeted regression tests и существующие тесты `ReadyDatasetAdapter` пройдены.
 
 ## BLOCKED
 
-- Создание role-документов заблокировано отсутствием исходных текстов; их содержание не восстанавливается и не дополняется по памяти.
+- Нет блокирующих design-вопросов.
 
 ## NEXT
 
-Передать исходные Architect Lock, Backend Design, UX Flow и Analyzer Policy V1. После проверки соответствующие документы можно создать с их фактическими статусами.
+Передать Reviewer diff и targeted test evidence.
 
 ## READ FIRST
 
-Нет: принятые role-документы отсутствуют.
+1. `01_ARCHITECT_LOCK.md`
+2. `02_BACKEND_DESIGN.md`
+3. `04_ANALYZER_POLICY.md`
+4. `05_IMPLEMENTATION_SPEC.md`
+5. `03_UX_FLOW.md` — только как product context; UI current stage не реализует.
 
 ## SUPERSEDED
 
-- Нет.
+- Старый `STATUS.md`, где role-документы считались отсутствующими.
