@@ -174,6 +174,28 @@ class DatasetOnboardingTests(unittest.TestCase):
         self.assertNotEqual(self.analyzer.policy_hash, changed_analyzer.policy_hash)
         self.assertEqual(ProposedColumnRole.TARGET_CANDIDATE, changed_analyzer.analyze(report).column_roles[0].role)
 
+    def test_pairwise_warning_sorting_changes_hash_and_execution_order(self) -> None:
+        target = [0, 1] * 30
+        report = self._report(pd.DataFrame({"event_flag": target, "z_proxy": target, "a_proxy": target}))
+        def pairwise_sources(analyzer: DatasetPreparationAnalyzer) -> list[str]:
+            return [warning.column_name for warning in analyzer.analyze(report).warnings if warning.code == "potential_target_proxy" and warning.evidence.get("related_target_candidate") == "event_flag"]
+        changed = deepcopy(DEFAULT_POLICY)
+        changed["sorting"]["pairwise_warnings"] = ("target_rank_asc", "warning_strength_desc", "warning_code_asc", "source_position_asc", "source_normalized_name_asc")
+        changed_analyzer = DatasetPreparationAnalyzer(changed)
+        self.assertNotEqual(self.analyzer.policy_hash, changed_analyzer.policy_hash)
+        self.assertEqual(["a_proxy", "z_proxy"], pairwise_sources(self.analyzer))
+        self.assertEqual(["z_proxy", "a_proxy"], pairwise_sources(changed_analyzer))
+
+    def test_positive_class_policy_only_uses_report_value_families(self) -> None:
+        report = self._report(pd.DataFrame({"event_flag": [1, "z"] * 5}))
+        changed = deepcopy(DEFAULT_POLICY)
+        changed["sorting"]["positive_class"] = ("string", "integer", "float", "bool", "other")
+        changed_analyzer = DatasetPreparationAnalyzer(changed)
+        self.assertNotIn("datetime", self.analyzer.policy["sorting"]["positive_class"])
+        self.assertNotEqual(self.analyzer.policy_hash, changed_analyzer.policy_hash)
+        self.assertEqual([1, "z"], [item.value for item in self.analyzer.analyze(report).positive_class_candidates])
+        self.assertEqual(["z", 1], [item.value for item in changed_analyzer.analyze(report).positive_class_candidates])
+
     def test_xlsx_parquet_and_xlsb_reader_paths(self) -> None:
         with TemporaryDirectory() as directory:
             root = Path(directory)
