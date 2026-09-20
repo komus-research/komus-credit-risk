@@ -3,16 +3,30 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
-from typing import Any
 from .contracts import ConfirmedDatasetPreparation
 
 
 @dataclass(frozen=True, slots=True)
+class CandidateConfirmationDelta:
+    column_name: str
+    proposal_rank: int | None
+    proposal_score: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ColumnDecisionDelta:
+    column_name: str
+    proposed_role: str | None
+    proposed_eligibility: str | None
+    confirmed_usage_status: str
+
+
+@dataclass(frozen=True, slots=True)
 class ProposalConfirmationDelta:
-    confirmed_target: dict[str, Any]
-    confirmed_identifier: dict[str, Any]
+    confirmed_target: CandidateConfirmationDelta
+    confirmed_identifier: CandidateConfirmationDelta
     positive_class_offered: bool
-    column_decisions: tuple[dict[str, Any], ...]
+    column_decisions: tuple[ColumnDecisionDelta, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

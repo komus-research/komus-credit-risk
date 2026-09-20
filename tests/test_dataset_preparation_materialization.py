@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from decimal import Decimal
 import json
 from pathlib import Path
@@ -21,11 +21,16 @@ from komus_risk.preparation.service import DatasetPreparationAnalyzer
 
 
 class DatasetPreparationMaterializationTests(unittest.TestCase):
-    def _parts(self, predictor_name: str = "score", positive_class: object = 1):
+    def _parts(
+        self,
+        predictor_name: str = "score",
+        positive_class: object = 1,
+        rows: str = "a,0,0.1,1\nb,1,0.9,2\nc,0,0.2,3\nd,1,0.8,4",
+    ):
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / "dataset.csv"
-        path.write_text(f"entity_id,target,{predictor_name},diagnostic\na,0,0.1,1\nb,1,0.9,2\nc,0,0.2,3\nd,1,0.8,4\n", encoding="utf-8")
+        path.write_text(f"entity_id,target,{predictor_name},diagnostic\n{rows}\n", encoding="utf-8")
         snapshot = TabularReader().read(path)
         report = DatasetInspector().inspect(snapshot)
         proposal = DatasetPreparationAnalyzer().analyze(report)
@@ -79,6 +84,43 @@ class DatasetPreparationMaterializationTests(unittest.TestCase):
         with self.assertRaises(DatasetPreparationError) as error:
             KomusDatasetPreparationService().prepare(snapshot, report, proposal, invalid)
         self.assertEqual("INCOMPLETE_CONFIRMATION", error.exception.code)
+
+    def test_mutated_snapshot_cannot_hide_non_finite_source_predictor(self) -> None:
+        rows = "\n".join(
+            f"entity-{index},{index % 2},{float(index + 1)},1" for index in range(51)
+        ) + "\nentity-51,1,inf,1"
+        snapshot, report, proposal, confirmation = self._parts(rows=rows)
+        snapshot.dataframe.loc[51, "score"] = 0.5
+        with self.assertRaises(DatasetPreparationError) as error:
+            KomusDatasetPreparationService().prepare(snapshot, report, proposal, confirmation)
+        self.assertEqual("NON_FINITE_PREDICTOR", error.exception.code)
+
+    def test_mutated_snapshot_cannot_hide_three_class_source_target(self) -> None:
+        rows = "a,0,0.1,1\nb,1,0.9,2\nc,2,0.2,3\nd,0,0.8,4\ne,1,0.3,5\nf,2,0.7,6"
+        snapshot, report, proposal, confirmation = self._parts(rows=rows)
+        snapshot.dataframe.loc[snapshot.dataframe["target"] == 2, "target"] = 1
+        with self.assertRaises(DatasetPreparationError) as error:
+            KomusDatasetPreparationService().prepare(snapshot, report, proposal, confirmation)
+        self.assertEqual("INVALID_TARGET", error.exception.code)
+
+    def test_manifest_delta_is_immutable_and_to_dict_is_detached(self) -> None:
+        _context, manifest = KomusDatasetPreparationService().prepare(*self._parts())
+        delta = manifest.proposal_confirmation_delta
+        with self.assertRaises(FrozenInstanceError):
+            delta.confirmed_target.column_name = "changed"
+        with self.assertRaises(FrozenInstanceError):
+            delta.column_decisions[0].confirmed_usage_status = "changed"
+        serialized = manifest.to_dict()
+        serialized["proposal_confirmation_delta"]["confirmed_target"]["column_name"] = "changed"
+        self.assertEqual("target", delta.confirmed_target.column_name)
+        self.assertEqual(
+            identity_hash({
+                "context_id": manifest.context_id,
+                "confirmation_hash": manifest.confirmation_hash,
+                "delta": delta.to_dict(),
+            }),
+            manifest.materialization_identity,
+        )
 
     def test_numeric_q_b1_norm_can_be_explicitly_model_allowed(self) -> None:
         context, _manifest = KomusDatasetPreparationService().prepare(*self._parts("Q_B1_norm"))

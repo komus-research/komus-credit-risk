@@ -19,7 +19,10 @@ from .contracts import (
     DatasetPreparationError, PopulationPolicyV1,
 )
 from .identity import CanonicalValueError, identity_hash
-from .manifest import DatasetPreparationManifest, ProposalConfirmationDelta
+from .manifest import (
+    CandidateConfirmationDelta, ColumnDecisionDelta, DatasetPreparationManifest,
+    ProposalConfirmationDelta,
+)
 
 _STATUS_TO_USAGE = {
     ConfirmedColumnStatus.TARGET: FeatureUsageStatus.TARGET,
@@ -70,13 +73,13 @@ class DatasetPreparationMaterializer:
             raise DatasetPreparationError("CONFIRMATION_IDENTITY_MISMATCH")
         actual_confirmation_hash = confirmation_hash(confirmation)
         decisions = self._validate_confirmation(snapshot, confirmation)
-        self._validate_semantics(snapshot.dataframe, confirmation, decisions)
-        self._validate_predictors(snapshot.dataframe, decisions)
         registry = self._registry(snapshot, inspection_report, decisions, actual_confirmation_hash)
         loaded = self._reload(snapshot, confirmation, registry)
         if loaded.contract.dataset_fingerprint != snapshot.fingerprint or loaded.source_file_sha256 != snapshot.source_file_sha256:
             raise DatasetPreparationError("STALE_SNAPSHOT")
-        population = self._population(loaded.contract.dataset_fingerprint, snapshot.row_count)
+        self._validate_semantics(loaded.dataframe, confirmation, decisions)
+        self._validate_predictors(loaded.dataframe, decisions)
+        population = self._population(loaded.contract.dataset_fingerprint, loaded.contract.row_count)
         dataset_id = loaded.contract.dataset_id
         context_id = identity_hash({
             "dataset_id": dataset_id, "dataset_version": loaded.contract.dataset_version,
@@ -212,11 +215,14 @@ class DatasetPreparationMaterializer:
         def candidate(items, name):
             for rank, item in enumerate(items, 1):
                 if item.column_name == name:
-                    return {"column_name": name, "proposal_rank": rank, "proposal_score": item.score_points}
-            return {"column_name": name, "proposal_rank": None, "proposal_score": None}
+                    return CandidateConfirmationDelta(name, rank, item.score_points)
+            return CandidateConfirmationDelta(name, None, None)
         offered = any(item.target_column == confirmation.target_column and item.value == confirmation.positive_class for item in proposal.positive_class_candidates)
         roles = {item.column_name: item for item in proposal.column_roles}
-        decisions = tuple({"column_name": item.column_name, "proposed_role": roles.get(item.column_name).role.value if item.column_name in roles else None,
-                           "proposed_eligibility": roles.get(item.column_name).predictor_eligibility.value if item.column_name in roles else None,
-                           "confirmed_usage_status": item.status.value} for item in confirmation.column_decisions)
+        decisions = tuple(ColumnDecisionDelta(
+            item.column_name,
+            roles.get(item.column_name).role.value if item.column_name in roles else None,
+            roles.get(item.column_name).predictor_eligibility.value if item.column_name in roles else None,
+            item.status.value,
+        ) for item in confirmation.column_decisions)
         return ProposalConfirmationDelta(candidate(proposal.target_candidates, confirmation.target_column), candidate(proposal.identifier_candidates, confirmation.identifier_column), offered, decisions)
