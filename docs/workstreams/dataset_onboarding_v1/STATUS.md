@@ -1,6 +1,6 @@
 # Dataset Onboarding V1
 
-PHASE: READY_FOR_REVIEW
+PHASE: CLOSED
 
 ## PURPOSE
 
@@ -18,6 +18,7 @@ PHASE: READY_FOR_REVIEW
 - Реализован backend pipeline `TabularReader → DatasetInspector → DatasetPreparationAnalyzer → DatasetPreparationProposal → STOP`.
 - Reviewer FIX: policy hash покрывает используемую policy-конфигурацию; edge cases relation blocks, role precedence, datetime warnings, insufficient data, safe examples и русские explanations исправлены.
 - Targeted regression tests и существующие тесты `ReadyDatasetAdapter` пройдены.
+- Reviewer final verdict: `ACCEPT`. Dataset Onboarding V1 закрыт.
 
 ## BLOCKED
 
@@ -25,7 +26,7 @@ PHASE: READY_FOR_REVIEW
 
 ## NEXT
 
-Передать Reviewer diff и targeted test evidence.
+Открыть следующий отдельный Stage: Confirmation + Context Materialization.
 
 ## READ FIRST
 
