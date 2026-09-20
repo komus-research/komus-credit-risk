@@ -184,7 +184,11 @@ class ExperimentRunner:
             limitations=(
                 "Результат получен на случайной стратифицированной OOF-кросс-валидации.",
                 "OOF-оценка не доказывает временную стабильность модели.",
-                "Закрытый final test этим запуском не использовался.",
+                (
+                    "Защищённый final test существует и не использован."
+                    if contract.final_test_locked
+                    else "Защищённый final test для этого датасета не определён."
+                ),
             ),
         )
         return ExperimentRunOutput(

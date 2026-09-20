@@ -21,6 +21,7 @@ from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
 from komus_risk.data import LoadedDataset, ReadyDatasetAdapter
 from komus_risk.experiments import EvaluationPopulation
+from komus_risk.preparation.context import PreparedDatasetContext
 from komus_risk.models import (
     CATBOOST_MODEL_SPEC,
     GBDT_MEAN_MODEL_SPEC,
@@ -34,17 +35,6 @@ from komus_risk.models import (
 )
 from komus_risk.planning import ExperimentPlanningService
 from komus_risk.registries import FeatureRegistry, ModelRegistry
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedDatasetContext:
-    """The complete, runtime-only dataset bundle available to the UI."""
-
-    context_id: str
-    display_name: str
-    loaded_dataset: LoadedDataset
-    feature_registry: FeatureRegistry
-    population: EvaluationPopulation
 
 
 @dataclass(frozen=True, slots=True)
