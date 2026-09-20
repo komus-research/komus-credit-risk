@@ -71,7 +71,7 @@ class DatasetOnboardingTests(unittest.TestCase):
             path.write_text("a,a\n1,2\n", encoding="utf-8")
             with self.assertRaises(TabularReadError) as error:
                 TabularReader().read(path)
-            self.assertEqual("duplicate_headers", error.exception.code)
+            self.assertEqual("invalid_physical_header", error.exception.code)
             valid = Path(directory) / "valid.csv"
             valid.write_text("a;b\n1;2\n", encoding="utf-8")
             snapshot = TabularReader().read(valid, separator=";")
@@ -211,7 +211,7 @@ class DatasetOnboardingTests(unittest.TestCase):
             self.assertEqual("parquet", TabularReader().read(parquet).source_format)
             xlsb = root / "data.xlsb"
             xlsb.write_bytes(b"fixture")
-            with patch.object(TabularReader, "_validate_headers"), patch("komus_risk.data.tabular.pd.read_excel", return_value=frame) as read_excel:
+            with patch.object(TabularReader, "_physical_headers", return_value=("a", "b")), patch("komus_risk.data.tabular.pd.read_excel", return_value=frame) as read_excel:
                 self.assertEqual("xlsb", TabularReader().read(xlsb).source_format)
             read_excel.assert_called_once_with(xlsb, sheet_name=0, engine="pyxlsb")
             unsupported = root / "data.txt"
