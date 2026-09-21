@@ -42,3 +42,7 @@
 3. Раздел `READ FIRST` в этом `STATUS.md`
 
 Пустые placeholder-файлы не создаются: документ появляется только при наличии исходного материала и реальной ответственности.
+
+## Dataset Preparation V1
+
+Принятый и закрытый workstream: [dataset_preparation_v1/STATUS.md](dataset_preparation_v1/STATUS.md). Он фиксирует backend boundary proposal → human confirmation → materialization → PreparedDatasetContext; UI confirmation flow остаётся следующим отдельным этапом.

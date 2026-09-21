@@ -113,7 +113,7 @@ Historical baseline №06 должен храниться как неизмен�
 - allow/deny rules;
 - feature provenance;
 - добавление и вычисление новых признаков;
-- защита от запрещённых `Q_B1_norm`/`Q_B2_norm` в рабочих сценариях.
+- защита от `Q_B1_norm`/`Q_B2_norm` в frozen historical working scenario.
 
 Не выбирает threshold и не считает бизнес-стоимость.
 
@@ -266,7 +266,7 @@ Feature set должен быть объектом конфигурации, а 
 - forbidden final features;
 - experimental features.
 
-`Q_B1_norm` и `Q_B2_norm` разрешены только в historical/reference-сценариях.
+В frozen historical Data_final profile `Q_B1_norm` и `Q_B2_norm` доступны только в historical/reference-сценариях; generic preparation не применяет name-based restriction.
 
 ## 9. Evaluation protocol
 
@@ -461,3 +461,18 @@ UI-компоненты:
 - сложную microservice-архитектуру.
 
 Сначала нужен корректный воспроизводимый baseline и общий experiment contract.
+
+## Dataset Preparation V1
+
+Принятая цепочка подготовки произвольного датасета:
+
+`Tabular source → TabularSnapshot → DatasetInspectionReport → DatasetPreparationProposal → Human Confirmation → materialization → PreparedDatasetContext → Planning / Application / Runner`.
+
+Границы уровней явные:
+
+- **FACT** — snapshot и factual inspection;
+- **PROPOSAL** — детерминированные кандидатные роли без runtime semantics;
+- **CONFIRMED** — явное решение специалиста о target, positive class, identifier и status каждой physical column;
+- **RUNTIME** — DatasetContract, FeatureRegistry, EvaluationPopulation, PreparedDatasetContext и deterministic manifest.
+
+Proposal не является fallback для confirmation. Для arbitrary dataset V1 материализуется полная популяция OOF без automatic protected final test или другого split. Final semantic/predictor validation выполняется по loaded dataframe, который входит в PreparedDatasetContext; snapshot сохраняет physical/provenance identity.

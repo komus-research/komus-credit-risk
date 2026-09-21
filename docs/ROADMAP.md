@@ -445,3 +445,9 @@ Evidence:
 - иной новой гипотезы, реально меняющей исследовательское решение.
 
 Это не означает доказанный математический потолок модели.
+
+## Dataset Preparation V1 — завершено
+
+Backend Dataset Preparation V1 принят: произвольный источник проходит factual inspection, proposal, explicit human confirmation и deterministic materialization в PreparedDatasetContext. Historical Data_final baseline при этом остаётся frozen.
+
+Следующий product/application этап: **Dataset Preparation UI / Confirmation Flow**. Он подключит уже принятый backend flow к Streamlit; новый ML research stage этим не открывается.
