@@ -709,6 +709,12 @@ UX/runtime remediation имеет Reviewer verdict: `ACCEPT`.
 
 Proposal не становится runtime semantics автоматически. Специалист явно подтверждает target, positive class, identifier и использование колонок.
 
+Run-ready contract требует ровно один `TARGET`, ровно один `IDENTIFIER` и минимум один `MODEL_ALLOWED`. Для generic arbitrary dataset V1 действует `FULL_OOF_NO_PROTECTED_FINAL_TEST`: вся подтверждённая популяция получает `partition_role="full"`, `final_test_locked=False`; automatic holdout/final/temporal split не создаётся.
+
+Physical headers проверяются до pandas normalization; snapshot/report/proposal/confirmation связаны deterministic identities. `positive_class` нормализуется в Python bool/int/finite float/str, а final semantic/predictor validation выполняется на фактически загруженном dataframe.
+
+`DatasetPreparationManifest` остаётся deterministic provenance artifact; source fingerprint/SHA и связанные provenance identities используются для fail-closed проверки stale source.
+
 Generic preparation не содержит name-based blacklist признаков.
 
 Historical `Data_final` сохраняется только как frozen compatibility profile для воспроизводимости принятого исследования. Его target, identifier, feature statuses и split не являются правилами универсального продукта.

@@ -699,13 +699,15 @@ Target proposal является только предложением сист�
 
 Top candidate Analyzer нельзя автоматически превращать в semantic `CONFIRMED` target.
 
-### D-070 — Exact dataset узнаётся по содержимому
+### D-070 — Dataset History / Persistence V1 должен узнавать exact dataset по содержимому
 
-Переименование или копирование идентичного файла не создаёт новую dataset identity.
+Это нормативное решение для будущего `Dataset History / Persistence V1`, а не описание уже реализованной capability.
 
-При доказанном exact content identity и совместимых relevant rules/contracts система может восстановить confirmed preparation и history experiments без обязательного повторного expensive inspection.
+Переименование или копирование идентичного файла не должно создавать новую dataset identity.
 
-В основном UI это отображается как сохранённый знакомый набор, а не через hash/cache terminology.
+После реализации, при доказанном exact content identity и совместимых relevant rules/contracts, система должна позволять восстановить confirmed preparation и history experiments без обязательного повторного expensive inspection.
+
+Эта capability пока не реализована. В основном UI она должна отображаться как работа с сохранённым знакомым набором, а не через hash/cache terminology.
 
 ### D-071 — История отделена от актуальности проверки
 

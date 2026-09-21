@@ -475,9 +475,11 @@ SHA-256, fingerprint, manifest, policy hash и cache не являются по�
 
 Основной вид — таблица.
 
-Пользователь может выбрать несколько совместимых экспериментов и сравнить их.
+Пользователь может выбрать несколько экспериментов и увидеть их результаты рядом.
 
-Прямое сравнение допустимо только при совместимых dataset identity и evaluation protocol. При различиях интерфейс обязан явно предупредить пользователя.
+Прямой controlled comparison допустим только при одинаковых критичных experimental conditions: dataset identity и population, split/folds, seed, preprocessing, feature set, evaluation protocol и metrics — кроме заранее объявленного единственного changed dimension конкретного controlled experiment.
+
+Если критичные условия различаются более чем по этому контролируемому изменению, результаты должны быть помечены как `partially comparable` или `incomparable`. Интерфейс не должен представлять их как прямой leaderboard или делать вывод о победителе на основании такого сравнения.
 
 ### Изменение правил
 
