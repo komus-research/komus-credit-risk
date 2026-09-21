@@ -446,8 +446,67 @@ Evidence:
 
 Это не означает доказанный математический потолок модели.
 
-## Dataset Preparation V1 — завершено
+## Dataset Preparation V1 — CLOSED
 
-Backend Dataset Preparation V1 принят: произвольный источник проходит factual inspection, proposal, explicit human confirmation и deterministic materialization в PreparedDatasetContext. Historical Data_final baseline при этом остаётся frozen.
+Backend Dataset Preparation V1 принят.
 
-Следующий product/application этап: **Dataset Preparation UI / Confirmation Flow**. Он подключит уже принятый backend flow к Streamlit; новый ML research stage этим не открывается.
+Generic dataset проходит:
+
+`inspection → proposal → explicit human confirmation → materialization → PreparedDatasetContext`.
+
+Historical baseline остаётся frozen compatibility profile.
+
+## Dataset Preparation UI V1 — TECHNICAL ACCEPT
+
+Streamlit integration получила итоговый Reviewer `ACCEPT`.
+
+Закрыты:
+
+- generic prepared renderer;
+- human confirmation;
+- evaluation acknowledgement;
+- positive-class lifecycle;
+- stale/provenance fail-closed;
+- form lifecycle isolation;
+- same-source reconfirmation;
+- единый downstream через `PreparedDatasetContext`.
+
+Ручная продуктовая приёмка UX не пройдена.
+
+## NEXT — Generic Dataset Onboarding UX
+
+Следующий product/application workstream:
+
+`Файл → Цель → Идентификатор → Признаки → Оценка → Проверка`.
+
+Цели:
+
+- один активный смысловой этап вместо вертикальной простыни;
+- пользователь начинает с загрузки файла;
+- historical compatibility profile скрыт как внутренняя деталь;
+- русскоязычный human-readable UI;
+- агрегированные warnings;
+- компактная работа с 50–200 колонками;
+- Analyzer остаётся proposal-механизмом;
+- semantic target явно подтверждает человек;
+- accepted backend/scientific contracts не меняются.
+
+Новый ML research stage этим не открывается.
+
+## NEXT AFTER UX — Dataset History / Persistence V1
+
+Отдельный design workstream должен определить минимальное долговременное хранение исследовательского состояния.
+
+V1:
+
+- exact dataset recognition по content identity;
+- восстановление совместимой confirmed preparation;
+- отсутствие ненужного повторного inspection;
+- история experiments;
+- comparison table;
+- compatibility guard для сравнения;
+- сохранение historical evidence при изменении analysis rules.
+
+Similarity matching разных dataset и перенос настроек — не V1.
+
+Persistence backend определяется отдельным архитектурным решением. Production DB заранее не вводится.

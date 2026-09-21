@@ -8,7 +8,15 @@ from typing import Any
 
 import streamlit as st
 
-from app.bootstrap import LocalDatasetSourceResolver, create_runtime, prepare_resolved_source, validate_supported_protocol
+from app.bootstrap import (
+    LocalDatasetSourceResolver,
+    confirm_dataset_preparation,
+    create_runtime,
+    default_preparation_draft,
+    prepare_resolved_source,
+    reopen_dataset_preparation,
+    validate_supported_protocol,
+)
 from app.feature_display import group_feature_ids_by_family
 from app.local_file_picker import NativeFilePickerUnavailable, choose_local_file
 from app.session_state import (
@@ -26,9 +34,16 @@ from app.session_state import (
     synchronize_feature_widgets,
 )
 from komus_risk.planning import PlanningRequestMetadata
+from komus_risk.preparation import DatasetPreparationError
 
 
 _DATA_PROGRESS_LABELS = {
+    "reading_source": "Чтение источника",
+    "inspecting_dataset": "Проверка структуры и значений набора данных",
+    "analyzing_preparation": "Анализ вариантов подготовки",
+    "validating_confirmation": "Проверка подтверждённой подготовки",
+    "materializing_dataset": "Подготовка набора данных",
+    "prepared_context_ready": "Контекст подготовленного набора данных готов",
     "checking_file_identity": "Проверка файла и его идентичности",
     "checking_working_split": "Проверка рабочей выборки",
     "loading_dataset": "Загрузка датасета",
@@ -53,6 +68,13 @@ _SELECTED_LOCAL_FILE_PATH_KEY = "prototype_selected_local_file_path"
 _MANUAL_LOCAL_FILE_PATH_KEY = "prototype_manual_local_file_path"
 _SOURCE_ERROR_KEY = "prototype_source_error"
 _SOURCE_RECHECK_INVALID_KEY = "prototype_source_recheck_invalid"
+_PREPARATION_DRAFT_KEY = "dataset_preparation_draft"
+_STALE_PREPARATION_ERROR_CODES = frozenset({
+    "STALE_SNAPSHOT",
+    "REPORT_IDENTITY_MISMATCH",
+    "PROPOSAL_IDENTITY_MISMATCH",
+    "CONFIRMATION_IDENTITY_MISMATCH",
+})
 _SUPPORTED_SOURCE_EXTENSIONS = tuple(LocalDatasetSourceResolver._FORMATS)
 _STEP_NAVIGATION_LABELS = ("Данные", "Признаки", "Модель", "Эксперимент", "Результат")
 _STEP_NAVIGATION_CONTAINER_KEY = "step-navigator"
@@ -137,11 +159,14 @@ def _render_data_step() -> None:
     if source_kind == "explicit_local":
         explicit_local_path = _render_local_source_controls()
     draft_locator = _source_control_locator(source_kind, explicit_local_path)
+    _synchronize_source_selection(st.session_state, draft_locator)
     _render_source_check_action(source_kind, explicit_local_path, draft_locator)
     preparation = st.session_state.dataset_source_preparation
     is_display_ready = bool(preparation and preparation.is_prepared and not st.session_state.get(_SOURCE_RECHECK_INVALID_KEY))
     if preparation is None or (preparation.is_prepared and not is_display_ready):
         _render_unchecked_source(source_kind, explicit_local_path)
+    elif not preparation.is_prepared and getattr(preparation, "snapshot", None) is not None:
+        _render_preparation_confirmation(preparation)
     elif not preparation.is_prepared:
         source = preparation.source
         st.success("Источник успешно проверен")
@@ -151,7 +176,13 @@ def _render_data_step() -> None:
             "Для продолжения потребуется отдельная подготовка данных и признаков."
         )
     else:
-        _render_prepared_source(preparation, source_kind)
+        _render_prepared_source(preparation)
+        if getattr(preparation, "preparation_status", None) == "confirmed_context_prepared":
+            if st.button("Изменить подготовку", type="secondary"):
+                editable = reopen_dataset_preparation(preparation)
+                set_dataset_source_preparation(st.session_state, editable)
+                st.session_state[_PREPARATION_DRAFT_KEY] = default_preparation_draft(editable)
+                st.rerun()
 
     ready_to_continue = is_display_ready
     if not ready_to_continue and (preparation is None or st.session_state.get(_SOURCE_RECHECK_INVALID_KEY)):
@@ -294,33 +325,29 @@ def _render_unchecked_source(source_kind: str, explicit_local_path: str) -> None
         st.info("Выберите файл, затем проверьте источник.")
 
 
-def _render_prepared_source(preparation: Any, source_kind: str) -> None:
-    """Show historical readiness without exposing source internals in the main UI."""
+def _render_prepared_source(preparation: Any) -> None:
+    """Render every prepared context from its contract and evaluation population."""
     context = preparation.context
     if context is None:
         return
     st.success("Данные готовы к эксперименту")
-    if source_kind == "explicit_local":
-        st.write("Выбранный файл распознан как исторический Data_final.")
-    st.subheader("Исторический Data_final — рабочая популяция")
     passport = context.loaded_dataset.contract
+    population_size = len(context.population.row_positions)
+    st.subheader(passport.dataset_name or context.display_name)
     columns = st.columns(3)
-    columns[0].metric("Организации / строки", f"{passport.row_count:,}")
-    columns[1].metric("Рабочая выборка", f"{len(context.population.row_positions):,}")
-    columns[2].metric("Защищённая контрольная выборка", f"{passport.row_count - len(context.population.row_positions):,}")
-    st.write("**Цель:** признак дефолта организации")
-    st.info("Контрольная выборка не используется при выборе и настройке модели; она сохраняется для финальной проверки.")
+    columns[0].metric("Строки", f"{passport.row_count:,}")
+    columns[1].metric("Популяция оценки", f"{population_size:,}")
+    columns[2].metric("Реестр признаков", passport.feature_registry_id)
+    st.write(f"**Целевая колонка:** {passport.target_column}")
+    st.write(f"**Колонка-идентификатор:** {passport.identifier_column}")
+    if passport.final_test_locked:
+        st.info("Для набора данных задана защищённая финальная тестовая выборка.")
+        if population_size < passport.row_count:
+            st.caption(f"Строк вне текущей популяции оценки: {passport.row_count - population_size:,}.")
+    else:
+        st.info("Для текущего протокола оценки используется вся подтверждённая популяция. Защищённая финальная тестовая выборка не задана.")
     with st.expander("Технические сведения", expanded=False):
         st.json({
-            "source": {
-                "source_kind": preparation.source.source_kind,
-                "display_name": preparation.source.display_name,
-                "local_runtime_path": str(preparation.source.local_runtime_path),
-                "file_name": preparation.source.file_name,
-                "physical_format": preparation.source.physical_format,
-                "file_size": preparation.source.file_size,
-                "preparation_status": preparation.preparation_status,
-            },
             "dataset_name": passport.dataset_name,
             "dataset_version": passport.dataset_version,
             "source_type": passport.source_type,
@@ -330,7 +357,211 @@ def _render_prepared_source(preparation: Any, source_kind: str) -> None:
             "identifier_column": passport.identifier_column,
             "validation_status": passport.validation_status,
             "final_test_locked": passport.final_test_locked,
+            "evaluation_population": {
+                "population_id": context.population.population_id,
+                "population_size": population_size,
+                "partition_role": context.population.partition_role,
+            },
+            "preparation_status": preparation.preparation_status,
         })
+
+
+def _render_preparation_confirmation(preparation: Any) -> None:
+    """Render the explicit human confirmation required for an arbitrary source."""
+    snapshot = preparation.snapshot
+    report = preparation.inspection_report
+    proposal = preparation.proposal
+    state = st.session_state
+    draft = state.get(_PREPARATION_DRAFT_KEY)
+    if not isinstance(draft, dict) or draft.get("snapshot_fingerprint") != snapshot.fingerprint:
+        draft = default_preparation_draft(preparation)
+        state[_PREPARATION_DRAFT_KEY] = draft
+
+    st.success("Источник успешно проверен")
+    st.subheader("Подготовка набора данных")
+    summary = st.columns(2)
+    summary[0].metric("Строки", f"{snapshot.row_count:,}")
+    summary[1].metric("Колонки", f"{snapshot.column_count:,}")
+    st.write(f"Файл: {preparation.source.file_name}")
+    for warning in proposal.warnings:
+        text = " ".join(warning.reasons_ru) or warning.code
+        (st.warning if warning.severity.value == "WARNING" else st.info)(text)
+
+    headers = list(snapshot.physical_headers)
+    placeholder = "— выберите —"
+    form_revision = int(state.get("context_revision", 0))
+    target_key = _preparation_form_key(form_revision, snapshot.fingerprint, "target")
+    identifier_key = _preparation_form_key(form_revision, snapshot.fingerprint, "identifier")
+    name_key = _preparation_form_key(form_revision, snapshot.fingerprint, "name")
+    if target_key not in state:
+        state[target_key] = draft.get("target_column") if draft.get("target_column") in headers else placeholder
+    if identifier_key not in state:
+        state[identifier_key] = draft.get("identifier_column") if draft.get("identifier_column") in headers else placeholder
+    if name_key not in state:
+        state[name_key] = draft.get("dataset_name", preparation.source.file_name)
+    target = st.selectbox("Целевая колонка", [placeholder, *headers], key=target_key)
+    identifier = st.selectbox("Колонка-идентификатор", [placeholder, *headers], key=identifier_key)
+    dataset_name = st.text_input("Название набора данных", key=name_key)
+
+    target_values = []
+    if target != placeholder:
+        target_values = [item.value for item in next(
+            (column for column in report.columns if column.column_name == target),
+            report.columns[0],
+        ).value_counts or ()]
+    positive_placeholder = "— выберите положительный класс —"
+    positive_key = _bind_positive_class_to_target(
+        state,
+        form_revision=form_revision,
+        snapshot_fingerprint=snapshot.fingerprint,
+        target=target,
+        target_values=target_values,
+        placeholder=positive_placeholder,
+        initial_target=draft.get("target_column"),
+        initial_positive_class=draft.get("positive_class"),
+    )
+    positive = st.selectbox(
+        "Положительный класс", [positive_placeholder, *target_values], key=positive_key,
+        format_func=lambda value: value if isinstance(value, str) else repr(value),
+        disabled=not target_values,
+    )
+
+    st.caption("Предложения анализатора заполняют черновик и не являются подтверждением.")
+    roles = {item.column_name: item for item in proposal.column_roles}
+    statuses: dict[str, str] = {}
+    reasons: dict[str, str] = {}
+    status_options = ("MODEL_ALLOWED", "DIAGNOSTIC_ONLY", "BLOCKED")
+    for name in headers:
+        if name in {target, identifier}:
+            continue
+        key = _preparation_form_key(form_revision, snapshot.fingerprint, "status", name)
+        default = draft["column_statuses"].get(name, "DIAGNOSTIC_ONLY")
+        if default not in status_options:
+            default = "DIAGNOSTIC_ONLY"
+        if key not in state:
+            state[key] = default
+        role = roles.get(name)
+        label = name if role is None else f"{name} · {role.role.value} / {role.predictor_eligibility.value}"
+        statuses[name] = st.selectbox(label, status_options, key=key)
+        if statuses[name] == "BLOCKED":
+            reason_key = _preparation_form_key(form_revision, snapshot.fingerprint, "blocked_reason", name)
+            if reason_key not in state:
+                state[reason_key] = draft["blocked_reasons"].get(name, "")
+            reasons[name] = st.text_input(f"Причина исключения: {name}", key=reason_key)
+
+    st.info(
+        "Использовать все строки этого набора для OOF-оценки. "
+        "Защищённая финальная тестовая выборка автоматически не создаётся."
+    )
+    acknowledgement_key = _preparation_form_key(form_revision, snapshot.fingerprint, "population_acknowledged")
+    if acknowledgement_key not in state:
+        state[acknowledgement_key] = bool(draft.get("population_policy_acknowledged", False))
+    population_policy_acknowledged = st.checkbox(
+        "Подтверждаю использование всей популяции для OOF-оценки без защищённой финальной тестовой выборки.",
+        key=acknowledgement_key,
+    )
+    if st.button("Подтвердить подготовку", type="primary"):
+        explicit_draft = {
+            "snapshot_fingerprint": snapshot.fingerprint,
+            "dataset_name": dataset_name,
+            "target_column": "" if target == placeholder else target,
+            "positive_class": None if positive == positive_placeholder else positive,
+            "identifier_column": "" if identifier == placeholder else identifier,
+            "column_statuses": statuses,
+            "blocked_reasons": reasons,
+            "population_policy": "FULL_OOF_NO_PROTECTED_FINAL_TEST",
+            "population_policy_acknowledged": population_policy_acknowledged,
+        }
+        state[_PREPARATION_DRAFT_KEY] = explicit_draft
+        try:
+            confirmed = _run_with_progress(
+                _DATA_PROGRESS_LABELS,
+                lambda listener: confirm_dataset_preparation(
+                    preparation, explicit_draft, progress_listener=listener,
+                ),
+                initial_label="Подтверждаем подготовку…",
+                completion_label="Подготовка набора данных завершена",
+            )
+        except DatasetPreparationError as error:
+            if error.code in _STALE_PREPARATION_ERROR_CODES:
+                _invalidate_stale_preparation(state)
+                st.error("Файл или результаты анализа изменились. Выполните проверку источника заново.")
+            else:
+                _render_dataset_preparation_error(error)
+        except ValueError as error:
+            st.error("Не удалось подтвердить подготовку данных.")
+            with st.expander("Технические сведения", expanded=False):
+                st.code(str(error))
+        else:
+            _commit_source_preparation(state, state.get(_SOURCE_CONTROL_LOCATOR_KEY, ("", "")), confirmed)
+            st.rerun()
+
+
+def _bind_positive_class_to_target(
+    state: MutableMapping[str, Any],
+    *,
+    form_revision: int,
+    snapshot_fingerprint: str,
+    target: str,
+    target_values: list[Any],
+    placeholder: str,
+    initial_target: Any,
+    initial_positive_class: Any,
+) -> str:
+    """Invalidate the positive-class widget whenever its selected target changes."""
+    positive_key = _preparation_form_key(form_revision, snapshot_fingerprint, "positive")
+    target_key = _preparation_form_key(form_revision, snapshot_fingerprint, "positive_target")
+    bound_target = state.get(target_key)
+    if target_key not in state:
+        state[target_key] = target
+        state[positive_key] = (
+            initial_positive_class
+            if target == initial_target and initial_positive_class in target_values
+            else placeholder
+        )
+    elif bound_target != target:
+        state[target_key] = target
+        state[positive_key] = placeholder
+    elif not target_values or state.get(positive_key) not in target_values:
+        state[positive_key] = placeholder
+    return positive_key
+
+
+def _preparation_form_key(
+    form_revision: int,
+    snapshot_fingerprint: str,
+    control: str,
+    column_name: str | None = None,
+) -> str:
+    """Scope every confirmation-form widget to one editable preparation lifecycle."""
+    suffix = f"_{column_name}" if column_name is not None else ""
+    return f"preparation_{form_revision}_{snapshot_fingerprint}_{control}{suffix}"
+
+
+def _invalidate_stale_preparation(state: MutableMapping[str, Any]) -> None:
+    """Fail closed while retaining source controls for an immediate re-check."""
+    set_dataset_source_preparation(state, None)
+    state[_SOURCE_RECHECK_INVALID_KEY] = False
+
+
+def _render_dataset_preparation_error(error: DatasetPreparationError) -> None:
+    messages = {
+        "INCOMPLETE_CONFIRMATION": "Заполните цель, идентификатор и статусы всех колонок.",
+        "BLOCKED_REASON_MISSING": "Для исключённой колонки укажите причину.",
+        "INVALID_TARGET": "Цель должна содержать два непустых класса с достаточным числом строк.",
+        "POSITIVE_CLASS_MISSING": "Выберите значение положительного класса из фактических значений цели.",
+        "POPULATION_POLICY_NOT_ACKNOWLEDGED": "Подтвердите использование всей популяции для OOF-оценки.",
+        "NO_MODEL_ALLOWED_FEATURES": "Разрешите для модели хотя бы одну совместимую колонку.",
+        "UNSUPPORTED_PREDICTOR_REPRESENTATION": "Одна из разрешённых колонок не поддерживается моделью.",
+        "NON_FINITE_PREDICTOR": "В разрешённой колонке есть нечисловые или бесконечные значения.",
+        "STALE_SNAPSHOT": "Файл изменился после проверки. Проверьте источник повторно.",
+        "REPORT_IDENTITY_MISMATCH": "Отчёт проверки не соответствует текущему файлу. Проверьте источник повторно.",
+        "PROPOSAL_IDENTITY_MISMATCH": "Предложение не соответствует текущему файлу. Проверьте источник повторно.",
+        "CONFIRMATION_IDENTITY_MISMATCH": "Черновик относится к другой версии проверки. Проверьте источник повторно.",
+    }
+    st.error(messages.get(error.code, "Не удалось подтвердить подготовку данных."))
+    with st.expander("Технические сведения", expanded=False):
+        st.code(error.code)
 
 
 def _source_control_locator(source_kind: str, explicit_local_path: str) -> tuple[str, str]:

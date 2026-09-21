@@ -13,6 +13,12 @@ _DEFAULTS = {
     "current_step": 0,
     "dataset_context": None,
     "dataset_source_preparation": None,
+    "dataset_preparation_snapshot": None,
+    "dataset_preparation_report": None,
+    "dataset_preparation_proposal": None,
+    "dataset_preparation_draft": None,
+    "dataset_preparation_confirmation": None,
+    "dataset_preparation_manifest": None,
     "selected_feature_ids": (),
     "selected_model_id": None,
     "experiment_inputs": {},
@@ -66,16 +72,39 @@ def set_dataset_context(state: MutableMapping[str, Any], context: Any) -> None:
 def set_dataset_source_preparation(state: MutableMapping[str, Any], preparation: Any) -> None:
     """Store resolved-source state and expose a context only when it is prepared."""
     current = state.get("dataset_source_preparation")
-    if (
+    if preparation is None:
+        if current is None and state.get("dataset_context") is None:
+            return
+        state["dataset_source_preparation"] = None
+        state["dataset_context"] = None
+        _clear_preparation_transients(state)
+        state["selected_feature_ids"] = ()
+        state["selected_model_id"] = None
+        state["experiment_inputs"] = {}
+        state["current_step"] = 0
+        state["context_revision"] = state.get("context_revision", 0) + 1
+        state["highest_reached_step"] = 0
+        _clear_plan_and_result(state)
+        return
+    same_source_and_status = (
         getattr(current, "source", None) == getattr(preparation, "source", None)
         and getattr(current, "preparation_status", None) == getattr(preparation, "preparation_status", None)
+    )
+    if (
+        same_source_and_status
+        and _same_prepared_dataset_identity(current, preparation)
     ):
+        # A repeated successful confirmation with identical context provenance is a no-op.
+        state["dataset_source_preparation"] = preparation
+        _store_preparation_transients(state, preparation)
         return
     if _same_prepared_dataset_identity(current, preparation):
         state["dataset_source_preparation"] = preparation
+        _store_preparation_transients(state, preparation)
         return
     state["dataset_source_preparation"] = preparation
     state["dataset_context"] = getattr(preparation, "context", None)
+    _store_preparation_transients(state, preparation)
     state["selected_feature_ids"] = ()
     state["selected_model_id"] = None
     state["experiment_inputs"] = {}
@@ -227,6 +256,29 @@ def _clear_plan_and_result(state: MutableMapping[str, Any]) -> None:
     state["experiment_plan"] = None
     state["loaded_artifact"] = None
     state["comparison_result"] = None
+
+
+def _store_preparation_transients(state: MutableMapping[str, Any], preparation: Any) -> None:
+    """Keep analysis artefacts tied to the currently checked physical source."""
+    state["dataset_preparation_snapshot"] = getattr(preparation, "snapshot", None)
+    state["dataset_preparation_report"] = getattr(preparation, "inspection_report", None)
+    state["dataset_preparation_proposal"] = getattr(preparation, "proposal", None)
+    state["dataset_preparation_confirmation"] = getattr(preparation, "confirmation", None)
+    state["dataset_preparation_manifest"] = getattr(preparation, "manifest", None)
+    if getattr(preparation, "preparation_status", None) != "confirmed_context_prepared":
+        state["dataset_preparation_draft"] = None
+
+
+def _clear_preparation_transients(state: MutableMapping[str, Any]) -> None:
+    for key in (
+        "dataset_preparation_snapshot",
+        "dataset_preparation_report",
+        "dataset_preparation_proposal",
+        "dataset_preparation_draft",
+        "dataset_preparation_confirmation",
+        "dataset_preparation_manifest",
+    ):
+        state[key] = None
 
 
 def _same_prepared_dataset_identity(current: Any, next_preparation: Any) -> bool:

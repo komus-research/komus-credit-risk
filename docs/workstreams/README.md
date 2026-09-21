@@ -45,4 +45,24 @@
 
 ## Dataset Preparation V1
 
-Принятый и закрытый workstream: [dataset_preparation_v1/STATUS.md](dataset_preparation_v1/STATUS.md). Он фиксирует backend boundary proposal → human confirmation → materialization → PreparedDatasetContext; UI confirmation flow остаётся следующим отдельным этапом.
+Принятый и закрытый backend workstream:
+
+[dataset_preparation_v1/STATUS.md](dataset_preparation_v1/STATUS.md)
+
+Граница:
+
+`proposal → human confirmation → materialization → PreparedDatasetContext`.
+
+Техническая интеграция Dataset Preparation UI V1 реализована и получила Reviewer `ACCEPT`.
+
+Ручная продуктовая приёмка текущего UX не пройдена.
+
+Текущая последовательность product workstreams:
+
+1. **Generic Dataset Onboarding UX**
+   `Файл → Цель → Идентификатор → Признаки → Оценка → Проверка`.
+
+2. **Dataset History / Persistence V1**
+   Exact dataset recognition, продолжение сохранённой работы, история экспериментов и compatibility-aware comparison.
+
+Historical `Data_final` рассматривается только как frozen compatibility profile, а не как отдельный основной режим продукта.

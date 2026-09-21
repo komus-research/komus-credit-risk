@@ -699,18 +699,65 @@ UX/runtime remediation имеет Reviewer verdict: `ACCEPT`.
 
 ## Dataset Preparation V1 — CLOSED / ACCEPTED
 
-Принята backend-граница для произвольного табличного датасета:
+Принята универсальная backend-граница подготовки табличного датасета:
 
-`file → TabularSnapshot → DatasetInspectionReport → DatasetPreparationProposal → Human Confirmation → ConfirmedDatasetPreparation → materialization → DatasetContract + FeatureRegistry + EvaluationPopulation → PreparedDatasetContext + DatasetPreparationManifest`.
+`file → inspection → proposal → human confirmation → materialization → PreparedDatasetContext`.
 
-FACT, PROPOSAL и CONFIRMED остаются разными уровнями: proposal сам по себе не становится runtime semantics. Специалист явно подтверждает target, positive class, identifier и статус каждой физической колонки; требуется ровно один TARGET, ровно один IDENTIFIER и хотя бы один MODEL_ALLOWED. Для произвольного датасета V1 используется вся популяция (`FULL_OOF_NO_PROTECTED_FINAL_TEST`): `partition_role="full"`, `final_test_locked=False`, без автоматического holdout/final/temporal split.
+Главный инвариант:
 
-Generic preparation не содержит blacklist по именам колонок: `Q_B1_norm` и `Q_B2_norm` могут быть явно подтверждены как MODEL_ALLOWED при технической совместимости. Это не меняет frozen historical Data_final baseline: 47 MODEL_ALLOWED, `INN` — identifier, `DefMark` — target, `Q_B1_norm`/`Q_B2_norm` — BLOCKED, accepted Stage 3 working population и `final_test_locked=True`.
+`FACT ≠ PROPOSAL ≠ CONFIRMED`.
 
-Physical headers проверяются до pandas normalization; snapshot/report/proposal/confirmation связаны детерминированными hashes. Run-ready `positive_class` нормализуется в Python bool/int/finite float/str, final semantic/predictor validation выполняется на фактически загруженном dataframe, а stale source проверяется fingerprint и SHA. Manifest и его delta immutable; filesystem path, session и timestamp не входят в scientific identity.
+Proposal не становится runtime semantics автоматически. Специалист явно подтверждает target, positive class, identifier и использование колонок.
 
-Evidence: targeted suite — 74 tests OK; cumulative Reviewer — ACCEPT; manual acceptance — ALL PASS; изменения merged в `main`, local `main` согласован с `origin/main`.
+Run-ready contract требует ровно один `TARGET`, ровно один `IDENTIFIER` и минимум один `MODEL_ALLOWED`. Для generic arbitrary dataset V1 действует `FULL_OOF_NO_PROTECTED_FINAL_TEST`: вся подтверждённая популяция получает `partition_role="full"`, `final_test_locked=False`; automatic holdout/final/temporal split не создаётся.
 
-Backend готов, однако Streamlit Prototype V1 ещё не подключает confirmation/materialization flow для произвольного файла: после «Проверить источник» такой файл не создаёт PreparedDatasetContext. Это не backend defect.
+Physical headers проверяются до pandas normalization; snapshot/report/proposal/confirmation связаны deterministic identities. `positive_class` нормализуется в Python bool/int/finite float/str, а final semantic/predictor validation выполняется на фактически загруженном dataframe.
 
-**NEXT:** Dataset Preparation UI / Confirmation Flow.
+`DatasetPreparationManifest` остаётся deterministic provenance artifact; source fingerprint/SHA и связанные provenance identities используются для fail-closed проверки stale source.
+
+Generic preparation не содержит name-based blacklist признаков.
+
+Historical `Data_final` сохраняется только как frozen compatibility profile для воспроизводимости принятого исследования. Его target, identifier, feature statuses и split не являются правилами универсального продукта.
+
+Stale source и provenance mismatch работают fail-closed.
+
+## Dataset Preparation UI V1 — TECHNICAL ACCEPT
+
+Техническая интеграция preparation flow со Streamlit реализована и получила итоговый Reviewer `ACCEPT`.
+
+Подтверждено:
+
+- generic-first rendering через `PreparedDatasetContext`;
+- explicit human confirmation;
+- explicit positive class;
+- explicit acknowledgement evaluation population;
+- successful materialization сразу переводит dataset в ready state;
+- stale/provenance fail-closed;
+- same-source reconfirmation;
+- lifecycle формы изолирован через `context_revision + snapshot fingerprint`;
+- downstream `Признаки → Модель → Эксперимент → Результат` общий для любого `PreparedDatasetContext`.
+
+Execution evidence Codex: 69 targeted tests PASS, `compileall app` PASS, `git diff --check` PASS.
+
+### Product UX status
+
+Текущий технический UI НЕ принят как конечный пользовательский интерфейс.
+
+Ручная проверка показала:
+
+- пользователю не нужен отдельный выбор «Исторический набор данных / Другой локальный файл»;
+- «Проверить источник» непонятно по смыслу;
+- стадии подготовки накапливаются вертикальной простынёй;
+- внутренние технические статусы попадают в основной UI;
+- повторяющиеся предупреждения не агрегируются;
+- работа с десятками и сотнями колонок перегружена;
+- Analyzer может предложить неверный semantic target, поэтому proposal нельзя выдавать за решение системы;
+- основной UI должен быть русскоязычным и объяснять смысл действий.
+
+**NEXT PRODUCT STEP:**
+
+`Файл → Цель → Идентификатор → Признаки → Оценка → Проверка`.
+
+После этого отдельный workstream:
+
+**Dataset History / Persistence V1** — узнавание exact dataset, продолжение сохранённой работы, история экспериментов и корректное сравнение результатов.

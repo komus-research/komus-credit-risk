@@ -163,7 +163,7 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertIn("resolve_explicit_local_path", source)
         self.assertIn("preparation.is_prepared", source)
 
-    def test_data_screen_uses_locked_user_facing_copy_and_keeps_details_collapsed(self) -> None:
+    def test_data_screen_uses_generic_prepared_context_copy_and_keeps_details_collapsed(self) -> None:
         import app.streamlit_app as prototype
 
         source = Path(prototype.__file__).read_text(encoding="utf-8")
@@ -179,9 +179,12 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertIn('completion_label="Проверка источника завершена"', source)
         self.assertIn('status.update(label=completion_label, state="complete", expanded=False)', source)
         self.assertIn('_restore_source_controls(st.session_state)', source)
-        self.assertIn('columns[0].metric("Организации / строки"', source)
-        self.assertIn('columns[1].metric("Рабочая выборка"', source)
-        self.assertIn('columns[2].metric("Защищённая контрольная выборка"', source)
+        self.assertIn('columns[0].metric("Строки"', source)
+        self.assertIn('columns[1].metric("Популяция оценки"', source)
+        self.assertIn('columns[2].metric("Реестр признаков"', source)
+        self.assertIn('if passport.final_test_locked:', source)
+        self.assertIn('Защищённая финальная тестовая выборка не задана.', source)
+        self.assertNotIn('def _render_prepared_source(preparation: Any, source_kind: str)', source)
         self.assertNotIn("st.subheader(source.display_name)", source)
         self.assertNotIn("st.file_uploader", source)
 
