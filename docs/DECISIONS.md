@@ -636,3 +636,31 @@ snapshots без временного якоря.
 
 Универсальные ΔGini threshold, cost function, optimal threshold и predictive gain
 конкретного нового признака не устанавливались.
+
+---
+
+## 2026-09-21
+
+### D-061 — Dataset Preparation V1 требует явного human confirmation
+
+Factual inspection и DatasetPreparationProposal не задают runtime semantics. Перед materialization специалист подтверждает target, positive class, identifier и usage status каждой physical column.
+
+### D-062 — Arbitrary dataset V1 использует full OOF без protected final test
+
+Политика `FULL_OOF_NO_PROTECTED_FINAL_TEST` материализует все строки с `partition_role="full"` и `final_test_locked=False`; automatic holdout/final/temporal split не создаётся.
+
+### D-063 — Generic preparation не содержит name-based policy для Q_B1/Q_B2
+
+`Q_B1_norm` и `Q_B2_norm` не являются глобально запрещёнными именами. Технически совместимая колонка может быть явно подтверждена как MODEL_ALLOWED в arbitrary dataset.
+
+### D-064 — Historical Data_final profile остаётся frozen
+
+Historical baseline сохраняет 47 MODEL_ALLOWED, `INN` как identifier, `DefMark` как target, `Q_B1_norm`/`Q_B2_norm` как BLOCKED, accepted Stage 3 working population и `final_test_locked=True`. Это профиль baseline, а не generic policy.
+
+### D-065 — Final materialization validation выполняется по actual loaded dataframe
+
+Snapshot служит источником physical/provenance identity, но semantic и predictor validation выполняются по dataframe, реально возвращаемому в PreparedDatasetContext. Fingerprint и source SHA fail closed защищают от stale source.
+
+### D-066 — DatasetPreparationManifest является deterministic provenance artifact
+
+Manifest фиксирует confirmation, delta и runtime identities. Его nested delta values immutable; filesystem path, session и timestamp не входят в scientific identity.

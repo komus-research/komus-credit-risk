@@ -694,3 +694,23 @@ UX/runtime remediation имеет Reviewer verdict: `ACCEPT`.
 - threshold optimization/calibration;
 - production auth/DB/deployment;
 - отдельный production frontend.
+
+---
+
+## Dataset Preparation V1 — CLOSED / ACCEPTED
+
+Принята backend-граница для произвольного табличного датасета:
+
+`file → TabularSnapshot → DatasetInspectionReport → DatasetPreparationProposal → Human Confirmation → ConfirmedDatasetPreparation → materialization → DatasetContract + FeatureRegistry + EvaluationPopulation → PreparedDatasetContext + DatasetPreparationManifest`.
+
+FACT, PROPOSAL и CONFIRMED остаются разными уровнями: proposal сам по себе не становится runtime semantics. Специалист явно подтверждает target, positive class, identifier и статус каждой физической колонки; требуется ровно один TARGET, ровно один IDENTIFIER и хотя бы один MODEL_ALLOWED. Для произвольного датасета V1 используется вся популяция (`FULL_OOF_NO_PROTECTED_FINAL_TEST`): `partition_role="full"`, `final_test_locked=False`, без автоматического holdout/final/temporal split.
+
+Generic preparation не содержит blacklist по именам колонок: `Q_B1_norm` и `Q_B2_norm` могут быть явно подтверждены как MODEL_ALLOWED при технической совместимости. Это не меняет frozen historical Data_final baseline: 47 MODEL_ALLOWED, `INN` — identifier, `DefMark` — target, `Q_B1_norm`/`Q_B2_norm` — BLOCKED, accepted Stage 3 working population и `final_test_locked=True`.
+
+Physical headers проверяются до pandas normalization; snapshot/report/proposal/confirmation связаны детерминированными hashes. Run-ready `positive_class` нормализуется в Python bool/int/finite float/str, final semantic/predictor validation выполняется на фактически загруженном dataframe, а stale source проверяется fingerprint и SHA. Manifest и его delta immutable; filesystem path, session и timestamp не входят в scientific identity.
+
+Evidence: targeted suite — 74 tests OK; cumulative Reviewer — ACCEPT; manual acceptance — ALL PASS; изменения merged в `main`, local `main` согласован с `origin/main`.
+
+Backend готов, однако Streamlit Prototype V1 ещё не подключает confirmation/materialization flow для произвольного файла: после «Проверить источник» такой файл не создаёт PreparedDatasetContext. Это не backend defect.
+
+**NEXT:** Dataset Preparation UI / Confirmation Flow.
