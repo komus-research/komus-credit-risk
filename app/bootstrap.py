@@ -8,7 +8,7 @@ services; it never constructs backend contracts itself.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -19,9 +19,20 @@ from komus_risk.application import ExperimentApplicationService
 from komus_risk.artifacts import ExperimentArtifactStore
 from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
-from komus_risk.data import LoadedDataset, ReadyDatasetAdapter
+from komus_risk.data import DatasetInspector, LoadedDataset, ReadyDatasetAdapter, TabularReader, TabularSnapshot
 from komus_risk.experiments import EvaluationPopulation
+from komus_risk.preparation import (
+    ConfirmedColumnDecision,
+    ConfirmedColumnStatus,
+    ConfirmedDatasetPreparation,
+    DatasetPreparationAnalyzer,
+    DatasetPreparationError,
+    DatasetPreparationManifest,
+    KomusDatasetPreparationService,
+    PopulationPolicyV1,
+)
 from komus_risk.preparation.context import PreparedDatasetContext
+from komus_risk.preparation.materializer import inspection_report_hash, proposal_hash
 from komus_risk.models import (
     CATBOOST_MODEL_SPEC,
     GBDT_MEAN_MODEL_SPEC,
@@ -56,12 +67,17 @@ class DatasetSourcePreparation:
     source: ResolvedDatasetSource
     preparation_status: str
     context: PreparedDatasetContext | None
+    snapshot: TabularSnapshot | None = None
+    inspection_report: Any | None = None
+    proposal: Any | None = None
+    confirmation: ConfirmedDatasetPreparation | None = None
+    manifest: DatasetPreparationManifest | None = None
 
     def __post_init__(self) -> None:
         if self.preparation_status == "context_not_prepared" and self.context is not None:
             raise ValueError("Неподготовленный источник не может иметь dataset context.")
-        if self.preparation_status == "historical_context_prepared" and self.context is None:
-            raise ValueError("Подготовленный historical source должен иметь dataset context.")
+        if self.preparation_status in {"historical_context_prepared", "confirmed_context_prepared"} and self.context is None:
+            raise ValueError("Подготовленный источник должен иметь dataset context.")
 
     @property
     def is_prepared(self) -> bool:
@@ -292,15 +308,123 @@ def prepare_resolved_source(
     historical_provider: HistoricalDatasetProvider | None = None,
     progress_listener: Callable[[str], None] | None = None,
 ) -> DatasetSourcePreparation:
-    """Prepare only a source that passed the exact accepted Data_final gate."""
+    """Check a source, preserving historical semantics or creating only a proposal."""
     if _sha256_file(source.local_runtime_path) != _ACCEPTED_DATASET_SHA256:
-        return DatasetSourcePreparation(source, "context_not_prepared", None)
+        # Resolution normally guarantees this.  Keeping the unprepared result for
+        # a vanished source preserves the resolver's user-facing error boundary.
+        if not source.local_runtime_path.is_file():
+            return DatasetSourcePreparation(source, "context_not_prepared", None)
+        _notify_data_progress(progress_listener, "reading_source")
+        snapshot = TabularReader().read(source.local_runtime_path)
+        _notify_data_progress(progress_listener, "inspecting_dataset")
+        report = DatasetInspector().inspect(snapshot)
+        _notify_data_progress(progress_listener, "analyzing_preparation")
+        proposal = DatasetPreparationAnalyzer().analyze(report)
+        return DatasetSourcePreparation(
+            source, "context_not_prepared", None,
+            snapshot=snapshot, inspection_report=report, proposal=proposal,
+        )
     provider = historical_provider or HistoricalDatasetProvider()
     return DatasetSourcePreparation(
         source,
         "historical_context_prepared",
         provider.prepare(source, progress_listener=progress_listener),
     )
+
+
+def default_preparation_draft(preparation: DatasetSourcePreparation) -> dict[str, Any]:
+    """Return proposal-backed UI defaults; this is not a confirmation."""
+    if preparation.snapshot is None or preparation.proposal is None:
+        raise ValueError("No source analysis is available for preparation.")
+    target = next((item.column_name for item in preparation.proposal.target_candidates), "")
+    identifier = next((item.column_name for item in preparation.proposal.identifier_candidates), "")
+    roles = {item.column_name: item for item in preparation.proposal.column_roles}
+    statuses: dict[str, str] = {}
+    for name in preparation.snapshot.physical_headers:
+        role = roles.get(name)
+        eligible = role is not None and role.predictor_eligibility.value == "ELIGIBLE_CANDIDATE"
+        statuses[name] = (
+            ConfirmedColumnStatus.MODEL_ALLOWED.value if eligible else ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value
+        )
+    draft = {
+        "snapshot_fingerprint": preparation.snapshot.fingerprint,
+        "dataset_name": preparation.source.file_name,
+        "target_column": target,
+        "positive_class": None,
+        "identifier_column": identifier,
+        "column_statuses": statuses,
+        "blocked_reasons": {},
+        "population_policy": PopulationPolicyV1.FULL_OOF_NO_PROTECTED_FINAL_TEST.value,
+        "population_policy_acknowledged": False,
+    }
+    if preparation.confirmation is not None:
+        confirmation = preparation.confirmation
+        draft.update(
+            dataset_name=confirmation.dataset_name,
+            target_column=confirmation.target_column,
+            positive_class=confirmation.positive_class,
+            identifier_column=confirmation.identifier_column,
+            column_statuses={item.column_name: item.status.value for item in confirmation.column_decisions},
+            blocked_reasons={
+                item.column_name: item.blocked_reason
+                for item in confirmation.column_decisions if item.blocked_reason is not None
+            },
+        )
+    return draft
+
+
+def confirm_dataset_preparation(
+    preparation: DatasetSourcePreparation,
+    draft: Mapping[str, Any],
+    *,
+    progress_listener: Callable[[str], None] | None = None,
+) -> DatasetSourcePreparation:
+    """Materialize an immutable backend confirmation from the explicit UI draft."""
+    snapshot, report, proposal = preparation.snapshot, preparation.inspection_report, preparation.proposal
+    if snapshot is None or report is None or proposal is None:
+        raise ValueError("No source analysis is available for confirmation.")
+    if not draft.get("population_policy_acknowledged", False):
+        raise DatasetPreparationError("POPULATION_POLICY_NOT_ACKNOWLEDGED")
+    _notify_data_progress(progress_listener, "validating_confirmation")
+    target = str(draft.get("target_column") or "")
+    identifier = str(draft.get("identifier_column") or "")
+    if not target or not identifier:
+        raise DatasetPreparationError("INCOMPLETE_CONFIRMATION")
+    if draft.get("positive_class") is None:
+        raise DatasetPreparationError("POSITIVE_CLASS_MISSING")
+    statuses = dict(draft.get("column_statuses") or {})
+    reasons = dict(draft.get("blocked_reasons") or {})
+    decisions = []
+    for name in snapshot.physical_headers:
+        status = ConfirmedColumnStatus.TARGET if name == target else (
+            ConfirmedColumnStatus.IDENTIFIER if name == identifier else ConfirmedColumnStatus(
+                statuses.get(name, ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value)
+            )
+        )
+        decisions.append(ConfirmedColumnDecision(name, status, reasons.get(name) if status is ConfirmedColumnStatus.BLOCKED else None))
+    report_digest = inspection_report_hash(report)
+    confirmation = ConfirmedDatasetPreparation(
+        "1", snapshot.fingerprint, report_digest, proposal_hash(proposal, report_digest),
+        proposal.policy_id, proposal.policy_version, proposal.policy_hash,
+        str(draft.get("dataset_name") or preparation.source.file_name), target,
+        draft.get("positive_class"), identifier, tuple(decisions),
+        PopulationPolicyV1(draft.get("population_policy")),
+    )
+    _notify_data_progress(progress_listener, "materializing_dataset")
+    context, manifest = KomusDatasetPreparationService().prepare(snapshot, report, proposal, confirmation)
+    _notify_data_progress(progress_listener, "prepared_context_ready")
+    return DatasetSourcePreparation(
+        preparation.source, "confirmed_context_prepared", context,
+        snapshot=snapshot, inspection_report=report, proposal=proposal,
+        confirmation=confirmation, manifest=manifest,
+    )
+
+
+def reopen_dataset_preparation(preparation: DatasetSourcePreparation) -> DatasetSourcePreparation:
+    """Drop an active arbitrary context before its confirmation is edited."""
+    if preparation.preparation_status != "confirmed_context_prepared":
+        raise ValueError("Only a confirmed preparation can be edited.")
+    return replace(preparation, preparation_status="context_not_prepared", context=None, manifest=None)
 
 
 def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:

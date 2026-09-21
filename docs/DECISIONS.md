@@ -664,3 +664,55 @@ Snapshot служит источником physical/provenance identity, но se
 ### D-066 — DatasetPreparationManifest является deterministic provenance artifact
 
 Manifest фиксирует confirmation, delta и runtime identities. Его nested delta values immutable; filesystem path, session и timestamp не входят в scientific identity.
+
+## 2026-09-21 — Generic Dataset UX / History
+
+### D-067 — Product UI является generic-first
+
+Основной пользовательский flow начинается с загрузки файла и не предлагает отдельный основной режим «Исторический набор данных».
+
+Historical `Data_final` остаётся frozen compatibility profile внутри системы.
+
+После `PreparedDatasetContext` downstream flow общий для любого dataset.
+
+### D-068 — Dataset onboarding строится как последовательный мастер
+
+Принята структура:
+
+`Файл → Цель → Идентификатор → Признаки → Оценка → Проверка`.
+
+На экране активен один смысловой этап. Завершённые этапы сворачиваются в компактное summary.
+
+Внутренние enum/backend terms не выводятся в основном пользовательском UI.
+
+Причина: техническая реализация Dataset Preparation UI получила Reviewer `ACCEPT`, но ручная продуктовая приёмка показала, что текущая инженерная форма перегружена и непонятна пользователю.
+
+### D-069 — Analyzer предлагает target, но не определяет смысл задачи
+
+Target proposal является только предложением системы.
+
+Пользователь явно отвечает:
+
+**«Что модель должна предсказывать?»**
+
+Затем отдельно выбирает positive event из фактических значений target.
+
+Top candidate Analyzer нельзя автоматически превращать в semantic `CONFIRMED` target.
+
+### D-070 — Exact dataset узнаётся по содержимому
+
+Переименование или копирование идентичного файла не создаёт новую dataset identity.
+
+При доказанном exact content identity и совместимых relevant rules/contracts система может восстановить confirmed preparation и history experiments без обязательного повторного expensive inspection.
+
+В основном UI это отображается как сохранённый знакомый набор, а не через hash/cache terminology.
+
+### D-071 — История отделена от актуальности проверки
+
+Если dataset известен, но relevant inspection/preparation rules изменились, старая история и результаты сохраняются, однако старый inspection не выдаётся за актуальный.
+
+Similarity разных dataset не является exact identity.
+
+Будущий перенос настроек между похожими dataset допускается только как `PROPOSAL / DRAFT`, а не как `CONFIRMED`.
+
+Persistence backend пока не зафиксирован. Решение не требует production DB.

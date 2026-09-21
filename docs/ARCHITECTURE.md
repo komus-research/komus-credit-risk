@@ -476,3 +476,40 @@ UI-компоненты:
 - **RUNTIME** — DatasetContract, FeatureRegistry, EvaluationPopulation, PreparedDatasetContext и deterministic manifest.
 
 Proposal не является fallback для confirmation. Для arbitrary dataset V1 материализуется полная популяция OOF без automatic protected final test или другого split. Final semantic/predictor validation выполняется по loaded dataframe, который входит в PreparedDatasetContext; snapshot сохраняет physical/provenance identity.
+
+## Generic Prepared Dataset Boundary
+
+`PreparedDatasetContext` является точкой схождения допустимых путей подготовки данных.
+
+До этой границы могут существовать разные preparation adapters:
+
+- generic dataset: inspection → proposal → human confirmation → materialization;
+- frozen compatibility profile принятого historical baseline.
+
+После получения `PreparedDatasetContext` downstream не ветвится по признаку «historical / arbitrary».
+
+Общий путь:
+
+`PreparedDatasetContext → Признаки → Модель → Эксперимент → Результат`.
+
+Filename, конкретное имя target, identifier или business-specific feature name не являются основанием для generic downstream behavior.
+
+Historical `Data_final` сохраняется как compatibility adapter для воспроизводимости старого исследования, а не как основной product mode.
+
+## Dataset History / Persistence — architecture direction
+
+Persistence исследовательской истории является отдельным application-layer направлением и не меняет scientific contracts Dataset Preparation.
+
+Инварианты:
+
+- exact dataset identity определяется содержимым, а не filename/path;
+- сохранённая preparation переиспользуется только при доказанной совместимости dataset identity и relevant rule/contract versions;
+- изменение правил анализа не удаляет историю, но может сделать старый inspection неактуальным;
+- сохранённые experiments остаются evidence своих исходных условий;
+- comparison учитывает dataset и evaluation compatibility;
+- similarity разных dataset не даёт права автоматически переносить `CONFIRMED` semantics;
+- similarity reuse допускается только как `PROPOSAL / DRAFT`.
+
+Физическое хранилище пока не фиксируется.
+
+Production DB, MLflow/DVC, orchestration и другая тяжёлая инфраструктура не вводятся без отдельной необходимости.
