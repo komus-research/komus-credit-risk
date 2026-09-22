@@ -422,6 +422,222 @@ class DatasetPreparationUiTests(unittest.TestCase):
         self.assertEqual(state["prototype_source_control_locator"], source_locator)
         self.assertEqual(state["prototype_selected_local_file_path"], str(preparation.source.local_runtime_path))
 
+    def test_wizard_keeps_explicit_decisions_between_steps_and_confirms_context(self) -> None:
+        """Exercise the six-step UI wiring through its session-owned decisions."""
+        import app.streamlit_app as prototype
+
+        class Status:
+            def write(self, _value):
+                return None
+
+            def update(self, **_kwargs):
+                return None
+
+        class Streamlit:
+            def __init__(self, state):
+                self.session_state = state
+                self.reruns = 0
+
+            def status(self, _label, *, expanded):
+                return Status()
+
+            def rerun(self):
+                self.reruns += 1
+
+        preparation = self._checked_source()
+        state = {}
+        initialize(state)
+        set_dataset_source_preparation(state, preparation)
+        draft = default_preparation_draft(preparation)
+        state["dataset_preparation_draft"] = draft
+        state["dataset_preparation_step"] = 1
+        streamlit = Streamlit(state)
+
+        with patch.object(prototype, "st", streamlit):
+            revision = state["context_revision"]
+            positive_key = prototype._bind_positive_class_to_target(
+                state,
+                form_revision=revision,
+                snapshot_fingerprint=preparation.snapshot.fingerprint,
+                target="target",
+                target_values=[0, 1],
+                placeholder="choose",
+                initial_target=None,
+                initial_positive_class=None,
+            )
+            self.assertEqual(state[positive_key], "choose")
+            state[positive_key] = 1
+            prototype._save_target_selection(preparation, draft, "target", state[positive_key])
+            prototype._onboarding_go_to(2)
+            self.assertEqual(state["dataset_preparation_step"], 2)
+            self.assertEqual(draft["target_column"], "target")
+            self.assertEqual(draft["positive_class"], 1)
+
+            draft["identifier_column"] = "entity_id"
+            prototype._onboarding_go_to(3)
+            self.assertEqual(state["dataset_preparation_step"], 3)
+            self.assertEqual(draft["identifier_column"], "entity_id")
+
+            draft["column_statuses"] = {
+                "entity_id": "DIAGNOSTIC_ONLY",
+                "target": "DIAGNOSTIC_ONLY",
+                "score": "MODEL_ALLOWED",
+                "Q_B1_norm": "BLOCKED",
+            }
+            draft["blocked_reasons"] = {"Q_B1_norm": "Не использовать в модели."}
+            prototype._onboarding_go_to(4)
+            self.assertEqual(state["dataset_preparation_step"], 4)
+            self.assertEqual(draft["blocked_reasons"]["Q_B1_norm"], "Не использовать в модели.")
+
+            draft["population_policy_acknowledged"] = True
+            prototype._onboarding_go_to(5)
+            self.assertEqual(state["dataset_preparation_step"], 5)
+            prototype._confirm_dataset_onboarding(preparation, draft)
+
+        self.assertTrue(state["dataset_source_preparation"].is_prepared)
+        self.assertIsNotNone(state["dataset_context"])
+        self.assertEqual(state["current_step"], 1)
+        self.assertEqual(state["dataset_preparation_step"], 5)
+
+    def test_editing_target_from_review_resets_positive_and_requires_evaluation_again(self) -> None:
+        import app.streamlit_app as prototype
+
+        class Column:
+            def __init__(self, should_edit):
+                self.should_edit = should_edit
+
+            def write(self, _value):
+                return None
+
+            def button(self, _label, *, key):
+                return self.should_edit and key == "dataset-preparation-edit-1"
+
+        class Streamlit:
+            def __init__(self, state):
+                self.session_state = state
+
+            def columns(self, _specification):
+                return [Column(False), Column(True)]
+
+            def rerun(self):
+                return None
+
+        preparation = self._checked_two_target_source()
+        state = {}
+        initialize(state)
+        set_dataset_source_preparation(state, preparation)
+        draft = default_preparation_draft(preparation)
+        draft.update(
+            target_column="target_a",
+            positive_class=1,
+            identifier_column="entity_id",
+            population_policy_acknowledged=True,
+            column_statuses={
+                "entity_id": "DIAGNOSTIC_ONLY",
+                "target_a": "DIAGNOSTIC_ONLY",
+                "target_b": "DIAGNOSTIC_ONLY",
+                "score": "MODEL_ALLOWED",
+            },
+        )
+        state["dataset_preparation_draft"] = draft
+        state["dataset_preparation_step"] = 5
+        streamlit = Streamlit(state)
+
+        with patch.object(prototype, "st", streamlit):
+            prototype._render_completed_onboarding_steps(preparation, draft, active_step=5)
+            self.assertEqual(state["dataset_preparation_step"], 1)
+
+            positive_key = prototype._bind_positive_class_to_target(
+                state,
+                form_revision=state["context_revision"],
+                snapshot_fingerprint=preparation.snapshot.fingerprint,
+                target="target_a",
+                target_values=[0, 1],
+                placeholder="choose",
+                initial_target="target_a",
+                initial_positive_class=1,
+            )
+            self.assertEqual(state[positive_key], 1)
+            prototype._bind_positive_class_to_target(
+                state,
+                form_revision=state["context_revision"],
+                snapshot_fingerprint=preparation.snapshot.fingerprint,
+                target="target_b",
+                target_values=[0, 1],
+                placeholder="choose",
+                initial_target="target_a",
+                initial_positive_class=1,
+            )
+            self.assertEqual(state[positive_key], "choose")
+
+            prototype._save_target_selection(preparation, draft, "target_b", None)
+            prototype._onboarding_go_to(2)
+            self.assertEqual(state["dataset_preparation_step"], 2)
+            self.assertFalse(draft["population_policy_acknowledged"])
+            with self.assertRaisesRegex(ValueError, "POPULATION_POLICY_NOT_ACKNOWLEDGED"):
+                confirm_dataset_preparation(preparation, draft)
+
+            draft["population_policy_acknowledged"] = True
+            with self.assertRaisesRegex(ValueError, "POSITIVE_CLASS_MISSING"):
+                confirm_dataset_preparation(preparation, draft)
+
+            state[positive_key] = 1
+            prototype._save_target_selection(preparation, draft, "target_b", state[positive_key])
+            prototype._onboarding_go_to(3)
+            prototype._onboarding_go_to(4)
+            draft["population_policy_acknowledged"] = False
+            with self.assertRaisesRegex(ValueError, "POPULATION_POLICY_NOT_ACKNOWLEDGED"):
+                confirm_dataset_preparation(preparation, draft)
+
+            draft["population_policy_acknowledged"] = True
+            prototype._onboarding_go_to(5)
+
+        self.assertTrue(confirm_dataset_preparation(preparation, draft).is_prepared)
+
+    def test_historical_prepared_change_file_clears_active_preparation_and_returns_to_file_step(self) -> None:
+        import app.streamlit_app as prototype
+
+        class Streamlit:
+            def __init__(self, state):
+                self.session_state = state
+                self.reruns = 0
+
+            def button(self, label, **_kwargs):
+                return label == "Изменить файл"
+
+            def rerun(self):
+                self.reruns += 1
+
+        historical_context = SimpleNamespace(context_id="historical_data_final_v1")
+        historical = SimpleNamespace(
+            source=SimpleNamespace(source_kind="repository_local", local_runtime_path="Data_final.xlsb"),
+            preparation_status="historical_context_prepared",
+            context=historical_context,
+            is_prepared=True,
+        )
+        state = {}
+        initialize(state)
+        state.update(
+            dataset_source_preparation=historical,
+            dataset_context=historical_context,
+            dataset_preparation_step=5,
+            prototype_source_control_locator=("accepted_historical", ""),
+            prototype_source_kind="accepted_historical",
+            prototype_selected_local_file_path="Data_final.xlsb",
+            prototype_manual_local_file_path="Data_final.xlsb",
+        )
+        streamlit = Streamlit(state)
+
+        with patch.object(prototype, "st", streamlit):
+            prototype._render_change_file_action()
+
+        self.assertIsNone(state["dataset_source_preparation"])
+        self.assertIsNone(state["dataset_context"])
+        self.assertEqual(state["dataset_preparation_step"], 0)
+        self.assertNotIn("prototype_source_control_locator", state)
+        self.assertNotIn("prototype_selected_local_file_path", state)
+        self.assertEqual(streamlit.reruns, 1)
+
     def test_generic_renderer_uses_context_contract_for_arbitrary_and_historical_contexts(self) -> None:
         import app.streamlit_app as prototype
 

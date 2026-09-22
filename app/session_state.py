@@ -19,6 +19,7 @@ _DEFAULTS = {
     "dataset_preparation_draft": None,
     "dataset_preparation_confirmation": None,
     "dataset_preparation_manifest": None,
+    "dataset_preparation_step": 0,
     "selected_feature_ids": (),
     "selected_model_id": None,
     "experiment_inputs": {},
@@ -77,6 +78,7 @@ def set_dataset_source_preparation(state: MutableMapping[str, Any], preparation:
             return
         state["dataset_source_preparation"] = None
         state["dataset_context"] = None
+        state["dataset_preparation_step"] = 0
         _clear_preparation_transients(state)
         state["selected_feature_ids"] = ()
         state["selected_model_id"] = None
@@ -104,6 +106,7 @@ def set_dataset_source_preparation(state: MutableMapping[str, Any], preparation:
         return
     state["dataset_source_preparation"] = preparation
     state["dataset_context"] = getattr(preparation, "context", None)
+    state["dataset_preparation_step"] = 0
     _store_preparation_transients(state, preparation)
     state["selected_feature_ids"] = ()
     state["selected_model_id"] = None
