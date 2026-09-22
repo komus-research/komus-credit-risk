@@ -168,7 +168,7 @@ class StreamlitBootstrapTests(unittest.TestCase):
 
         source = Path(prototype.__file__).read_text(encoding="utf-8")
 
-        self.assertIn('"Файл → Цель → Идентификатор → Признаки → Оценка → Проверка"', source)
+        self.assertIn('"Файл → Подготовка → Проверка → Признаки → Модель → Эксперимент → Результат"', source)
         self.assertIn('"Загрузите файл, который хотите подготовить для эксперимента."', source)
         self.assertNotIn('"Какие данные использовать?"', source)
         self.assertNotIn('"Исторический набор данных"', source)
@@ -181,9 +181,9 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertIn('completion_label="Проверка файла завершена"', source)
         self.assertIn('status.update(label=completion_label, state="complete", expanded=False)', source)
         self.assertIn('_restore_source_controls(st.session_state)', source)
+        self.assertIn('"Продолжить к подготовке →"', source)
         self.assertIn('"Подтвердить и продолжить"', source)
-        self.assertIn('"Изменить"', source)
-        self.assertIn('"Анализ может подсказать варианты, но выбор подтверждаете вы."', source)
+        self.assertIn('"Подтверждаю это условие оценки."', source)
         self.assertIn('columns[0].metric("Строки"', source)
         self.assertIn('columns[1].metric("Популяция оценки"', source)
         self.assertIn('columns[2].metric("Реестр признаков"', source)
@@ -200,10 +200,10 @@ class StreamlitBootstrapTests(unittest.TestCase):
 
         self.assertIn('"← Назад"', source)
         self.assertIn('"В начало"', source)
-        self.assertIn('"Новый эксперимент"', source)
+        self.assertIn('"Новый эксперимент на этих данных"', source)
         self.assertIn('navigate_to_step(st.session_state, target_step)', source)
-        self.assertNotIn("return_to_experiment(st.session_state)", source)
-        self.assertIn('_navigation_button(navigation[2], "Новый эксперимент", 3, primary=True)', source)
+        self.assertIn("return_to_experiment(st.session_state)", source)
+        self.assertIn('navigation[2].button("Новый эксперимент на этих данных", type="primary")', source)
 
     def test_step_navigator_keeps_the_compact_caption_visual(self) -> None:
         import app.streamlit_app as prototype

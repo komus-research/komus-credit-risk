@@ -33,6 +33,7 @@ from komus_risk.preparation import (
 )
 from komus_risk.preparation.context import PreparedDatasetContext
 from komus_risk.preparation.materializer import inspection_report_hash, proposal_hash
+from komus_risk.preparation.predictor_compatibility import predictor_compatibility_error
 from komus_risk.models import (
     CATBOOST_MODEL_SPEC,
     GBDT_MEAN_MODEL_SPEC,
@@ -338,14 +339,14 @@ def default_preparation_draft(preparation: DatasetSourcePreparation) -> dict[str
         raise ValueError("No source analysis is available for preparation.")
     target = next((item.column_name for item in preparation.proposal.target_candidates), "")
     identifier = next((item.column_name for item in preparation.proposal.identifier_candidates), "")
-    roles = {item.column_name: item for item in preparation.proposal.column_roles}
-    statuses: dict[str, str] = {}
-    for name in preparation.snapshot.physical_headers:
-        role = roles.get(name)
-        eligible = role is not None and role.predictor_eligibility.value == "ELIGIBLE_CANDIDATE"
-        statuses[name] = (
-            ConfirmedColumnStatus.MODEL_ALLOWED.value if eligible else ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value
+    statuses = {
+        name: (
+            ConfirmedColumnStatus.MODEL_ALLOWED.value
+            if predictor_compatibility_error(preparation.snapshot.dataframe[name]) is None
+            else ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value
         )
+        for name in preparation.snapshot.physical_headers
+    }
     draft = {
         "snapshot_fingerprint": preparation.snapshot.fingerprint,
         "dataset_name": preparation.source.file_name,

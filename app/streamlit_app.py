@@ -32,9 +32,11 @@ from app.session_state import (
     set_experiment_inputs,
     set_selected_model_id,
     synchronize_feature_widgets,
+    return_to_experiment,
 )
 from komus_risk.planning import PlanningRequestMetadata
 from komus_risk.preparation import DatasetPreparationError
+from komus_risk.preparation.predictor_compatibility import predictor_compatibility_error
 
 
 _DATA_PROGRESS_LABELS = {
@@ -77,7 +79,7 @@ _STALE_PREPARATION_ERROR_CODES = frozenset({
     "CONFIRMATION_IDENTITY_MISMATCH",
 })
 _SUPPORTED_SOURCE_EXTENSIONS = tuple(LocalDatasetSourceResolver._FORMATS)
-_DATASET_ONBOARDING_STEPS = ("Файл", "Цель", "Идентификатор", "Признаки", "Оценка", "Проверка")
+_DATASET_ONBOARDING_STEPS = ("Файл", "Подготовка", "Проверка")
 _STEP_NAVIGATION_LABELS = ("Данные", "Признаки", "Модель", "Эксперимент", "Результат")
 _STEP_NAVIGATION_CONTAINER_KEY = "step-navigator"
 
@@ -145,7 +147,7 @@ def _run_with_progress(
 
 def _render_data_step() -> None:
     st.header("Подготовка набора данных")
-    st.caption("Файл → Цель → Идентификатор → Признаки → Оценка → Проверка")
+    st.caption("Файл → Подготовка → Проверка → Признаки → Модель → Эксперимент → Результат")
     preparation = st.session_state.dataset_source_preparation
     if preparation is not None and preparation.is_prepared and getattr(preparation, "preparation_status", None) == "historical_context_prepared":
         _render_prepared_source(preparation)
@@ -168,6 +170,9 @@ def _render_data_step() -> None:
         _render_unchecked_source(source_kind, explicit_local_path)
     elif not preparation.is_prepared and getattr(preparation, "snapshot", None) is not None:
         _render_dataset_onboarding(preparation)
+        # The generic onboarding owns its navigation.  Rendering the legacy
+        # footer below would create its "continue" button a second time.
+        return
     elif not preparation.is_prepared:
         source = preparation.source
         st.success("Файл успешно проверен")
@@ -377,13 +382,7 @@ def _render_dataset_onboarding(preparation: Any) -> None:
     if step == 0:
         _render_file_onboarding_step(preparation)
     elif step == 1:
-        _render_target_onboarding_step(preparation, draft, report)
-    elif step == 2:
-        _render_identifier_onboarding_step(preparation, draft)
-    elif step == 3:
-        _render_feature_onboarding_step(preparation, draft)
-    elif step == 4:
-        _render_evaluation_onboarding_step(preparation, draft)
+        _render_preparation_onboarding_step(preparation, draft, report)
     else:
         _render_review_onboarding_step(preparation, draft)
 
@@ -401,12 +400,11 @@ def _onboarding_draft(preparation: Any) -> dict[str, Any]:
 
 def _render_completed_onboarding_steps(preparation: Any, draft: Mapping[str, Any], active_step: int) -> None:
     """Show previous decisions as compact summaries, never as duplicate forms."""
+    active_step = min(active_step, len(_DATASET_ONBOARDING_STEPS) - 1)
     summaries = (
         f"{preparation.source.file_name} — {preparation.snapshot.row_count:,} строк, {preparation.snapshot.column_count:,} столбцов",
-        str(draft.get("target_column") or "не выбрана"),
-        str(draft.get("identifier_column") or "не выбран"),
-        _feature_summary(draft),
-        "Подтверждена OOF-оценка на всех строках",
+        "Цель: " + str(draft.get("target_column") or "не выбрана")
+        + "; идентификатор: " + str(draft.get("identifier_column") or "не выбран"),
     )
     for step in range(active_step):
         left, right = st.columns((5, 1))
@@ -423,9 +421,11 @@ def _render_file_onboarding_step(preparation: Any) -> None:
     summary[0].metric("Строки", f"{preparation.snapshot.row_count:,}")
     summary[1].metric("Столбцы", f"{preparation.snapshot.column_count:,}")
     st.write(f"Файл: {preparation.source.file_name}")
-    _render_aggregated_warnings(preparation.proposal.warnings)
+    if preparation.proposal.warnings:
+        with st.expander("Подробнее", expanded=False):
+            _render_aggregated_warnings(preparation.proposal.warnings)
     _render_change_file_action()
-    _onboarding_next_button("Продолжить к выбору цели →", 1)
+    _onboarding_next_button("Продолжить к подготовке →", 1)
 
 
 def _render_change_file_action() -> None:
@@ -445,133 +445,63 @@ def _reset_for_file_change() -> None:
     st.rerun()
 
 
-def _render_target_onboarding_step(preparation: Any, draft: MutableMapping[str, Any], report: Any) -> None:
+def _render_preparation_onboarding_step(
+    preparation: Any, draft: MutableMapping[str, Any], report: Any,
+) -> None:
+    """Confirm the only user decisions required before final preparation."""
     snapshot = preparation.snapshot
     state = st.session_state
-    st.subheader("2. Цель")
-    st.write("Что модель должна предсказывать?")
-    st.caption("Анализ может подсказать варианты, но выбор подтверждаете вы.")
-    headers = list(snapshot.physical_headers)
+    st.subheader("2. Подготовка")
+    st.caption("Проверьте предложенные цель и идентификатор. Разрешения признаков сформированы автоматически.")
     placeholder = "— выберите —"
-    form_revision = int(state.get("context_revision", 0))
-    target_key = _preparation_form_key(form_revision, snapshot.fingerprint, "target")
+    revision = int(state.get("context_revision", 0))
+    target_key = _preparation_form_key(revision, snapshot.fingerprint, "target")
     if target_key not in state:
-        confirmed = getattr(preparation, "confirmation", None)
-        state[target_key] = getattr(confirmed, "target_column", placeholder) if confirmed else placeholder
-    target = st.selectbox("Целевая колонка", [placeholder, *headers], key=target_key)
+        state[target_key] = draft.get("target_column") or placeholder
+    target = st.selectbox("Целевая колонка", [placeholder, *snapshot.physical_headers], key=target_key)
     target_values = _target_values(report, target)
     positive_placeholder = "— выберите положительное событие —"
     positive_key = _bind_positive_class_to_target(
         state,
-        form_revision=form_revision,
+        form_revision=revision,
         snapshot_fingerprint=snapshot.fingerprint,
         target=target,
         target_values=target_values,
         placeholder=positive_placeholder,
-        initial_target=getattr(getattr(preparation, "confirmation", None), "target_column", None),
-        initial_positive_class=getattr(getattr(preparation, "confirmation", None), "positive_class", None),
+        initial_target=draft.get("target_column"),
+        initial_positive_class=draft.get("positive_class"),
     )
     positive = st.selectbox(
         "Какое значение считать положительным событием?",
-        [positive_placeholder, *target_values], key=positive_key,
-        format_func=lambda value: value if isinstance(value, str) else repr(value), disabled=not target_values,
+        [positive_placeholder, *target_values],
+        key=positive_key,
+        format_func=lambda value: value if isinstance(value, str) else repr(value),
+        disabled=not target_values,
     )
-    if st.button("Продолжить к идентификатору →", type="primary", disabled=target == placeholder or positive == positive_placeholder):
-        _save_target_selection(preparation, draft, target, positive)
+    identifier_key = _preparation_form_key(revision, snapshot.fingerprint, "identifier")
+    identifier_options = [placeholder, *(name for name in snapshot.physical_headers if name != target)]
+    if identifier_key not in state or state[identifier_key] not in identifier_options:
+        candidate = draft.get("identifier_column")
+        state[identifier_key] = candidate if candidate in identifier_options else placeholder
+    identifier = st.selectbox("Колонка-идентификатор", identifier_options, key=identifier_key)
+    complete = target != placeholder and positive != positive_placeholder and identifier != placeholder
+    if st.button("Продолжить к проверке →", type="primary", disabled=not complete):
+        draft["target_column"] = target
+        draft["positive_class"] = positive
+        draft["identifier_column"] = identifier
         _onboarding_go_to(2)
 
 
-def _save_target_selection(
-    preparation: Any, draft: MutableMapping[str, Any], target: str, positive_class: Any,
-) -> None:
-    """Store an explicit target choice and require the dependent evaluation acknowledgement again."""
-    target_changed = target != draft.get("target_column")
-    draft["target_column"] = target
-    draft["positive_class"] = positive_class
-    if not target_changed:
-        return
-    draft["population_policy_acknowledged"] = False
-    acknowledgement_key = _preparation_form_key(
-        int(st.session_state.get("context_revision", 0)),
-        preparation.snapshot.fingerprint,
-        "population_acknowledged",
-    )
-    st.session_state[acknowledgement_key] = False
+_ADVANCED_STATUS_LABELS = {
+    "MODEL_ALLOWED": "Использовать моделью",
+    "DIAGNOSTIC_ONLY": "Только для анализа",
+    "BLOCKED": "Заблокировать",
+}
 
 
-def _render_identifier_onboarding_step(preparation: Any, draft: MutableMapping[str, Any]) -> None:
-    snapshot = preparation.snapshot
-    state = st.session_state
-    st.subheader("3. Идентификатор")
-    st.write("Какой столбец идентифицирует объект?")
-    st.caption("Например: ИНН, ID клиента или номер договора. Этот столбец не используется моделью как признак.")
-    placeholder = "— выберите —"
-    form_revision = int(state.get("context_revision", 0))
-    identifier_key = _preparation_form_key(form_revision, snapshot.fingerprint, "identifier")
-    if identifier_key not in state:
-        confirmed = getattr(preparation, "confirmation", None)
-        state[identifier_key] = getattr(confirmed, "identifier_column", placeholder) if confirmed else placeholder
-    identifier = st.selectbox("Колонка-идентификатор", [placeholder, *snapshot.physical_headers], key=identifier_key)
-    if st.button("Продолжить к признакам →", type="primary", disabled=identifier == placeholder):
-        draft["identifier_column"] = identifier
-        _onboarding_go_to(3)
-
-
-def _render_feature_onboarding_step(preparation: Any, draft: MutableMapping[str, Any]) -> None:
-    snapshot = preparation.snapshot
-    state = st.session_state
-    st.subheader("4. Признаки")
-    st.caption("Выберите, какие столбцы использовать в модели, оставить для анализа или исключить.")
-    target = str(draft.get("target_column") or "")
-    identifier = str(draft.get("identifier_column") or "")
-    form_revision = int(state.get("context_revision", 0))
-    status_options = {
-        "Использовать в модели": "MODEL_ALLOWED",
-        "Оставить только для анализа": "DIAGNOSTIC_ONLY",
-        "Не использовать": "BLOCKED",
-    }
-    labels_by_status = {value: label for label, value in status_options.items()}
-    statuses: dict[str, str] = {}
-    reasons: dict[str, str] = {}
-    for name in snapshot.physical_headers:
-        if name in {target, identifier}:
-            continue
-        key = _preparation_form_key(form_revision, snapshot.fingerprint, "status", name)
-        default = draft["column_statuses"].get(name, "DIAGNOSTIC_ONLY")
-        if key not in state:
-            state[key] = labels_by_status.get(default, "Оставить только для анализа")
-        elif state[key] not in status_options:
-            # The previous one-page form stored internal values under these keys.
-            state[key] = labels_by_status.get(state[key], "Оставить только для анализа")
-        selected = st.selectbox(name, tuple(status_options), key=key)
-        statuses[name] = status_options[selected]
-        if statuses[name] == "BLOCKED":
-            reason_key = _preparation_form_key(form_revision, snapshot.fingerprint, "blocked_reason", name)
-            if reason_key not in state:
-                state[reason_key] = draft["blocked_reasons"].get(name, "")
-            reasons[name] = st.text_input(f"Почему не использовать «{name}" + "»?", key=reason_key)
-    if st.button("Продолжить к оценке →", type="primary"):
-        draft["column_statuses"] = statuses
-        draft["blocked_reasons"] = reasons
-        _onboarding_go_to(4)
-
-
-def _render_evaluation_onboarding_step(preparation: Any, draft: MutableMapping[str, Any]) -> None:
-    state = st.session_state
-    st.subheader("5. Оценка")
-    st.info("Все строки будут использоваться для OOF-оценки модели. Отдельная финальная тестовая выборка автоматически создана не будет.")
-    key = _preparation_form_key(int(state.get("context_revision", 0)), preparation.snapshot.fingerprint, "population_acknowledged")
-    if key not in state:
-        state[key] = bool(draft.get("population_policy_acknowledged", False))
-    acknowledged = st.checkbox("Подтверждаю это условие оценки.", key=key)
-    if st.button("Продолжить к проверке →", type="primary", disabled=not acknowledged):
-        draft["population_policy_acknowledged"] = acknowledged
-        _onboarding_go_to(5)
-
-
-def _render_review_onboarding_step(preparation: Any, draft: Mapping[str, Any]) -> None:
-    st.subheader("6. Проверка")
-    statuses = dict(draft.get("column_statuses") or {})
+def _render_review_onboarding_step(preparation: Any, draft: MutableMapping[str, Any]) -> None:
+    st.subheader("3. Проверка")
+    statuses = _predictor_statuses(draft)
     st.write(f"Файл: {preparation.source.file_name}")
     st.write(f"Цель: {draft.get('target_column') or 'не выбрана'}")
     st.write(f"Положительное событие: {draft.get('positive_class')!r}")
@@ -580,7 +510,20 @@ def _render_review_onboarding_step(preparation: Any, draft: Mapping[str, Any]) -
     st.write(f"Только для анализа: {sum(value == 'DIAGNOSTIC_ONLY' for value in statuses.values())}")
     st.write(f"Исключены: {sum(value == 'BLOCKED' for value in statuses.values())}")
     st.write("Оценка: OOF на всех строках без отдельной финальной тестовой выборки")
-    if st.button("Подтвердить и продолжить", type="primary"):
+    _render_feature_constraints(preparation, draft)
+    key = _preparation_form_key(
+        int(st.session_state.get("context_revision", 0)),
+        preparation.snapshot.fingerprint,
+        "population_acknowledged",
+    )
+    if key not in st.session_state:
+        st.session_state[key] = bool(draft.get("population_policy_acknowledged", False))
+    acknowledged = st.checkbox("Подтверждаю это условие оценки.", key=key)
+    confirmation_blocked = _has_blocked_predictor_without_reason(draft)
+    if confirmation_blocked:
+        st.warning("Укажите причину для каждого заблокированного признака.")
+    if st.button("Подтвердить и продолжить", type="primary", disabled=not acknowledged or confirmation_blocked):
+        draft["population_policy_acknowledged"] = acknowledged
         _confirm_dataset_onboarding(preparation, draft)
 
 
@@ -591,9 +534,87 @@ def _target_values(report: Any, target: str) -> list[Any]:
     return [item.value for item in (column.value_counts if column is not None else ()) or ()]
 
 
-def _feature_summary(draft: Mapping[str, Any]) -> str:
-    statuses = dict(draft.get("column_statuses") or {})
-    return f"в модели: {sum(value == 'MODEL_ALLOWED' for value in statuses.values())}"
+def _predictor_statuses(draft: Mapping[str, Any]) -> dict[str, str]:
+    """Counts and summaries never classify the selected target or identifier as predictors."""
+    protected = {str(draft.get("target_column") or ""), str(draft.get("identifier_column") or "")}
+    return {
+        name: status
+        for name, status in dict(draft.get("column_statuses") or {}).items()
+        if name not in protected
+    }
+
+
+def _render_feature_constraints(preparation: Any, draft: MutableMapping[str, Any]) -> None:
+    """Render rare dataset-level permission overrides without creating another step."""
+    state = st.session_state
+    snapshot = preparation.snapshot
+    statuses = draft.setdefault("column_statuses", {})
+    reasons = draft.setdefault("blocked_reasons", {})
+    protected = {str(draft.get("target_column") or ""), str(draft.get("identifier_column") or "")}
+    revision = int(state.get("context_revision", 0))
+
+    with st.expander("Ограничения признаков", expanded=False):
+        st.caption("Меняйте только редкие исключения. Цель и идентификатор здесь не редактируются.")
+        for name in snapshot.physical_headers:
+            if name in protected:
+                continue
+            compatible = predictor_compatibility_error(snapshot.dataframe[name]) is None
+            options = ["DIAGNOSTIC_ONLY", "BLOCKED"]
+            if compatible:
+                options.insert(0, "MODEL_ALLOWED")
+            current = str(statuses.get(name, "DIAGNOSTIC_ONLY"))
+            if current not in options:
+                current = "DIAGNOSTIC_ONLY"
+                _set_advanced_column_status(draft, name, current, compatible=compatible, state=state)
+            status_key = _preparation_form_key(revision, snapshot.fingerprint, f"feature-status:{name}")
+            if status_key not in state or state[status_key] not in options:
+                state[status_key] = current
+            selected = st.selectbox(
+                name,
+                options,
+                key=status_key,
+                format_func=_ADVANCED_STATUS_LABELS.__getitem__,
+            )
+            status = _set_advanced_column_status(draft, name, selected, compatible=compatible, state=state)
+            if status != "BLOCKED":
+                continue
+            reason_key = _preparation_form_key(revision, snapshot.fingerprint, f"blocked-reason:{name}")
+            if reason_key not in state:
+                state[reason_key] = str(reasons.get(name) or "")
+            reason = st.text_input("Причина блокировки", key=reason_key)
+            reasons[name] = reason.strip()
+
+
+def _set_advanced_column_status(
+    draft: MutableMapping[str, Any],
+    name: str,
+    requested_status: str,
+    *,
+    compatible: bool,
+    state: MutableMapping[str, Any] | None = None,
+) -> str:
+    """Apply one advanced override, retaining technical eligibility as the MODEL_ALLOWED gate."""
+    status = requested_status if requested_status in _ADVANCED_STATUS_LABELS else "DIAGNOSTIC_ONLY"
+    if status == "MODEL_ALLOWED" and not compatible:
+        status = "DIAGNOSTIC_ONLY"
+    statuses = draft.setdefault("column_statuses", {})
+    reasons = draft.setdefault("blocked_reasons", {})
+    statuses[name] = status
+    if status != "BLOCKED":
+        reasons.pop(name, None)
+        if state is not None:
+            stale_keys = [key for key in state if key.endswith(f"blocked-reason:{name}")]
+            for key in stale_keys:
+                state.pop(key, None)
+    return status
+
+
+def _has_blocked_predictor_without_reason(draft: Mapping[str, Any]) -> bool:
+    reasons = dict(draft.get("blocked_reasons") or {})
+    return any(
+        status == "BLOCKED" and not str(reasons.get(name) or "").strip()
+        for name, status in _predictor_statuses(draft).items()
+    )
 
 
 def _render_aggregated_warnings(warnings: Any) -> None:
@@ -1160,7 +1181,9 @@ def _render_result_step() -> None:
     navigation = st.columns(3)
     _navigation_button(navigation[0], "← Назад", 3)
     _navigation_button(navigation[1], "В начало", 0)
-    _navigation_button(navigation[2], "Новый эксперимент", 3, primary=True)
+    if navigation[2].button("Новый эксперимент на этих данных", type="primary"):
+        return_to_experiment(st.session_state)
+        st.rerun()
 
 
 def _navigation_button(
