@@ -1,33 +1,38 @@
-"""UI-only native local file picker for the Streamlit prototype."""
+"""Safe persistence for files selected through the Streamlit uploader."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from hashlib import sha256
+from pathlib import Path
 
 
-class NativeFilePickerUnavailable(RuntimeError):
-    """Raised when a native dialog cannot be opened in this runtime."""
+class UnsupportedLocalFileExtension(ValueError):
+    """Raised when the selected local file has a disallowed extension."""
 
 
-def choose_local_file(supported_extensions: Iterable[str]) -> str | None:
-    """Return a path selected on the Streamlit host machine, without uploading it.
-
-    Tk is imported lazily so a headless or non-Windows deployment can still use
-    the manual-path fallback without importing platform UI dependencies.
-    """
+def persist_uploaded_file(
+    file_name: str,
+    content: bytes,
+    supported_extensions: tuple[str, ...],
+    *,
+    upload_root: Path | None = None,
+) -> str:
+    """Persist an uploaded file under an ignored runtime directory."""
     extensions = tuple(sorted({extension.lower() for extension in supported_extensions}))
-    file_types = [("Поддерживаемые файлы", " ".join(f"*{extension}" for extension in extensions)), ("Все файлы", "*.*")]
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
+    safe_name = Path(file_name).name
+    suffix = Path(safe_name).suffix.lower()
+    if not safe_name or suffix not in extensions:
+        supported = ", ".join(extensions)
+        raise UnsupportedLocalFileExtension(
+            f"Неподдерживаемое расширение файла. Разрешены только: {supported}."
+        )
+    if not isinstance(content, bytes):
+        raise TypeError("Содержимое загруженного файла должно быть передано как bytes.")
 
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        try:
-            selected = filedialog.askopenfilename(title="Выберите файл данных", filetypes=file_types)
-        finally:
-            root.destroy()
-    except Exception as error:  # The UI must fall back cleanly on headless hosts.
-        raise NativeFilePickerUnavailable from error
-    return selected or None
+    root = upload_root or Path(__file__).resolve().parents[1] / ".streamlit-artifacts" / "uploads"
+    root.mkdir(parents=True, exist_ok=True)
+    content_hash = sha256(content).hexdigest()
+    target = root / f"{content_hash[:16]}-{safe_name}"
+    if not target.exists():
+        target.write_bytes(content)
+    return str(target.resolve())

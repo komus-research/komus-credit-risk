@@ -31,6 +31,10 @@ class SessionStateTests(unittest.TestCase):
         self.state = {}
         initialize(self.state)
 
+    def test_initialize_sets_last_successful_artifact_reference(self) -> None:
+        self.assertIn("last_successful_artifact_id", self.state)
+        self.assertIsNone(self.state["last_successful_artifact_id"])
+
     def test_dataset_switch_clears_all_downstream_current_state(self) -> None:
         first = SimpleNamespace(context_id="one", loaded_dataset=SimpleNamespace(contract="fingerprint-one"))
         second = SimpleNamespace(context_id="two", loaded_dataset=SimpleNamespace(contract="fingerprint-two"))
@@ -102,26 +106,30 @@ class SessionStateTests(unittest.TestCase):
 
     def test_wizard_navigation_rejects_an_unknown_step(self) -> None:
         with self.assertRaises(ValueError):
-            navigate_to_step(self.state, 5)
+            navigate_to_step(self.state, 7)
 
     def test_step_navigator_keeps_reached_destinations_available(self) -> None:
-        self.assertEqual(_available_wizard_steps(self.state), (True, False, False, False, False))
+        self.assertEqual(_available_wizard_steps(self.state), (True, False, False, False, False, False, False))
 
         self.state["dataset_context"] = object()
         navigate_to_step(self.state, 1)
-        self.assertEqual(_available_wizard_steps(self.state), (True, True, False, False, False))
+        self.assertEqual(_available_wizard_steps(self.state), (True, True, False, False, False, False, False))
 
         self.state["selected_feature_ids"] = ("Q_A1_norm",)
         navigate_to_step(self.state, 2)
-        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, False, False))
+        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, False, False, False, False))
 
         self.state["selected_model_id"] = "model"
         navigate_to_step(self.state, 3)
-        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, True, False))
+        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, True, False, False, False))
 
         self.state["loaded_artifact"] = object()
         navigate_to_step(self.state, 4)
-        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, True, True))
+        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, True, True, False, False))
+        navigate_to_step(self.state, 5)
+        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, True, True, True, False))
+        navigate_to_step(self.state, 6)
+        self.assertEqual(_available_wizard_steps(self.state), (True, True, True, True, True, True, True))
 
     def test_return_to_data_restores_prepared_source_controls_without_stale_reset(self) -> None:
         context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))

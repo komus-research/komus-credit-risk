@@ -15,8 +15,10 @@ from typing import Any
 
 import numpy as np
 
-from komus_risk.application import ExperimentApplicationService
-from komus_risk.artifacts import ExperimentArtifactStore
+from komus_risk.application.model_training import FinalModelTrainingService
+from komus_risk.application.service import ExperimentApplicationService
+from komus_risk.artifacts.model_store import ModelVersionStore
+from komus_risk.artifacts.store import ExperimentArtifactStore
 from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
 from komus_risk.data import LoadedDataset, ReadyDatasetAdapter
@@ -70,8 +72,8 @@ class DatasetSourcePreparation:
     def __post_init__(self) -> None:
         if self.preparation_status == "context_not_prepared" and self.context is not None:
             raise ValueError("Неподготовленный источник не может иметь dataset context.")
-        if self.preparation_status == "historical_context_prepared" and self.context is None:
-            raise ValueError("Подготовленный historical source должен иметь dataset context.")
+        if self.preparation_status in {"historical_context_prepared", "user_oof_context_prepared"} and self.context is None:
+            raise ValueError("Подготовленный источник должен иметь dataset context.")
 
     @property
     def is_prepared(self) -> bool:
@@ -82,6 +84,8 @@ class DatasetSourcePreparation:
 class PrototypeRuntime:
     planning_service: ExperimentPlanningService
     application_service: ExperimentApplicationService
+    model_training_service: FinalModelTrainingService
+    model_store: ModelVersionStore
     model_registry: ModelRegistry
     model_factories: Mapping[str, ModelAdapterFactory]
     supported_protocol: "SupportedProtocol"
@@ -132,7 +136,7 @@ SUPPORTED_PROTOCOL = SupportedProtocol(
 class LocalDatasetSourceResolver:
     """Resolve local physical files without inferring any dataset semantics."""
 
-    _FORMATS = {".csv": "csv", ".xlsx": "xlsx", ".xlsb": "xlsb", ".parquet": "parquet"}
+    _FORMATS = {".csv": "csv", ".xlsx": "xlsx", ".xlsb": "xlsb"}
 
     def __init__(self, repository_data_final_path: Path | None = None) -> None:
         self._repository_data_final_path = (
@@ -322,15 +326,23 @@ def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:
     for spec in (CATBOOST_MODEL_SPEC, XGBOOST_MODEL_SPEC, LIGHTGBM_MODEL_SPEC, GBDT_MEAN_MODEL_SPEC):
         registry.register(spec)
     store_root = Path(artifact_root) if artifact_root is not None else _repository_root() / ".streamlit-artifacts"
+    code_version = "streamlit-prototype-v1"
+    experiment_store = ExperimentArtifactStore(store_root)
+    model_store = ModelVersionStore(store_root, code_version=code_version)
     return PrototypeRuntime(
         ExperimentPlanningService(),
         ExperimentApplicationService(
             model_registry=registry,
             model_factories=factories,
-            artifact_store=ExperimentArtifactStore(store_root),
+            artifact_store=experiment_store,
             comparison_service=ExperimentComparisonService(),
-            code_version="streamlit-prototype-v1",
+            code_version=code_version,
         ),
+        FinalModelTrainingService(
+            experiment_store=experiment_store, model_store=model_store,
+            model_registry=registry, model_factories=factories, code_version=code_version,
+        ),
+        model_store,
         registry,
         factories,
         SUPPORTED_PROTOCOL,

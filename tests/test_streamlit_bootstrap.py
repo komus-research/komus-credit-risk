@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import ModuleType, SimpleNamespace
-import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -76,12 +75,15 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertEqual(explicit_source.source_kind, "explicit_local")
 
     def test_default_repository_source_is_permitted_for_historical_preparation(self) -> None:
-        source = LocalDatasetSourceResolver().resolve_repository_data_final()
-        context = SimpleNamespace(context_id="historical_data_final_v1")
-        provider = SimpleNamespace(prepare=Mock(return_value=context))
+        with TemporaryDirectory() as directory:
+            repository_path = Path(directory) / "Data_final.xlsb"
+            repository_path.write_bytes(b"accepted-copy")
+            source = LocalDatasetSourceResolver(repository_path).resolve_repository_data_final()
+            context = SimpleNamespace(context_id="historical_data_final_v1")
+            provider = SimpleNamespace(prepare=Mock(return_value=context))
 
-        with patch("app.bootstrap._sha256_file", return_value=bootstrap._ACCEPTED_DATASET_SHA256):
-            result = prepare_resolved_source(source, historical_provider=provider)
+            with patch("app.bootstrap._sha256_file", return_value=bootstrap._ACCEPTED_DATASET_SHA256):
+                result = prepare_resolved_source(source, historical_provider=provider)
 
         self.assertEqual(source.file_name, "Data_final.xlsb")
         self.assertEqual(result.preparation_status, "historical_context_prepared")
@@ -155,11 +157,12 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertFalse(result.is_prepared)
         self.assertIsNone(result.context)
 
-    def test_streamlit_module_uses_explicit_local_path_without_browser_upload(self) -> None:
+    def test_streamlit_module_uses_browser_upload_with_explicit_local_runtime_path(self) -> None:
         import app.streamlit_app as prototype
 
         source = Path(prototype.__file__).read_text(encoding="utf-8")
-        self.assertNotIn("st.file_uploader", source)
+        self.assertIn("st.file_uploader", source)
+        self.assertIn("persist_uploaded_file", source)
         self.assertIn("resolve_explicit_local_path", source)
         self.assertIn("preparation.is_prepared", source)
 
@@ -170,9 +173,11 @@ class StreamlitBootstrapTests(unittest.TestCase):
 
         self.assertIn('"accepted_historical": "Исторический набор данных"', source)
         self.assertIn('"Какие данные использовать?"', source)
-        self.assertIn('"Выбрать файл…"', source)
-        self.assertIn('"Указать путь вручную"', source)
-        self.assertIn('choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)', source)
+        self.assertIn('"Файл данных"', source)
+        self.assertNotIn('"Указать путь вручную"', source)
+        self.assertNotIn('"Путь к файлу"', source)
+        self.assertIn('_SUPPORTED_SOURCE_EXTENSIONS = (".csv", ".xlsx", ".xlsb")', source)
+        self.assertIn('type=[extension.removeprefix(".") for extension in _SUPPORTED_SOURCE_EXTENSIONS]', source)
         self.assertIn('st.expander("Технические сведения", expanded=False)', source)
         self.assertIn('"Данные готовы к эксперименту"', source)
         self.assertIn('"Продолжить к признакам →"', source)
@@ -183,7 +188,7 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertIn('columns[1].metric("Рабочая выборка"', source)
         self.assertIn('columns[2].metric("Защищённая контрольная выборка"', source)
         self.assertNotIn("st.subheader(source.display_name)", source)
-        self.assertNotIn("st.file_uploader", source)
+        self.assertIn("st.file_uploader", source)
 
     def test_wizard_navigation_uses_non_destructive_transitions(self) -> None:
         import app.streamlit_app as prototype
@@ -238,7 +243,9 @@ class StreamlitBootstrapTests(unittest.TestCase):
                 ("button", "● Признаки"), ("caption", "→"),
                 ("caption", "○ Модель"), ("caption", "→"),
                 ("caption", "○ Эксперимент"), ("caption", "→"),
-                ("caption", "○ Результат"),
+                ("caption", "○ Результат"), ("caption", "→"),
+                ("caption", "○ SHAP"), ("caption", "→"),
+                ("caption", "○ Прогноз"),
             ],
         )
         markup = "".join(streamlit.html_blocks)
@@ -478,24 +485,173 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertEqual(streamlit.buttons, [("Проверить повторно", {"type": "secondary", "disabled": False})])
         prepare.assert_called_once_with(source, progress_listener=unittest.mock.ANY)
 
-    def test_native_picker_returns_the_host_selected_path_without_browser_upload(self) -> None:
-        from app.local_file_picker import choose_local_file
+    def test_browser_upload_is_persisted_under_runtime_storage(self) -> None:
+        from app.local_file_picker import persist_uploaded_file
 
-        selected_path = r"C:\data\client_dataset.xlsx"
-        fake_root = Mock()
-        fake_dialog = ModuleType("tkinter.filedialog")
-        fake_dialog.askopenfilename = Mock(return_value=selected_path)
-        fake_tk = ModuleType("tkinter")
-        fake_tk.Tk = Mock(return_value=fake_root)
-        fake_tk.filedialog = fake_dialog
+        with TemporaryDirectory() as directory:
+            result = Path(
+                persist_uploaded_file(
+                    "client_dataset.csv",
+                    b"target,feature\n0,1\n",
+                    (".csv", ".xlsb"),
+                    upload_root=Path(directory),
+                )
+            )
 
-        with patch.dict(sys.modules, {"tkinter": fake_tk, "tkinter.filedialog": fake_dialog}):
-            result = choose_local_file((".xlsx", ".xlsb"))
+            self.assertTrue(result.is_file())
+            self.assertEqual(result.read_bytes(), b"target,feature\n0,1\n")
+            self.assertTrue(result.name.endswith("-client_dataset.csv"))
 
-        self.assertEqual(result, selected_path)
-        fake_dialog.askopenfilename.assert_called_once()
-        fake_root.withdraw.assert_called_once()
-        fake_root.destroy.assert_called_once()
+    def test_browser_upload_rejects_an_unsupported_selected_extension(self) -> None:
+        from app.local_file_picker import UnsupportedLocalFileExtension, persist_uploaded_file
+
+        with TemporaryDirectory() as directory:
+            with self.assertRaises(UnsupportedLocalFileExtension):
+                persist_uploaded_file(
+                    "client_dataset.txt",
+                    b"fixture",
+                    (".csv", ".xlsx", ".xlsb"),
+                    upload_root=Path(directory),
+                )
+
+    def test_upload_history_reuses_only_unchanged_checked_files(self) -> None:
+        import app.streamlit_app as prototype
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "sample.csv"
+            path.write_bytes(b"a,b\n1,2\n")
+            state = {
+                prototype._UPLOAD_HISTORY_KEY: [{"name": "sample.csv", "path": str(path), "size": path.stat().st_size}],
+            }
+            source = SimpleNamespace(source_kind="explicit_local", local_runtime_path=path)
+            preparation = SimpleNamespace(source=source, context=None, preparation_status="context_not_prepared")
+
+            prototype._commit_source_preparation(state, ("explicit_local", str(path)), preparation)
+            self.assertIs(prototype._cached_source_preparation(state, source), preparation)
+
+            path.write_bytes(b"a,b\n3,4,5\n")
+            self.assertIsNone(prototype._cached_source_preparation(state, source))
+
+    def test_history_selection_accepts_only_existing_session_upload(self) -> None:
+        import app.streamlit_app as prototype
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "sample.csv"
+            path.write_bytes(b"a\n1\n")
+            streamlit = SimpleNamespace(session_state={
+                prototype._UPLOAD_HISTORY_KEY: [{"name": "sample.csv", "path": str(path), "size": 4}],
+            })
+            with patch.object(prototype, "st", streamlit):
+                prototype._select_uploaded_from_history(str(path))
+                self.assertEqual(streamlit.session_state[prototype._SELECTED_LOCAL_FILE_PATH_KEY], str(path))
+                self.assertEqual(streamlit.session_state[prototype._LOCAL_FILE_UPLOADER_REVISION_KEY], 1)
+                prototype._select_uploaded_from_history(str(Path(directory) / "unknown.csv"))
+                self.assertEqual(streamlit.session_state[prototype._SELECTED_LOCAL_FILE_PATH_KEY], str(path))
+
+    def test_upload_is_processed_on_widget_change_and_recorded_once(self) -> None:
+        import app.streamlit_app as prototype
+
+        upload = SimpleNamespace(name="data.csv", size=5, getvalue=Mock(return_value=b"a\n1\n"))
+        streamlit = SimpleNamespace(session_state={"upload_widget": upload})
+        with (
+            patch.object(prototype, "st", streamlit),
+            patch.object(prototype, "persist_uploaded_file", return_value="stored.csv") as persist,
+        ):
+            prototype._on_local_file_uploaded("upload_widget")
+
+        persist.assert_called_once()
+        upload.getvalue.assert_called_once()
+        self.assertEqual(streamlit.session_state[prototype._UPLOAD_HISTORY_KEY][0]["name"], "data.csv")
+        self.assertFalse(streamlit.session_state[prototype._UPLOAD_HISTORY_VISIBLE_KEY])
+
+    def test_upload_with_history_token_is_saved_for_page_reload(self) -> None:
+        import app.streamlit_app as prototype
+
+        upload = SimpleNamespace(name="data.csv", size=4, getvalue=Mock(return_value=b"a\n1\n"))
+        state = {"upload_widget": upload, prototype._UPLOAD_HISTORY_TOKEN_KEY: "a" * 48}
+        streamlit = SimpleNamespace(session_state=state)
+        with (
+            patch.object(prototype, "st", streamlit),
+            patch.object(prototype, "persist_uploaded_file", return_value="stored.csv"),
+            patch.object(prototype, "save_upload_history") as save_history,
+        ):
+            prototype._on_local_file_uploaded("upload_widget")
+
+        save_history.assert_called_once_with("a" * 48, state[prototype._UPLOAD_HISTORY_KEY])
+        self.assertFalse(state[prototype._UPLOAD_HISTORY_VISIBLE_KEY])
+
+    def test_upload_history_appears_only_after_advancing_to_features(self) -> None:
+        import app.streamlit_app as prototype
+
+        class SessionState(dict):
+            def __getattr__(self, key: str):
+                return self[key]
+
+        state = SessionState({
+            "dataset_source_preparation": None,
+            prototype._SOURCE_KIND_WIDGET_KEY: "explicit_local",
+            prototype._SELECTED_LOCAL_FILE_PATH_KEY: "",
+            prototype._UPLOAD_HISTORY_KEY: [{"name": "data.csv", "path": "stored.csv", "size": 5}],
+            prototype._UPLOAD_HISTORY_VISIBLE_KEY: False,
+        })
+        streamlit = SimpleNamespace(
+            session_state=state,
+            subheader=Mock(),
+            write=Mock(),
+            caption=Mock(),
+            selectbox=Mock(return_value="stored.csv"),
+            button=Mock(return_value=False),
+            file_uploader=Mock(),
+        )
+        with patch.object(prototype, "st", streamlit):
+            prototype._render_local_source_controls()
+            streamlit.selectbox.assert_not_called()
+
+            state[prototype._SELECTED_LOCAL_FILE_PATH_KEY] = "stored.csv"
+            prototype._reveal_upload_history()
+            prototype._render_local_source_controls()
+            streamlit.selectbox.assert_called_once()
+            self.assertEqual(streamlit.selectbox.call_args.args[0], "Недавно загруженные файлы")
+            self.assertIn("История сохраняется", streamlit.selectbox.call_args.kwargs["help"])
+
+    def test_unprepared_source_shows_cached_header_preview_without_ml_context(self) -> None:
+        import app.streamlit_app as prototype
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "new.csv"
+            path.write_text("INN,DefMark,A1_norm\n1,0,0.5\n", encoding="utf-8")
+            streamlit = SimpleNamespace(
+                session_state={}, subheader=Mock(), caption=Mock(), dataframe=Mock(), warning=Mock(),
+            )
+            source = SimpleNamespace(local_runtime_path=path)
+            with (
+                patch.object(prototype, "st", streamlit),
+                patch.object(prototype.TabularReader, "preview_columns", return_value=("INN", "DefMark", "A1_norm")) as preview,
+            ):
+                prototype._render_source_columns(source)
+                prototype._render_source_columns(source)
+
+                path.write_text("INN,DefMark,A1_norm,B2_norm\n1,0,0.5,0.7\n", encoding="utf-8")
+                prototype._render_source_columns(source)
+
+            self.assertEqual(preview.call_count, 2)
+            self.assertEqual(streamlit.dataframe.call_count, 3)
+            self.assertEqual(len(streamlit.dataframe.call_args.args[0]), 3)
+
+    def test_local_source_resolver_allows_csv_xlsx_and_xlsb(self) -> None:
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for file_name, expected_format in (("data.csv", "csv"), ("data.xlsx", "xlsx"), ("data.xlsb", "xlsb")):
+                path = root / file_name
+                path.write_bytes(b"fixture")
+                with self.subTest(file_name=file_name):
+                    self.assertEqual(LocalDatasetSourceResolver().resolve_explicit_local_path(path).physical_format, expected_format)
+            for file_name in ("data.parquet", "data.txt"):
+                path = root / file_name
+                path.write_bytes(b"fixture")
+                with self.subTest(file_name=file_name):
+                    with self.assertRaisesRegex(ValueError, "Неподдерживаемое расширение"):
+                        LocalDatasetSourceResolver().resolve_explicit_local_path(path)
 
     def test_supported_protocol_is_defined_once_in_composition(self) -> None:
         protocol = bootstrap.SUPPORTED_PROTOCOL

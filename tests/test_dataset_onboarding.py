@@ -85,6 +85,30 @@ class DatasetOnboardingTests(unittest.TestCase):
                 TabularReader().read(Path(directory) / "missing.csv")
             self.assertEqual("file_not_found", error.exception.code)
 
+    def test_header_preview_reads_only_columns_and_rejects_ambiguous_names(self) -> None:
+        with TemporaryDirectory() as directory:
+            source = Path(directory) / "source.csv"
+            source.write_text("INN,DefMark,A1_norm\n1,0,0.5\n", encoding="utf-8")
+            with patch("komus_risk.data.tabular.pd.read_csv") as read_csv:
+                self.assertEqual(("INN", "DefMark", "A1_norm"), TabularReader().preview_columns(source))
+            read_csv.assert_not_called()
+
+            source.write_text("INN,A1_norm,A1_norm\n1,0.5,0.7\n", encoding="utf-8")
+            with self.assertRaises(TabularReadError) as error:
+                TabularReader().preview_columns(source)
+            self.assertEqual("duplicate_headers", error.exception.code)
+
+            source.write_text("INN,,A1_norm\n1,0,0.5\n", encoding="utf-8")
+            with self.assertRaises(TabularReadError) as error:
+                TabularReader().preview_columns(source)
+            self.assertEqual("invalid_headers", error.exception.code)
+
+            binary_source = Path(directory) / "source.xlsb"
+            binary_source.write_bytes(b"fixture")
+            with patch.object(TabularReader, "_validate_headers", return_value=("INN", "A1_norm")) as headers:
+                self.assertEqual(("INN", "A1_norm"), TabularReader().preview_columns(binary_source))
+            self.assertEqual(headers.call_args.args[1], "xlsb")
+
     def test_target_with_missing_keeps_target_role(self) -> None:
         frame = pd.DataFrame({"event_flag": [0, 1] * 9 + [None, None], "amount": list(range(20))})
         proposal = self.analyzer.analyze(self._report(frame))
@@ -202,6 +226,7 @@ class DatasetOnboardingTests(unittest.TestCase):
             frame = pd.DataFrame({"a": [1], "b": [2]})
             xlsx = root / "data.xlsx"
             frame.to_excel(xlsx, index=False)
+            self.assertEqual(("a", "b"), TabularReader().preview_columns(xlsx))
             self.assertEqual("xlsx", TabularReader().read(xlsx).source_format)
             with self.assertRaises(TabularReadError) as error:
                 TabularReader().read(xlsx, sheet_name="absent")

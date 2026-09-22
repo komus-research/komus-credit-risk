@@ -20,6 +20,7 @@ _DEFAULTS = {
     "experiment_plan": None,
     "loaded_artifact": None,
     "comparison_result": None,
+    "selected_model_version_id": None,
     "last_successful_artifact_id": None,
     "context_revision": 0,
     "highest_reached_step": 0,
@@ -40,7 +41,7 @@ def initialize(state: MutableMapping[str, Any]) -> None:
 
 def navigate_to_step(state: MutableMapping[str, Any], step: int) -> None:
     """Move through the wizard without changing any scientific or session state."""
-    if step not in range(5):
+    if step not in range(7):
         raise ValueError("Неизвестный шаг мастера.")
     state["current_step"] = step
     state["highest_reached_step"] = max(int(state.get("highest_reached_step", 0)), step)
