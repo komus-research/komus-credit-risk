@@ -69,6 +69,7 @@ _MANUAL_LOCAL_FILE_PATH_KEY = "prototype_manual_local_file_path"
 _SOURCE_ERROR_KEY = "prototype_source_error"
 _SOURCE_RECHECK_INVALID_KEY = "prototype_source_recheck_invalid"
 _PREPARATION_DRAFT_KEY = "dataset_preparation_draft"
+_PREPARATION_STEP_KEY = "dataset_preparation_step"
 _STALE_PREPARATION_ERROR_CODES = frozenset({
     "STALE_SNAPSHOT",
     "REPORT_IDENTITY_MISMATCH",
@@ -76,6 +77,7 @@ _STALE_PREPARATION_ERROR_CODES = frozenset({
     "CONFIRMATION_IDENTITY_MISMATCH",
 })
 _SUPPORTED_SOURCE_EXTENSIONS = tuple(LocalDatasetSourceResolver._FORMATS)
+_DATASET_ONBOARDING_STEPS = ("Файл", "Цель", "Идентификатор", "Признаки", "Оценка", "Проверка")
 _STEP_NAVIGATION_LABELS = ("Данные", "Признаки", "Модель", "Эксперимент", "Результат")
 _STEP_NAVIGATION_CONTAINER_KEY = "step-navigator"
 
@@ -142,31 +144,29 @@ def _run_with_progress(
 
 
 def _render_data_step() -> None:
-    st.header("1. Данные")
-    st.write("Выберите данные, с которыми будет работать эксперимент.")
-    _restore_source_controls(st.session_state)
-    source_kind = st.radio(
-        "Какие данные использовать?",
-        ("accepted_historical", "explicit_local"),
-        format_func=lambda value: {
-            "accepted_historical": "Исторический набор данных",
-            "explicit_local": "Другой локальный файл",
-        }[value],
-        horizontal=True,
-        key=_SOURCE_KIND_WIDGET_KEY,
-    )
-    explicit_local_path = ""
-    if source_kind == "explicit_local":
-        explicit_local_path = _render_local_source_controls()
-    draft_locator = _source_control_locator(source_kind, explicit_local_path)
-    _synchronize_source_selection(st.session_state, draft_locator)
-    _render_source_check_action(source_kind, explicit_local_path, draft_locator)
+    st.header("Подготовка набора данных")
+    st.caption("Файл → Цель → Идентификатор → Признаки → Оценка → Проверка")
     preparation = st.session_state.dataset_source_preparation
+    if preparation is not None and preparation.is_prepared and getattr(preparation, "preparation_status", None) == "historical_context_prepared":
+        _render_prepared_source(preparation)
+        _navigation_button(st, "Продолжить к признакам →", 1, primary=True)
+        return
+    if preparation is None or st.session_state.get(_SOURCE_RECHECK_INVALID_KEY):
+        _restore_source_controls(st.session_state)
+        source_kind = "explicit_local"
+        explicit_local_path = _render_local_source_controls()
+        draft_locator = _source_control_locator(source_kind, explicit_local_path)
+        _synchronize_source_selection(st.session_state, draft_locator)
+        _render_source_check_action(source_kind, explicit_local_path, draft_locator)
+        preparation = st.session_state.dataset_source_preparation
+    else:
+        source_kind = "explicit_local"
+        explicit_local_path = ""
     is_display_ready = bool(preparation and preparation.is_prepared and not st.session_state.get(_SOURCE_RECHECK_INVALID_KEY))
     if preparation is None or (preparation.is_prepared and not is_display_ready):
         _render_unchecked_source(source_kind, explicit_local_path)
     elif not preparation.is_prepared and getattr(preparation, "snapshot", None) is not None:
-        _render_preparation_confirmation(preparation)
+        _render_dataset_onboarding(preparation)
     elif not preparation.is_prepared:
         source = preparation.source
         st.success("Источник успешно проверен")
@@ -182,6 +182,7 @@ def _render_data_step() -> None:
                 editable = reopen_dataset_preparation(preparation)
                 set_dataset_source_preparation(st.session_state, editable)
                 st.session_state[_PREPARATION_DRAFT_KEY] = default_preparation_draft(editable)
+                st.session_state[_PREPARATION_STEP_KEY] = 1
                 st.rerun()
 
     ready_to_continue = is_display_ready
@@ -198,8 +199,8 @@ def _render_data_step() -> None:
 
 def _render_local_source_controls() -> str:
     """Render local-source selection without showing a host filesystem path."""
-    st.subheader("Другой локальный файл")
-    st.write("Выберите файл, который хотите проверить.")
+    st.subheader("1. Файл")
+    st.write("Загрузите файл, который хотите подготовить для эксперимента.")
     st.caption("Новый файл не становится автоматически готовым к эксперименту.")
     if st.button("Выбрать файл…", type="primary"):
         try:
@@ -214,7 +215,7 @@ def _render_local_source_controls() -> str:
 
     selected_path = st.session_state.get(_SELECTED_LOCAL_FILE_PATH_KEY, "")
     manual_path = ""
-    with st.expander("Указать путь вручную", expanded=False):
+    with st.expander("Указать расположение файла вручную", expanded=False):
         manual_path = st.text_input(
             "Путь к файлу",
             key=_MANUAL_LOCAL_FILE_PATH_KEY,
@@ -316,12 +317,7 @@ def _render_source_error() -> None:
 
 
 def _render_unchecked_source(source_kind: str, explicit_local_path: str) -> None:
-    if source_kind == "accepted_historical":
-        st.subheader("Исторический набор данных")
-        st.write("Data_final.xlsb")
-        st.caption("Подготовленный исторический набор для воспроизводимых экспериментов.")
-        st.write("**Статус:** требуется проверка")
-    elif not explicit_local_path:
+    if not explicit_local_path:
         st.info("Выберите файл, затем проверьте источник.")
 
 
@@ -366,50 +362,90 @@ def _render_prepared_source(preparation: Any) -> None:
         })
 
 
-def _render_preparation_confirmation(preparation: Any) -> None:
-    """Render the explicit human confirmation required for an arbitrary source."""
+def _render_dataset_onboarding(preparation: Any) -> None:
+    """Render one explicit confirmation decision at a time for a checked source."""
     snapshot = preparation.snapshot
     report = preparation.inspection_report
-    proposal = preparation.proposal
+    state = st.session_state
+    draft = _onboarding_draft(preparation)
+    step = min(max(int(state.get(_PREPARATION_STEP_KEY, 0)), 0), len(_DATASET_ONBOARDING_STEPS) - 1)
+    state[_PREPARATION_STEP_KEY] = step
+    _render_completed_onboarding_steps(preparation, draft, step)
+
+    if step == 0:
+        _render_file_onboarding_step(preparation)
+    elif step == 1:
+        _render_target_onboarding_step(preparation, draft, report)
+    elif step == 2:
+        _render_identifier_onboarding_step(preparation, draft)
+    elif step == 3:
+        _render_feature_onboarding_step(preparation, draft)
+    elif step == 4:
+        _render_evaluation_onboarding_step(preparation, draft)
+    else:
+        _render_review_onboarding_step(preparation, draft)
+
+
+def _onboarding_draft(preparation: Any) -> dict[str, Any]:
+    """Keep proposal defaults internal until the person explicitly confirms each choice."""
     state = st.session_state
     draft = state.get(_PREPARATION_DRAFT_KEY)
+    snapshot = preparation.snapshot
     if not isinstance(draft, dict) or draft.get("snapshot_fingerprint") != snapshot.fingerprint:
         draft = default_preparation_draft(preparation)
         state[_PREPARATION_DRAFT_KEY] = draft
+    return draft
 
-    st.success("Источник успешно проверен")
-    st.subheader("Подготовка набора данных")
+
+def _render_completed_onboarding_steps(preparation: Any, draft: Mapping[str, Any], active_step: int) -> None:
+    """Show previous decisions as compact summaries, never as duplicate forms."""
+    summaries = (
+        f"{preparation.source.file_name} — {preparation.snapshot.row_count:,} строк, {preparation.snapshot.column_count:,} столбцов",
+        str(draft.get("target_column") or "не выбрана"),
+        str(draft.get("identifier_column") or "не выбран"),
+        _feature_summary(draft),
+        "Подтверждена OOF-оценка на всех строках",
+    )
+    for step in range(active_step):
+        left, right = st.columns((5, 1))
+        left.write(f"✓ {_DATASET_ONBOARDING_STEPS[step]}: {summaries[step]}")
+        if right.button("Изменить", key=f"dataset-preparation-edit-{step}"):
+            st.session_state[_PREPARATION_STEP_KEY] = step
+            st.rerun()
+
+
+def _render_file_onboarding_step(preparation: Any) -> None:
+    st.subheader("1. Файл")
+    st.success("Файл успешно проверен")
     summary = st.columns(2)
-    summary[0].metric("Строки", f"{snapshot.row_count:,}")
-    summary[1].metric("Колонки", f"{snapshot.column_count:,}")
+    summary[0].metric("Строки", f"{preparation.snapshot.row_count:,}")
+    summary[1].metric("Столбцы", f"{preparation.snapshot.column_count:,}")
     st.write(f"Файл: {preparation.source.file_name}")
-    for warning in proposal.warnings:
-        text = " ".join(warning.reasons_ru) or warning.code
-        (st.warning if warning.severity.value == "WARNING" else st.info)(text)
+    _render_aggregated_warnings(preparation.proposal.warnings)
+    if st.button("Изменить файл", type="secondary"):
+        _clear_local_file_selection()
+        st.session_state[_SOURCE_CONTROL_LOCATOR_KEY] = ("explicit_local", "")
+        set_dataset_source_preparation(st.session_state, None)
+        st.rerun()
+    _onboarding_next_button("Продолжить к выбору цели →", 1)
 
+
+def _render_target_onboarding_step(preparation: Any, draft: MutableMapping[str, Any], report: Any) -> None:
+    snapshot = preparation.snapshot
+    state = st.session_state
+    st.subheader("2. Цель")
+    st.write("Что модель должна предсказывать?")
+    st.caption("Анализ может подсказать варианты, но выбор подтверждаете вы.")
     headers = list(snapshot.physical_headers)
     placeholder = "— выберите —"
     form_revision = int(state.get("context_revision", 0))
     target_key = _preparation_form_key(form_revision, snapshot.fingerprint, "target")
-    identifier_key = _preparation_form_key(form_revision, snapshot.fingerprint, "identifier")
-    name_key = _preparation_form_key(form_revision, snapshot.fingerprint, "name")
     if target_key not in state:
-        state[target_key] = draft.get("target_column") if draft.get("target_column") in headers else placeholder
-    if identifier_key not in state:
-        state[identifier_key] = draft.get("identifier_column") if draft.get("identifier_column") in headers else placeholder
-    if name_key not in state:
-        state[name_key] = draft.get("dataset_name", preparation.source.file_name)
+        confirmed = getattr(preparation, "confirmation", None)
+        state[target_key] = getattr(confirmed, "target_column", placeholder) if confirmed else placeholder
     target = st.selectbox("Целевая колонка", [placeholder, *headers], key=target_key)
-    identifier = st.selectbox("Колонка-идентификатор", [placeholder, *headers], key=identifier_key)
-    dataset_name = st.text_input("Название набора данных", key=name_key)
-
-    target_values = []
-    if target != placeholder:
-        target_values = [item.value for item in next(
-            (column for column in report.columns if column.column_name == target),
-            report.columns[0],
-        ).value_counts or ()]
-    positive_placeholder = "— выберите положительный класс —"
+    target_values = _target_values(report, target)
+    positive_placeholder = "— выберите положительное событие —"
     positive_key = _bind_positive_class_to_target(
         state,
         form_revision=form_revision,
@@ -417,84 +453,164 @@ def _render_preparation_confirmation(preparation: Any) -> None:
         target=target,
         target_values=target_values,
         placeholder=positive_placeholder,
-        initial_target=draft.get("target_column"),
-        initial_positive_class=draft.get("positive_class"),
+        initial_target=getattr(getattr(preparation, "confirmation", None), "target_column", None),
+        initial_positive_class=getattr(getattr(preparation, "confirmation", None), "positive_class", None),
     )
     positive = st.selectbox(
-        "Положительный класс", [positive_placeholder, *target_values], key=positive_key,
-        format_func=lambda value: value if isinstance(value, str) else repr(value),
-        disabled=not target_values,
+        "Какое значение считать положительным событием?",
+        [positive_placeholder, *target_values], key=positive_key,
+        format_func=lambda value: value if isinstance(value, str) else repr(value), disabled=not target_values,
     )
+    if st.button("Продолжить к идентификатору →", type="primary", disabled=target == placeholder or positive == positive_placeholder):
+        draft["target_column"] = target
+        draft["positive_class"] = positive
+        _onboarding_go_to(2)
 
-    st.caption("Предложения анализатора заполняют черновик и не являются подтверждением.")
-    roles = {item.column_name: item for item in proposal.column_roles}
+
+def _render_identifier_onboarding_step(preparation: Any, draft: MutableMapping[str, Any]) -> None:
+    snapshot = preparation.snapshot
+    state = st.session_state
+    st.subheader("3. Идентификатор")
+    st.write("Какой столбец идентифицирует объект?")
+    st.caption("Например: ИНН, ID клиента или номер договора. Этот столбец не используется моделью как признак.")
+    placeholder = "— выберите —"
+    form_revision = int(state.get("context_revision", 0))
+    identifier_key = _preparation_form_key(form_revision, snapshot.fingerprint, "identifier")
+    if identifier_key not in state:
+        confirmed = getattr(preparation, "confirmation", None)
+        state[identifier_key] = getattr(confirmed, "identifier_column", placeholder) if confirmed else placeholder
+    identifier = st.selectbox("Колонка-идентификатор", [placeholder, *snapshot.physical_headers], key=identifier_key)
+    if st.button("Продолжить к признакам →", type="primary", disabled=identifier == placeholder):
+        draft["identifier_column"] = identifier
+        _onboarding_go_to(3)
+
+
+def _render_feature_onboarding_step(preparation: Any, draft: MutableMapping[str, Any]) -> None:
+    snapshot = preparation.snapshot
+    state = st.session_state
+    st.subheader("4. Признаки")
+    st.caption("Выберите, какие столбцы использовать в модели, оставить для анализа или исключить.")
+    target = str(draft.get("target_column") or "")
+    identifier = str(draft.get("identifier_column") or "")
+    form_revision = int(state.get("context_revision", 0))
+    status_options = {
+        "Использовать в модели": "MODEL_ALLOWED",
+        "Оставить только для анализа": "DIAGNOSTIC_ONLY",
+        "Не использовать": "BLOCKED",
+    }
+    labels_by_status = {value: label for label, value in status_options.items()}
     statuses: dict[str, str] = {}
     reasons: dict[str, str] = {}
-    status_options = ("MODEL_ALLOWED", "DIAGNOSTIC_ONLY", "BLOCKED")
-    for name in headers:
+    for name in snapshot.physical_headers:
         if name in {target, identifier}:
             continue
         key = _preparation_form_key(form_revision, snapshot.fingerprint, "status", name)
         default = draft["column_statuses"].get(name, "DIAGNOSTIC_ONLY")
-        if default not in status_options:
-            default = "DIAGNOSTIC_ONLY"
         if key not in state:
-            state[key] = default
-        role = roles.get(name)
-        label = name if role is None else f"{name} · {role.role.value} / {role.predictor_eligibility.value}"
-        statuses[name] = st.selectbox(label, status_options, key=key)
+            state[key] = labels_by_status.get(default, "Оставить только для анализа")
+        elif state[key] not in status_options:
+            # The previous one-page form stored internal values under these keys.
+            state[key] = labels_by_status.get(state[key], "Оставить только для анализа")
+        selected = st.selectbox(name, tuple(status_options), key=key)
+        statuses[name] = status_options[selected]
         if statuses[name] == "BLOCKED":
             reason_key = _preparation_form_key(form_revision, snapshot.fingerprint, "blocked_reason", name)
             if reason_key not in state:
                 state[reason_key] = draft["blocked_reasons"].get(name, "")
-            reasons[name] = st.text_input(f"Причина исключения: {name}", key=reason_key)
+            reasons[name] = st.text_input(f"Почему не использовать «{name}" + "»?", key=reason_key)
+    if st.button("Продолжить к оценке →", type="primary"):
+        draft["column_statuses"] = statuses
+        draft["blocked_reasons"] = reasons
+        _onboarding_go_to(4)
 
-    st.info(
-        "Использовать все строки этого набора для OOF-оценки. "
-        "Защищённая финальная тестовая выборка автоматически не создаётся."
-    )
-    acknowledgement_key = _preparation_form_key(form_revision, snapshot.fingerprint, "population_acknowledged")
-    if acknowledgement_key not in state:
-        state[acknowledgement_key] = bool(draft.get("population_policy_acknowledged", False))
-    population_policy_acknowledged = st.checkbox(
-        "Подтверждаю использование всей популяции для OOF-оценки без защищённой финальной тестовой выборки.",
-        key=acknowledgement_key,
-    )
-    if st.button("Подтвердить подготовку", type="primary"):
-        explicit_draft = {
-            "snapshot_fingerprint": snapshot.fingerprint,
-            "dataset_name": dataset_name,
-            "target_column": "" if target == placeholder else target,
-            "positive_class": None if positive == positive_placeholder else positive,
-            "identifier_column": "" if identifier == placeholder else identifier,
-            "column_statuses": statuses,
-            "blocked_reasons": reasons,
-            "population_policy": "FULL_OOF_NO_PROTECTED_FINAL_TEST",
-            "population_policy_acknowledged": population_policy_acknowledged,
-        }
-        state[_PREPARATION_DRAFT_KEY] = explicit_draft
-        try:
-            confirmed = _run_with_progress(
-                _DATA_PROGRESS_LABELS,
-                lambda listener: confirm_dataset_preparation(
-                    preparation, explicit_draft, progress_listener=listener,
-                ),
-                initial_label="Подтверждаем подготовку…",
-                completion_label="Подготовка набора данных завершена",
-            )
-        except DatasetPreparationError as error:
-            if error.code in _STALE_PREPARATION_ERROR_CODES:
-                _invalidate_stale_preparation(state)
-                st.error("Файл или результаты анализа изменились. Выполните проверку источника заново.")
-            else:
-                _render_dataset_preparation_error(error)
-        except ValueError as error:
-            st.error("Не удалось подтвердить подготовку данных.")
-            with st.expander("Технические сведения", expanded=False):
-                st.code(str(error))
+
+def _render_evaluation_onboarding_step(preparation: Any, draft: MutableMapping[str, Any]) -> None:
+    state = st.session_state
+    st.subheader("5. Оценка")
+    st.info("Все строки будут использоваться для OOF-оценки модели. Отдельная финальная тестовая выборка автоматически создана не будет.")
+    key = _preparation_form_key(int(state.get("context_revision", 0)), preparation.snapshot.fingerprint, "population_acknowledged")
+    if key not in state:
+        state[key] = bool(draft.get("population_policy_acknowledged", False))
+    acknowledged = st.checkbox("Подтверждаю это условие оценки.", key=key)
+    if st.button("Продолжить к проверке →", type="primary", disabled=not acknowledged):
+        draft["population_policy_acknowledged"] = acknowledged
+        _onboarding_go_to(5)
+
+
+def _render_review_onboarding_step(preparation: Any, draft: Mapping[str, Any]) -> None:
+    st.subheader("6. Проверка")
+    statuses = dict(draft.get("column_statuses") or {})
+    st.write(f"Файл: {preparation.source.file_name}")
+    st.write(f"Цель: {draft.get('target_column') or 'не выбрана'}")
+    st.write(f"Положительное событие: {draft.get('positive_class')!r}")
+    st.write(f"Идентификатор: {draft.get('identifier_column') or 'не выбран'}")
+    st.write(f"Признаки модели: {sum(value == 'MODEL_ALLOWED' for value in statuses.values())}")
+    st.write(f"Только для анализа: {sum(value == 'DIAGNOSTIC_ONLY' for value in statuses.values())}")
+    st.write(f"Исключены: {sum(value == 'BLOCKED' for value in statuses.values())}")
+    st.write("Оценка: OOF на всех строках без отдельной финальной тестовой выборки")
+    if st.button("Подтвердить и продолжить", type="primary"):
+        _confirm_dataset_onboarding(preparation, draft)
+
+
+def _target_values(report: Any, target: str) -> list[Any]:
+    if not target:
+        return []
+    column = next((item for item in report.columns if item.column_name == target), None)
+    return [item.value for item in (column.value_counts if column is not None else ()) or ()]
+
+
+def _feature_summary(draft: Mapping[str, Any]) -> str:
+    statuses = dict(draft.get("column_statuses") or {})
+    return f"в модели: {sum(value == 'MODEL_ALLOWED' for value in statuses.values())}"
+
+
+def _render_aggregated_warnings(warnings: Any) -> None:
+    counts: dict[str, int] = {}
+    for warning in warnings:
+        text = " ".join(warning.reasons_ru) or "Найдена особенность данных, требующая проверки."
+        counts[text] = counts.get(text, 0) + 1
+    for text, count in counts.items():
+        prefix = f"Найдено {count}: " if count > 1 else ""
+        st.warning(f"{prefix}{text}")
+
+
+def _onboarding_next_button(label: str, target_step: int) -> None:
+    if st.button(label, type="primary"):
+        _onboarding_go_to(target_step)
+
+
+def _onboarding_go_to(step: int) -> None:
+    st.session_state[_PREPARATION_STEP_KEY] = step
+    st.rerun()
+
+
+def _confirm_dataset_onboarding(preparation: Any, draft: Mapping[str, Any]) -> None:
+    state = st.session_state
+    explicit_draft = dict(draft)
+    explicit_draft["snapshot_fingerprint"] = preparation.snapshot.fingerprint
+    explicit_draft["population_policy"] = "FULL_OOF_NO_PROTECTED_FINAL_TEST"
+    state[_PREPARATION_DRAFT_KEY] = explicit_draft
+    try:
+        confirmed = _run_with_progress(
+            _DATA_PROGRESS_LABELS,
+            lambda listener: confirm_dataset_preparation(preparation, explicit_draft, progress_listener=listener),
+            initial_label="Подтверждаем подготовку…", completion_label="Подготовка набора данных завершена",
+        )
+    except DatasetPreparationError as error:
+        if error.code in _STALE_PREPARATION_ERROR_CODES:
+            _invalidate_stale_preparation(state)
+            st.error("Файл или результаты анализа изменились. Выполните проверку источника заново.")
         else:
-            _commit_source_preparation(state, state.get(_SOURCE_CONTROL_LOCATOR_KEY, ("", "")), confirmed)
-            st.rerun()
+            _render_dataset_preparation_error(error)
+    except ValueError as error:
+        st.error("Не удалось подтвердить подготовку данных.")
+        with st.expander("Технические сведения", expanded=False):
+            st.code(str(error))
+    else:
+        _commit_source_preparation(state, state.get(_SOURCE_CONTROL_LOCATOR_KEY, ("", "")), confirmed)
+        state[_PREPARATION_STEP_KEY] = 5
+        navigate_to_step(state, 1)
+        st.rerun()
 
 
 def _bind_positive_class_to_target(
