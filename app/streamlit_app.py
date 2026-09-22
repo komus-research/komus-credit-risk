@@ -38,7 +38,7 @@ from komus_risk.preparation import DatasetPreparationError
 
 
 _DATA_PROGRESS_LABELS = {
-    "reading_source": "Чтение источника",
+    "reading_source": "Чтение файла",
     "inspecting_dataset": "Проверка структуры и значений набора данных",
     "analyzing_preparation": "Анализ вариантов подготовки",
     "validating_confirmation": "Проверка подтверждённой подготовки",
@@ -149,6 +149,7 @@ def _render_data_step() -> None:
     preparation = st.session_state.dataset_source_preparation
     if preparation is not None and preparation.is_prepared and getattr(preparation, "preparation_status", None) == "historical_context_prepared":
         _render_prepared_source(preparation)
+        _render_change_file_action()
         _navigation_button(st, "Продолжить к признакам →", 1, primary=True)
         return
     if preparation is None or st.session_state.get(_SOURCE_RECHECK_INVALID_KEY):
@@ -169,7 +170,7 @@ def _render_data_step() -> None:
         _render_dataset_onboarding(preparation)
     elif not preparation.is_prepared:
         source = preparation.source
-        st.success("Источник успешно проверен")
+        st.success("Файл успешно проверен")
         st.subheader(source.file_name)
         st.write(
             "Этот набор данных ещё не подготовлен для эксперимента. "
@@ -177,6 +178,7 @@ def _render_data_step() -> None:
         )
     else:
         _render_prepared_source(preparation)
+        _render_change_file_action()
         if getattr(preparation, "preparation_status", None) == "confirmed_context_prepared":
             if st.button("Изменить подготовку", type="secondary"):
                 editable = reopen_dataset_preparation(preparation)
@@ -187,7 +189,7 @@ def _render_data_step() -> None:
 
     ready_to_continue = is_display_ready
     if not ready_to_continue and (preparation is None or st.session_state.get(_SOURCE_RECHECK_INVALID_KEY)):
-        st.caption("Сначала проверьте источник данных.")
+        st.caption("Сначала проверьте файл.")
     _navigation_button(
         st,
         "Продолжить к признакам →",
@@ -250,7 +252,7 @@ def _render_source_check_action(
     preparation = st.session_state.dataset_source_preparation
     has_selected_local_file = bool(explicit_local_path.strip())
     already_checked = preparation is not None and draft_locator == st.session_state.get(_SOURCE_CONTROL_LOCATOR_KEY)
-    label = "Проверить повторно" if already_checked else "Проверить источник"
+    label = "Проверить файл повторно" if already_checked else "Проверить файл"
     button_type = "secondary" if already_checked else "primary"
     if not st.button(
         label,
@@ -271,8 +273,8 @@ def _render_source_check_action(
         preparation = _run_with_progress(
             _DATA_PROGRESS_LABELS,
             lambda listener: prepare_resolved_source(source, progress_listener=listener),
-            initial_label="Проверяем источник…",
-            completion_label="Проверка источника завершена",
+            initial_label="Проверяем файл…",
+            completion_label="Проверка файла завершена",
         )
         _commit_source_preparation(st.session_state, draft_locator, preparation)
         st.session_state[_SOURCE_RECHECK_INVALID_KEY] = False
@@ -289,12 +291,12 @@ def _render_source_check_action(
             )
         else:
             st.session_state[_SOURCE_ERROR_KEY] = (
-                "Не удалось проверить источник",
+                "Не удалось проверить файл",
                 "Проверьте выбранный файл и повторите попытку.",
             )
     except OSError:
         st.session_state[_SOURCE_ERROR_KEY] = (
-            "Не удалось проверить источник",
+            "Не удалось проверить файл",
             "Проверьте выбранный файл и повторите попытку.",
         )
     _render_source_error()
@@ -318,7 +320,7 @@ def _render_source_error() -> None:
 
 def _render_unchecked_source(source_kind: str, explicit_local_path: str) -> None:
     if not explicit_local_path:
-        st.info("Выберите файл, затем проверьте источник.")
+        st.info("Выберите файл, затем проверьте его.")
 
 
 def _render_prepared_source(preparation: Any) -> None:
@@ -422,12 +424,25 @@ def _render_file_onboarding_step(preparation: Any) -> None:
     summary[1].metric("Столбцы", f"{preparation.snapshot.column_count:,}")
     st.write(f"Файл: {preparation.source.file_name}")
     _render_aggregated_warnings(preparation.proposal.warnings)
-    if st.button("Изменить файл", type="secondary"):
-        _clear_local_file_selection()
-        st.session_state[_SOURCE_CONTROL_LOCATOR_KEY] = ("explicit_local", "")
-        set_dataset_source_preparation(st.session_state, None)
-        st.rerun()
+    _render_change_file_action()
     _onboarding_next_button("Продолжить к выбору цели →", 1)
+
+
+def _render_change_file_action() -> None:
+    """Allow every prepared profile to return to the same file-selection entry point."""
+    if st.button("Изменить файл", type="secondary"):
+        _reset_for_file_change()
+
+
+def _reset_for_file_change() -> None:
+    """Drop the active preparation and every UI-owned file selection before a new choice."""
+    state = st.session_state
+    _clear_local_file_selection()
+    for key in (_SOURCE_CONTROL_LOCATOR_KEY, _SOURCE_KIND_WIDGET_KEY, _SOURCE_ERROR_KEY, _SOURCE_RECHECK_INVALID_KEY):
+        state.pop(key, None)
+    set_dataset_source_preparation(state, None)
+    state[_PREPARATION_STEP_KEY] = 0
+    st.rerun()
 
 
 def _render_target_onboarding_step(preparation: Any, draft: MutableMapping[str, Any], report: Any) -> None:
@@ -462,9 +477,26 @@ def _render_target_onboarding_step(preparation: Any, draft: MutableMapping[str, 
         format_func=lambda value: value if isinstance(value, str) else repr(value), disabled=not target_values,
     )
     if st.button("Продолжить к идентификатору →", type="primary", disabled=target == placeholder or positive == positive_placeholder):
-        draft["target_column"] = target
-        draft["positive_class"] = positive
+        _save_target_selection(preparation, draft, target, positive)
         _onboarding_go_to(2)
+
+
+def _save_target_selection(
+    preparation: Any, draft: MutableMapping[str, Any], target: str, positive_class: Any,
+) -> None:
+    """Store an explicit target choice and require the dependent evaluation acknowledgement again."""
+    target_changed = target != draft.get("target_column")
+    draft["target_column"] = target
+    draft["positive_class"] = positive_class
+    if not target_changed:
+        return
+    draft["population_policy_acknowledged"] = False
+    acknowledgement_key = _preparation_form_key(
+        int(st.session_state.get("context_revision", 0)),
+        preparation.snapshot.fingerprint,
+        "population_acknowledged",
+    )
+    st.session_state[acknowledgement_key] = False
 
 
 def _render_identifier_onboarding_step(preparation: Any, draft: MutableMapping[str, Any]) -> None:
@@ -599,7 +631,7 @@ def _confirm_dataset_onboarding(preparation: Any, draft: Mapping[str, Any]) -> N
     except DatasetPreparationError as error:
         if error.code in _STALE_PREPARATION_ERROR_CODES:
             _invalidate_stale_preparation(state)
-            st.error("Файл или результаты анализа изменились. Выполните проверку источника заново.")
+            st.error("Файл или результаты анализа изменились. Проверьте файл заново.")
         else:
             _render_dataset_preparation_error(error)
     except ValueError as error:
@@ -670,10 +702,10 @@ def _render_dataset_preparation_error(error: DatasetPreparationError) -> None:
         "NO_MODEL_ALLOWED_FEATURES": "Разрешите для модели хотя бы одну совместимую колонку.",
         "UNSUPPORTED_PREDICTOR_REPRESENTATION": "Одна из разрешённых колонок не поддерживается моделью.",
         "NON_FINITE_PREDICTOR": "В разрешённой колонке есть нечисловые или бесконечные значения.",
-        "STALE_SNAPSHOT": "Файл изменился после проверки. Проверьте источник повторно.",
-        "REPORT_IDENTITY_MISMATCH": "Отчёт проверки не соответствует текущему файлу. Проверьте источник повторно.",
-        "PROPOSAL_IDENTITY_MISMATCH": "Предложение не соответствует текущему файлу. Проверьте источник повторно.",
-        "CONFIRMATION_IDENTITY_MISMATCH": "Черновик относится к другой версии проверки. Проверьте источник повторно.",
+        "STALE_SNAPSHOT": "Файл изменился после проверки. Проверьте файл повторно.",
+        "REPORT_IDENTITY_MISMATCH": "Отчёт проверки не соответствует текущему файлу. Проверьте файл повторно.",
+        "PROPOSAL_IDENTITY_MISMATCH": "Предложение не соответствует текущему файлу. Проверьте файл повторно.",
+        "CONFIRMATION_IDENTITY_MISMATCH": "Черновик относится к другой версии проверки. Проверьте файл повторно.",
     }
     st.error(messages.get(error.code, "Не удалось подтвердить подготовку данных."))
     with st.expander("Технические сведения", expanded=False):
