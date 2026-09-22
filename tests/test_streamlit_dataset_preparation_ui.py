@@ -192,6 +192,86 @@ class DatasetPreparationUiTests(unittest.TestCase):
         self.assertEqual(controls["score"], ("MODEL_ALLOWED", "DIAGNOSTIC_ONLY", "BLOCKED"))
         self.assertEqual(controls["comment"], ("DIAGNOSTIC_ONLY", "BLOCKED"))
 
+    def test_advanced_status_callback_updates_summary_before_the_next_render(self) -> None:
+        import app.streamlit_app as prototype
+
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "status-callback.csv"
+        path.write_text(
+            "entity_id,target,score,comment\n"
+            "a,0,0.1,low\n"
+            "b,1,0.9,high\n",
+            encoding="utf-8",
+        )
+        preparation = prepare_resolved_source(LocalDatasetSourceResolver().resolve_explicit_local_path(path))
+        draft = default_preparation_draft(preparation)
+        draft.update(
+            target_column="target",
+            identifier_column="entity_id",
+            positive_class=1,
+            population_policy_acknowledged=True,
+            column_statuses={
+                "entity_id": "DIAGNOSTIC_ONLY",
+                "target": "MODEL_ALLOWED",
+                "score": "MODEL_ALLOWED",
+                "comment": "DIAGNOSTIC_ONLY",
+            },
+        )
+
+        class Expander:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        class Streamlit:
+            def __init__(self):
+                self.session_state = {"context_revision": 1}
+                self.writes = []
+                self.callbacks = {}
+
+            def expander(self, *_args, **_kwargs):
+                return Expander()
+
+            def selectbox(self, label, options, *, key, on_change=None, args=(), **_kwargs):
+                if key not in self.session_state:
+                    self.session_state[key] = options[0] if label == "score" else draft["column_statuses"][label]
+                self.callbacks[label] = (on_change, args)
+                return self.session_state[key]
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def checkbox(self, _label, *, key):
+                return self.session_state[key]
+
+            def button(self, *_args, **_kwargs):
+                return False
+
+            def __getattr__(self, _name):
+                return lambda *_args, **_kwargs: None
+
+        streamlit = Streamlit()
+        with patch.object(prototype, "st", streamlit):
+            prototype._render_review_onboarding_step(preparation, draft)
+            self.assertIn("Признаки модели: 1", streamlit.writes)
+            self.assertIn("Только для анализа: 1", streamlit.writes)
+
+            callback, args = streamlit.callbacks["score"]
+            self.assertIsNotNone(callback)
+            status_key = args[-1]
+            streamlit.session_state[status_key] = "DIAGNOSTIC_ONLY"
+            callback(*args)
+
+            streamlit.writes.clear()
+            prototype._render_review_onboarding_step(preparation, draft)
+
+        self.assertEqual(draft["column_statuses"]["score"], "DIAGNOSTIC_ONLY")
+        self.assertIn("Признаки модели: 0", streamlit.writes)
+        self.assertIn("Только для анализа: 2", streamlit.writes)
+
     def test_advanced_status_changes_only_the_preparation_draft(self) -> None:
         import app.streamlit_app as prototype
 

@@ -574,8 +574,10 @@ def _render_feature_constraints(preparation: Any, draft: MutableMapping[str, Any
                 options,
                 key=status_key,
                 format_func=_ADVANCED_STATUS_LABELS.__getitem__,
+                on_change=_on_advanced_status_change,
+                args=(draft, name, compatible, status_key),
             )
-            status = _set_advanced_column_status(draft, name, selected, compatible=compatible, state=state)
+            status = str(statuses.get(name, selected))
             if status != "BLOCKED":
                 continue
             reason_key = _preparation_form_key(revision, snapshot.fingerprint, f"blocked-reason:{name}")
@@ -583,6 +585,23 @@ def _render_feature_constraints(preparation: Any, draft: MutableMapping[str, Any
                 state[reason_key] = str(reasons.get(name) or "")
             reason = st.text_input("Причина блокировки", key=reason_key)
             reasons[name] = reason.strip()
+
+
+def _on_advanced_status_change(
+    draft: MutableMapping[str, Any],
+    name: str,
+    compatible: bool,
+    status_key: str,
+) -> None:
+    """Persist the changed status before Streamlit reruns the review screen."""
+    state = st.session_state
+    _set_advanced_column_status(
+        draft,
+        name,
+        str(state.get(status_key, "DIAGNOSTIC_ONLY")),
+        compatible=compatible,
+        state=state,
+    )
 
 
 def _set_advanced_column_status(
