@@ -454,17 +454,24 @@ class SessionStateTests(unittest.TestCase):
 
     def test_return_to_experiment_keeps_the_successful_reference_and_clears_current_result(self) -> None:
         artifact = SimpleNamespace(artifact_id="saved-artifact")
-        self.state.update(planning_request_snapshot=object(), experiment_plan=object())
+        self.state.update(
+            planning_request_snapshot=object(),
+            experiment_plan=object(),
+            selected_feature_ids=("score",),
+            selected_model_id="model",
+        )
         save_artifact(self.state, artifact, comparison=object())
 
         return_to_experiment(self.state)
 
-        self.assertEqual(self.state["current_step"], 3)
+        self.assertEqual(self.state["current_step"], 1)
         self.assertIsNone(self.state["planning_request_snapshot"])
         self.assertIsNone(self.state["experiment_plan"])
         self.assertIsNone(self.state["loaded_artifact"])
         self.assertIsNone(self.state["comparison_result"])
         self.assertEqual(self.state["last_successful_artifact_id"], "saved-artifact")
+        self.assertEqual(self.state["selected_feature_ids"], ("score",))
+        self.assertEqual(self.state["selected_model_id"], "model")
 
 
 if __name__ == "__main__":

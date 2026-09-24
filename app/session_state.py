@@ -6,6 +6,7 @@ from collections.abc import Iterable, MutableMapping
 from typing import Any
 
 from komus_risk.application import RunExperimentRequest
+from komus_risk.contracts import FeatureUsageStatus
 from komus_risk.planning import ExperimentPlan, PlanningRequestMetadata
 
 
@@ -62,7 +63,7 @@ def set_dataset_context(state: MutableMapping[str, Any], context: Any) -> None:
         return
     state["dataset_context"] = context
     state["dataset_source_preparation"] = None
-    state["selected_feature_ids"] = ()
+    state["selected_feature_ids"] = _model_allowed_feature_ids(context)
     state["selected_model_id"] = None
     state["experiment_inputs"] = {}
     state["context_revision"] = state.get("context_revision", 0) + 1
@@ -108,7 +109,7 @@ def set_dataset_source_preparation(state: MutableMapping[str, Any], preparation:
     state["dataset_context"] = getattr(preparation, "context", None)
     state["dataset_preparation_step"] = 0
     _store_preparation_transients(state, preparation)
-    state["selected_feature_ids"] = ()
+    state["selected_feature_ids"] = _model_allowed_feature_ids(state["dataset_context"])
     state["selected_model_id"] = None
     state["experiment_inputs"] = {}
     state["current_step"] = 0
@@ -249,9 +250,24 @@ def save_artifact(state: MutableMapping[str, Any], artifact: Any, comparison: An
 
 
 def return_to_experiment(state: MutableMapping[str, Any]) -> None:
-    """Start a new plan while preserving the session's saved comparison reference."""
+    """Start another experiment on the prepared context without re-preparing it."""
     _clear_plan_and_result(state)
-    state["current_step"] = 3
+    state["current_step"] = 1
+    state["highest_reached_step"] = max(int(state.get("highest_reached_step", 0)), 1)
+
+
+def _model_allowed_feature_ids(context: Any) -> tuple[str, ...]:
+    """Read the initial experiment set from the prepared FeatureRegistry only."""
+    registry = getattr(context, "feature_registry", None)
+    groups = getattr(registry, "_groups", {})
+    if registry is None or not isinstance(groups, dict):
+        return ()
+    feature_ids: list[str] = []
+    for group in groups.values():
+        for spec in registry.resolve(getattr(group, "feature_ids", ())):
+            if spec.usage_status is FeatureUsageStatus.MODEL_ALLOWED:
+                feature_ids.append(spec.feature_id)
+    return tuple(feature_ids)
 
 
 def _clear_plan_and_result(state: MutableMapping[str, Any]) -> None:

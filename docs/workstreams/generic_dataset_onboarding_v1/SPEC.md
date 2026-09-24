@@ -1,275 +1,189 @@
 # Generic Dataset Onboarding V1 — SPEC
 
-## 1. Цель
+## 1. Цель и canonical flow
 
-Переделать текущую техническую форму подготовки датасета в понятный пошаговый интерфейс.
+Generic Dataset Onboarding V1 даёт пользователю понятный путь от файла до результата эксперимента, сохраняя принятые backend contracts и их границы.
 
-Пользователь должен пройти путь:
+Canonical flow:
 
-`Файл → Цель → Идентификатор → Признаки → Оценка → Проверка`
+`Файл → автоматическая подготовка → при необходимости подтвердить/исправить target / positive class / identifier → Проверка и подтверждение подготовки → Признаки → Модель → Эксперимент → Результат`.
 
-и получить готовый `PreparedDatasetContext`.
+Подготовка датасета и выбор признаков — разные уровни состояния:
 
-Backend Dataset Preparation V1 не переделываем.
+- Dataset Preparation создаёт подтверждённый `PreparedDatasetContext` с dataset-level permissions.
+- Feature Selection после `PreparedDatasetContext` создаёт только `selected_feature_ids` конкретного эксперимента.
 
----
-
-## 2. Главный принцип
-
-Интерфейс объясняет пользователю смысл решений, а не внутреннее устройство системы.
-
-В основном UI не показывать без необходимости:
-
-- `MODEL_ALLOWED`;
-- `DIAGNOSTIC_ONLY`;
-- `BLOCKED`;
-- `FEATURE_CANDIDATE`;
-- `TARGET_CANDIDATE`;
-- `REVIEW_REQUIRED`;
-- fingerprint;
-- SHA-256;
-- manifest;
-- policy hash;
-- внутренние названия contracts.
-
-Технические сведения допускаются только в отдельном блоке «Подробности».
+Полноценный ручной feature-selection внутри Dataset Preparation не входит в основной пользовательский путь. Единственный основной экран выбора признаков находится после `PreparedDatasetContext` и описан в `FEATURE_SELECTION_UX_V1.md`.
 
 ---
 
-## 3. Начальный экран
+## 2. Неизменяемые backend-границы
 
-Основное действие:
+Dataset Preparation остаётся отдельным backend layer. Сохраняется принцип:
 
-**«Загрузите файл»**
+`FACT ≠ PROPOSAL ≠ AUTO-FILLED USER DRAFT ≠ HUMAN FINAL CONFIRMATION`.
 
-Не должно быть отдельного пользовательского выбора:
+Система формирует полный preparation draft автоматически. Она по возможности предлагает и подставляет target, positive class и identifier; пользователь видит эти значения и может их подтвердить или исправить. Это человеческое решение, поскольку оно зависит от бизнес-смысла данных.
 
-- «Исторический набор данных»;
-- «Другой локальный файл».
+`PreparedDatasetContext` создаётся только после human final confirmation через существующий `confirm_dataset_preparation`. До этого действуют существующие fail-closed validation и stale-source checks.
 
-Historical `Data_final` остаётся внутренним compatibility profile.
+Сохраняются без изменения:
 
----
+- `DatasetPreparationProposal`;
+- `ConfirmedDatasetPreparation`;
+- `DatasetContract`;
+- `FeatureSpec`;
+- `FeatureUsageStatus`;
+- `FeatureRegistry`;
+- `EvaluationPopulation`;
+- `PreparedDatasetContext`;
+- `PlanningRequestMetadata`;
+- `ExperimentConfig`;
+- `ExperimentResult`;
+- `ArtifactStore`;
+- comparison semantics.
 
-## 4. Шаг 1 — Файл
-
-После загрузки система проверяет файл.
-
-Пользователь видит короткую сводку:
-
-- имя файла;
-- количество строк;
-- количество столбцов;
-- есть ли проблемы.
-
-Повторяющиеся предупреждения агрегируются.
-
-Пример:
-
-> Найдено 12 признаков с почти уникальными значениями.
-
-а не 12 одинаковых предупреждений подряд.
-
-После успешной проверки шаг сворачивается в компактную строку.
+Historical `Data_final` остаётся internal compatibility profile и не меняет generic UX. После `PreparedDatasetContext` UI не различает historical и arbitrary dataset.
 
 ---
 
-## 5. Шаг 2 — Цель
+## 3. Автоматическая подготовка датасета
 
-Главный вопрос:
+### 3.1. Начальный экран — файл
 
-**«Что модель должна предсказывать?»**
+Основное действие: **«Загрузите файл»**. Нет отдельного пользовательского выбора между «историческим набором данных» и «другим локальным файлом».
 
-Analyzer может предложить колонку, но не выбирает её за пользователя.
+После загрузки система проверяет файл и показывает краткую сводку: имя файла, число строк и столбцов, а также агрегированные проблемы. Повторяющиеся предупреждения объединяются в понятные сообщения, а технические детали доступны только в отдельном блоке «Технические детали».
 
-Proposal ≠ Confirmation.
+### 3.2. Экран «Подготовка»
 
-Пользователь явно выбирает target.
+После анализа показывается автоматически заполненный draft подготовки:
 
-После выбора задаётся отдельный вопрос:
-
-**«Какое значение считать положительным событием?»**
-
-Допустимые значения берутся из фактических значений выбранного target.
-
-При смене target выбранное positive value обязательно сбрасывается.
-
----
-
-## 6. Шаг 3 — Идентификатор
-
-Вопрос:
-
-**«Какой столбец идентифицирует объект?»**
-
-Короткое пояснение:
-
-> Например: ИНН, ID клиента, номер договора. Этот столбец нужен для идентификации объекта и не используется моделью как признак.
-
-Identifier подтверждается человеком.
-
----
-
-## 7. Шаг 4 — Признаки
-
-Не показывать длинную форму из dropdown для каждой колонки.
-
-Сначала показать сводку:
-
-- **Можно использовать в модели — N**
-- **Нужно проверить — N**
-- **Рекомендуется исключить — N**
-
-Далее пользователь может открыть подробный список.
-
-Пользовательские действия:
-
-- **Использовать в модели**
-- **Оставить только для анализа**
-- **Не использовать**
-
-Нужны массовые действия для группы колонок.
-
-Интерфейс должен оставаться удобным при 50–200 признаках.
-
-Analyzer только предлагает статус.
-
-Окончательный статус подтверждает пользователь.
-
----
-
-## 8. Шаг 5 — Оценка модели
-
-Для Generic Dataset V1 используется:
-
-`FULL_OOF_NO_PROTECTED_FINAL_TEST`
-
-Но внутреннее название пользователю не показываем.
-
-Понятный текст:
-
-> Все строки будут использоваться для OOF-оценки модели. Отдельная финальная тестовая выборка автоматически создана не будет.
-
-Пользователь явно подтверждает это условие.
-
-Если доступен только один вариант политики оценки, selector с одним пунктом не показывать.
-
----
-
-## 9. Шаг 6 — Проверка
-
-Перед подготовкой набора показать итог:
-
-- файл;
 - target;
-- положительное событие;
+- positive class, зависящий от выбранного target;
 - identifier;
-- количество признаков модели;
-- количество признаков только для анализа;
-- количество исключённых колонок;
-- способ оценки.
+- автоматически сформированные permissions колонок;
+- только вопросы, которые действительно требуют решения пользователя.
 
-Кнопки:
+При смене target выбранный positive class сбрасывается и выбирается заново. Target и identifier не могут совпадать.
 
-**«Изменить»**
+Пользователь не классифицирует вручную десятки колонок как пригодные или непригодные для модели. Редкие dataset-level изменения допустимы только как advanced controls «Ограничения признаков»; они не являются основным feature selection и не заменяют автоматический draft.
 
-**«Подтвердить и продолжить»**
+### 3.3. Dataset-level permissions
 
-После успешной materialization пользователь сразу переходит к следующему рабочему этапу.
+В `FeatureRegistry` сохраняются dataset-level статусы:
 
----
+- `TARGET` — выбранный target;
+- `IDENTIFIER` — выбранный identifier;
+- `MODEL_ALLOWED` — обычная predictor-колонка, для которой существующая техническая validation допускает predictor representation и нет явного project/backend запрета;
+- `DIAGNOSTIC_ONLY` — колонка, которую текущий backend технически не может использовать predictor’ом, но которую допустимо сохранить для анализа;
+- `BLOCKED` — только явный project/backend запрет с причиной.
 
-## 10. Поведение шагов
+Эти статусы являются permissions датасета, а не feature subset конкретного эксперимента. Auto draft формирует система.
 
-На экране активен один основной шаг.
+`proposal.column_roles[*].predictor_eligibility` остаётся recommendation/proposal signal. В частности, `REVIEW_REQUIRED`, `UNKNOWN` и `NOT_RECOMMENDED_CANDIDATE` сами по себе не переводят колонку в `DIAGNOSTIC_ONLY` или `BLOCKED`.
 
-Завершённые шаги сворачиваются.
+Нельзя вводить новую UI eligibility-эвристику или описывать две реализации одной проверки. Определение реальной predictor compatibility использует то же authoritative technical rule, что применяется materializer при final validation. Если для автоматической подготовки нужен reusable helper, существующая predictor-representation validation переиспользуется или выносится в единый внутренний источник истины без изменения public backend contracts.
 
-Пример:
+### 3.4. Экран «Проверка» и подтверждение
 
-`✓ Файл: data.xlsx — 100 000 строк, 52 столбца`
+Отдельный onboarding-step «Оценка» не создаётся, если его единственная функция — acknowledgement evaluation policy. Вместо этого на финальной «Проверке» показаны:
 
-`✓ Цель: DefMark`
+- краткая сводка файла, target, positive class и identifier;
+- сводка автоматически сформированных dataset permissions и ссылка на advanced «Ограничения признаков»;
+- понятное объяснение evaluation policy;
+- обязательное acknowledgement policy;
+- human final confirmation.
 
-`→ Идентификатор`
+Для Generic Dataset V1 применяется `FULL_OOF_NO_PROTECTED_FINAL_TEST`: все строки используются для OOF-оценки, а отдельная защищённая финальная тестовая выборка автоматически не создаётся. Пользователь подтверждает это условие до final confirmation; отдельный экран ради одного checkbox не нужен.
 
-Пользователь может вернуться к предыдущему шагу.
-
-Если изменение предыдущего решения делает следующие решения недействительными, зависимое состояние сбрасывается.
-
-Пример:
-
-смена target → сброс positive class.
-
----
-
-## 11. Обработка ошибок
-
-Ошибка должна объяснять:
-
-1. что произошло;
-2. что пользователю нужно исправить.
-
-Не показывать технический traceback в основном интерфейсе.
-
-Stale source / изменение файла должно блокировать продолжение до повторной проверки.
-
-Fail-closed поведение backend сохраняется.
+Нажатие final confirmation вызывает существующий `confirm_dataset_preparation`, выполняет authoritative validation и materialization полного draft. При успехе создаётся `PreparedDatasetContext`. При ошибке UI объясняет, что исправить, и возвращает к соответствующему решению; traceback и технические коды не выводятся в основной интерфейс.
 
 ---
 
-## 12. Что нельзя менять
+## 4. Experiment-level feature selection
 
-Не менять принятые backend contracts Dataset Preparation V1.
+После `PreparedDatasetContext` начинается единственный основной экран «Признаки». Его canonical downstream source selectable features:
 
-Сохраняются:
+`PreparedDatasetContext → FeatureRegistry → только FeatureUsageStatus.MODEL_ALLOWED`.
 
-- `FACT ≠ PROPOSAL ≠ CONFIRMED`;
-- ровно один `TARGET`;
-- ровно один `IDENTIFIER`;
-- минимум один `MODEL_ALLOWED`;
-- explicit positive class;
-- actual loaded dataframe validation;
-- deterministic provenance;
-- stale-source fail-closed;
-- generic preparation без name-based blacklist;
-- `PreparedDatasetContext` как граница downstream.
+Canonical source доступных downstream groups — `FeatureRegistry → FeatureGroup`. Experiment-level экран не требует для работы `DatasetPreparationProposal`, `DatasetPreparationProposal.technical_groups`, inspection report или Analyzer state. После `PreparedDatasetContext` UI не различает происхождение датасета.
 
-После `PreparedDatasetContext` UI не должен различать historical и arbitrary dataset.
+Инициализация зависит от сценария:
+
+- первый эксперимент после создания нового `PreparedDatasetContext` начинает с `selected_feature_ids`, содержащего все доступные IDs с `MODEL_ALLOWED`;
+- «Новый эксперимент на этих данных» для того же context начинает с предыдущего `selected_feature_ids` и предыдущей выбранной модели.
+
+Чекбокс означает только: «Использовать этот разрешённый признак в текущем эксперименте». Он меняет только `selected_feature_ids`.
+
+Чекбокс не меняет `FeatureUsageStatus`, `FeatureRegistry`, `ConfirmedDatasetPreparation` или `PreparedDatasetContext`. `TARGET`, `IDENTIFIER`, `DIAGNOSTIC_ONLY` и `BLOCKED` не являются selectable predictors на основном experiment feature screen.
+
+Детали экрана, навигации, сообщений и его инварианты определены в `FEATURE_SELECTION_UX_V1.md`.
 
 ---
 
-## 13. Не входит в этот этап
+## 5. Новый эксперимент
 
-Не реализовывать сейчас:
+После результата пользователь может выбрать **«Новый эксперимент на этих данных»**. При этом сохраняются:
 
-- Dataset History / Persistence;
-- базу данных;
-- similarity matching датасетов;
-- новый ML research;
-- новые модели;
-- изменение evaluation protocol;
+- `PreparedDatasetContext`;
+- `DatasetContract`;
+- `FeatureRegistry`;
+- `EvaluationPopulation`.
+
+Не нужно повторно выбирать файл или проходить Dataset Preparation. Сбрасывается только run-specific state, включая plan, result, comparison result и иное состояние завершённого запуска.
+
+Стартовая конфигурация нового эксперимента наследует предыдущие `selected_feature_ids` и выбранную модель. Это позволяет изменить ровно один параметр и провести контролируемое сравнение. `PreparedDatasetContext`, `FeatureRegistry` и `EvaluationPopulation` остаются теми же. Feature subset остаётся частью experiment configuration, а не новой подготовкой датасета.
+
+---
+
+## 6. Правило UI-сообщений
+
+Информация, которая не меняет состояние, не блокирует продолжение и не требует решения пользователя, не занимает основной экран.
+
+| Категория | Представление |
+| --- | --- |
+| Требуется действие | Показать явно. |
+| Блокирует продолжение | Показать явно и объяснить, что исправить. |
+| Автоматически принято системой | Краткая сводка и возможность изменить. |
+| Informational warning | Компактно, с «Подробнее». |
+| Technical evidence | Только в «Технических деталях». |
+
+Большие warnings без действия не должны занимать основной flow.
+
+---
+
+## 7. Что не входит в этап
+
+Не реализуются и не меняются:
+
+- backend/scientific contracts и materializer semantics;
+- новый `FeatureUsageStatus`, eligibility API или UI eligibility-эвристика;
+- ручная массовая классификация dataset permissions в основном пути;
+- Dataset History / Persistence, база данных и similarity matching;
+- новые ML-исследования или модели;
+- evaluation protocol;
 - production frontend;
-- масштабный рефакторинг backend.
+- масштабный backend refactoring.
 
 ---
 
-## 14. Acceptance Criteria
+## 8. Acceptance criteria
 
 Работа принимается, если:
 
-1. стартовый сценарий — загрузка файла;
-2. нет пользовательского выбора historical/arbitrary;
-3. путь состоит из 6 последовательных шагов;
-4. одновременно открыт один основной шаг;
-5. target всегда подтверждает человек;
-6. positive class зависит от текущего target и сбрасывается при его смене;
-7. identifier подтверждается человеком;
-8. 50–200 признаков не создают длинную форму из отдельных dropdown;
-9. предупреждения агрегированы;
-10. внутренние enum не видны в основном UI;
-11. evaluation policy объяснена человеческим языком;
-12. перед materialization есть итоговое подтверждение;
-13. после materialization создаётся тот же принятый `PreparedDatasetContext`;
-14. historical compatibility profile не влияет на generic UX;
-15. существующие backend/scientific contracts и тесты не ломаются.
+1. arbitrary dataset получает автоматически заполненный preparation draft;
+2. пользователь не классифицирует вручную десятки колонок;
+3. target, positive class и identifier можно проверить и исправить;
+4. final preparation требует human confirmation и acknowledgement population policy;
+5. `PreparedDatasetContext` создаётся только после confirmation;
+6. после него существует один основной экран «Признаки»;
+7. первый experiment feature screen после нового `PreparedDatasetContext` начинает со всеми `MODEL_ALLOWED` features, включёнными по умолчанию;
+8. experiment checkbox меняет только `selected_feature_ids`;
+9. experiment checkbox не меняет dataset permissions;
+10. новый эксперимент на том же `PreparedDatasetContext` наследует предыдущие feature subset и модель без повторной подготовки;
+11. feature subset является experiment configuration, а не новой dataset preparation;
+12. reproducibility и comparison semantics сохранены;
+13. нет двух canonical feature-selection screens и нет отдельного acknowledgement-only шага «Оценка»;
+14. `FeatureRegistry` permissions не слиты с `selected_feature_ids`;
+15. downstream groups берутся из `FeatureRegistry → FeatureGroup`, а не из `DatasetPreparationProposal.technical_groups`.

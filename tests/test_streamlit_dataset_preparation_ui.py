@@ -75,6 +75,332 @@ class DatasetPreparationUiTests(unittest.TestCase):
         self.assertEqual(default_preparation_draft(preparation)["positive_class"], None)
         self.assertFalse(default_preparation_draft(preparation)["population_policy_acknowledged"])
 
+    def test_generic_onboarding_does_not_render_legacy_footer_navigation(self) -> None:
+        import app.streamlit_app as prototype
+
+        self.assertEqual(prototype._DATASET_ONBOARDING_STEPS, ("Файл", "Подготовка", "Проверка"))
+        self.assertFalse(hasattr(prototype, "_render_feature_onboarding_step"))
+        self.assertFalse(hasattr(prototype, "_render_evaluation_onboarding_step"))
+
+        class State(dict):
+            __getattr__ = dict.__getitem__
+
+        class Streamlit:
+            def __init__(self, preparation):
+                self.session_state = State(dataset_source_preparation=preparation)
+
+            def header(self, _label):
+                return None
+
+            def caption(self, _label):
+                return None
+
+        preparation = SimpleNamespace(is_prepared=False, snapshot=object())
+        streamlit = Streamlit(preparation)
+        with (
+            patch.object(prototype, "st", streamlit),
+            patch.object(prototype, "_render_dataset_onboarding") as onboarding,
+            patch.object(prototype, "_navigation_button") as navigation,
+        ):
+            prototype._render_data_step()
+
+        onboarding.assert_called_once_with(preparation)
+        navigation.assert_not_called()
+
+    def test_generic_default_uses_technical_predictor_compatibility(self) -> None:
+        preparation = self._checked_source()
+        draft = default_preparation_draft(preparation)
+
+        self.assertEqual(draft["column_statuses"]["entity_id"], "DIAGNOSTIC_ONLY")
+        self.assertEqual(draft["column_statuses"]["target"], "MODEL_ALLOWED")
+        self.assertEqual(draft["column_statuses"]["score"], "MODEL_ALLOWED")
+
+    def test_generic_default_marks_non_finite_numeric_columns_diagnostic_only(self) -> None:
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "non-finite.csv"
+        path.write_text(
+            "entity_id,target,score\n"
+            "a,0,0.1\n"
+            "b,1,inf\n"
+            "c,0,0.2\n"
+            "d,1,0.8\n",
+            encoding="utf-8",
+        )
+        preparation = prepare_resolved_source(
+            LocalDatasetSourceResolver().resolve_explicit_local_path(path)
+        )
+
+        self.assertEqual(default_preparation_draft(preparation)["column_statuses"]["score"], "DIAGNOSTIC_ONLY")
+
+    def test_review_feature_constraints_are_compact_and_exclude_target_and_identifier(self) -> None:
+        import app.streamlit_app as prototype
+
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "constraints.csv"
+        path.write_text(
+            "entity_id,target,score,comment\n"
+            "a,0,0.1,low\n"
+            "b,1,0.9,high\n",
+            encoding="utf-8",
+        )
+        preparation = prepare_resolved_source(LocalDatasetSourceResolver().resolve_explicit_local_path(path))
+        draft = default_preparation_draft(preparation)
+        draft.update(target_column="target", identifier_column="entity_id", positive_class=1)
+
+        class Expander:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        class Streamlit:
+            def __init__(self):
+                self.session_state = {"context_revision": 1}
+                self.expanders = []
+                self.selectboxes = []
+
+            def expander(self, label, **kwargs):
+                self.expanders.append((label, kwargs))
+                return Expander()
+
+            def selectbox(self, label, options, *, key, **_kwargs):
+                self.selectboxes.append((label, tuple(options)))
+                if key not in self.session_state:
+                    self.session_state[key] = options[0]
+                return self.session_state[key]
+
+            def checkbox(self, _label, *, key):
+                return self.session_state[key]
+
+            def button(self, *_args, **_kwargs):
+                return False
+
+            def __getattr__(self, _name):
+                return lambda *_args, **_kwargs: None
+
+        streamlit = Streamlit()
+        with patch.object(prototype, "st", streamlit):
+            prototype._render_review_onboarding_step(preparation, draft)
+
+        self.assertIn(("Ограничения признаков", {"expanded": False}), streamlit.expanders)
+        controls = dict(streamlit.selectboxes)
+        self.assertNotIn("target", controls)
+        self.assertNotIn("entity_id", controls)
+        self.assertEqual(controls["score"], ("MODEL_ALLOWED", "DIAGNOSTIC_ONLY", "BLOCKED"))
+        self.assertEqual(controls["comment"], ("DIAGNOSTIC_ONLY", "BLOCKED"))
+
+    def test_advanced_status_callback_updates_summary_before_the_next_render(self) -> None:
+        import app.streamlit_app as prototype
+
+        directory = TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "status-callback.csv"
+        path.write_text(
+            "entity_id,target,score,comment\n"
+            "a,0,0.1,low\n"
+            "b,1,0.9,high\n",
+            encoding="utf-8",
+        )
+        preparation = prepare_resolved_source(LocalDatasetSourceResolver().resolve_explicit_local_path(path))
+        draft = default_preparation_draft(preparation)
+        draft.update(
+            target_column="target",
+            identifier_column="entity_id",
+            positive_class=1,
+            population_policy_acknowledged=True,
+            column_statuses={
+                "entity_id": "DIAGNOSTIC_ONLY",
+                "target": "MODEL_ALLOWED",
+                "score": "MODEL_ALLOWED",
+                "comment": "DIAGNOSTIC_ONLY",
+            },
+        )
+
+        class Expander:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        class Streamlit:
+            def __init__(self):
+                self.session_state = {"context_revision": 1}
+                self.writes = []
+                self.callbacks = {}
+
+            def expander(self, *_args, **_kwargs):
+                return Expander()
+
+            def selectbox(self, label, options, *, key, on_change=None, args=(), **_kwargs):
+                if key not in self.session_state:
+                    self.session_state[key] = options[0] if label == "score" else draft["column_statuses"][label]
+                self.callbacks[label] = (on_change, args)
+                return self.session_state[key]
+
+            def write(self, value):
+                self.writes.append(value)
+
+            def checkbox(self, _label, *, key):
+                return self.session_state[key]
+
+            def button(self, *_args, **_kwargs):
+                return False
+
+            def __getattr__(self, _name):
+                return lambda *_args, **_kwargs: None
+
+        streamlit = Streamlit()
+        with patch.object(prototype, "st", streamlit):
+            prototype._render_review_onboarding_step(preparation, draft)
+            self.assertIn("Признаки модели: 1", streamlit.writes)
+            self.assertIn("Только для анализа: 1", streamlit.writes)
+
+            callback, args = streamlit.callbacks["score"]
+            self.assertIsNotNone(callback)
+            status_key = args[-1]
+            streamlit.session_state[status_key] = "DIAGNOSTIC_ONLY"
+            callback(*args)
+
+            streamlit.writes.clear()
+            prototype._render_review_onboarding_step(preparation, draft)
+
+        self.assertEqual(draft["column_statuses"]["score"], "DIAGNOSTIC_ONLY")
+        self.assertIn("Признаки модели: 0", streamlit.writes)
+        self.assertIn("Только для анализа: 2", streamlit.writes)
+
+    def test_advanced_status_changes_only_the_preparation_draft(self) -> None:
+        import app.streamlit_app as prototype
+
+        draft = {
+            "target_column": "target",
+            "identifier_column": "entity_id",
+            "column_statuses": {"score": "MODEL_ALLOWED", "target": "MODEL_ALLOWED", "entity_id": "MODEL_ALLOWED"},
+            "blocked_reasons": {},
+        }
+        state = {"preparation_1_snapshot_blocked-reason:score": "old reason"}
+
+        self.assertEqual(
+            prototype._set_advanced_column_status(draft, "score", "DIAGNOSTIC_ONLY", compatible=True, state=state),
+            "DIAGNOSTIC_ONLY",
+        )
+        self.assertEqual(draft["column_statuses"]["score"], "DIAGNOSTIC_ONLY")
+        self.assertEqual(
+            prototype._set_advanced_column_status(draft, "score", "MODEL_ALLOWED", compatible=True, state=state),
+            "MODEL_ALLOWED",
+        )
+        self.assertEqual(draft["column_statuses"]["score"], "MODEL_ALLOWED")
+        self.assertEqual(draft["column_statuses"]["target"], "MODEL_ALLOWED")
+        self.assertEqual(draft["column_statuses"]["entity_id"], "MODEL_ALLOWED")
+        self.assertNotIn("preparation_1_snapshot_blocked-reason:score", state)
+
+    def test_advanced_blocked_reason_controls_confirmation_and_is_cleared_on_status_change(self) -> None:
+        import app.streamlit_app as prototype
+
+        draft = {
+            "target_column": "target",
+            "identifier_column": "entity_id",
+            "column_statuses": {"score": "MODEL_ALLOWED"},
+            "blocked_reasons": {},
+        }
+        state = {"preparation_1_snapshot_blocked-reason:score": "business exception"}
+
+        prototype._set_advanced_column_status(draft, "score", "BLOCKED", compatible=True, state=state)
+        self.assertTrue(prototype._has_blocked_predictor_without_reason(draft))
+        draft["blocked_reasons"]["score"] = "business exception"
+        self.assertFalse(prototype._has_blocked_predictor_without_reason(draft))
+        prototype._set_advanced_column_status(draft, "score", "DIAGNOSTIC_ONLY", compatible=True, state=state)
+        self.assertNotIn("score", draft["blocked_reasons"])
+        self.assertNotIn("preparation_1_snapshot_blocked-reason:score", state)
+
+    def test_review_disables_confirmation_for_a_blocked_predictor_without_reason(self) -> None:
+        import app.streamlit_app as prototype
+
+        preparation = self._checked_source()
+        draft = default_preparation_draft(preparation)
+        draft.update(
+            target_column="target",
+            identifier_column="entity_id",
+            positive_class=1,
+            population_policy_acknowledged=True,
+        )
+        draft["column_statuses"]["score"] = "BLOCKED"
+        draft["blocked_reasons"] = {}
+
+        class Expander:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        class Streamlit:
+            def __init__(self):
+                self.session_state = {"context_revision": 1}
+                self.button_calls = []
+
+            def expander(self, *_args, **_kwargs):
+                return Expander()
+
+            def selectbox(self, _label, options, *, key, **_kwargs):
+                if key not in self.session_state:
+                    self.session_state[key] = "BLOCKED" if "BLOCKED" in options and "score" in key else options[0]
+                return self.session_state[key]
+
+            def text_input(self, _label, *, key):
+                return self.session_state[key]
+
+            def checkbox(self, _label, *, key):
+                return self.session_state[key]
+
+            def button(self, label, **kwargs):
+                self.button_calls.append((label, kwargs))
+                return False
+
+            def __getattr__(self, _name):
+                return lambda *_args, **_kwargs: None
+
+        streamlit = Streamlit()
+        with patch.object(prototype, "st", streamlit):
+            prototype._render_review_onboarding_step(preparation, draft)
+
+        confirmation = next(kwargs for label, kwargs in streamlit.button_calls if label == "Подтвердить и продолжить")
+        self.assertTrue(confirmation["disabled"])
+
+    def test_advanced_controls_cannot_allow_an_incompatible_predictor(self) -> None:
+        import app.streamlit_app as prototype
+
+        draft = {"column_statuses": {"comment": "DIAGNOSTIC_ONLY"}, "blocked_reasons": {}}
+
+        status = prototype._set_advanced_column_status(
+            draft, "comment", "MODEL_ALLOWED", compatible=False,
+        )
+
+        self.assertEqual(status, "DIAGNOSTIC_ONLY")
+        self.assertEqual(draft["column_statuses"]["comment"], "DIAGNOSTIC_ONLY")
+
+    def test_predictor_summary_counts_current_statuses_without_target_or_identifier(self) -> None:
+        import app.streamlit_app as prototype
+
+        statuses = prototype._predictor_statuses({
+            "target_column": "target",
+            "identifier_column": "entity_id",
+            "column_statuses": {
+                "target": "MODEL_ALLOWED",
+                "entity_id": "BLOCKED",
+                "score": "MODEL_ALLOWED",
+                "comment": "DIAGNOSTIC_ONLY",
+                "legacy": "BLOCKED",
+            },
+        })
+
+        self.assertEqual(statuses, {
+            "score": "MODEL_ALLOWED", "comment": "DIAGNOSTIC_ONLY", "legacy": "BLOCKED",
+        })
+
     def test_arbitrary_source_reports_actual_analysis_stages(self) -> None:
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
@@ -367,7 +693,7 @@ class DatasetPreparationUiTests(unittest.TestCase):
 
         self.assertIs(state["dataset_context"], second.context)
         self.assertNotEqual(first.context.context_id, second.context.context_id)
-        self.assertEqual(state["selected_feature_ids"], ())
+        self.assertEqual(state["selected_feature_ids"], ("Q_B1_norm",))
         self.assertIsNone(state["selected_model_id"])
         self.assertEqual(state["experiment_inputs"], {})
         self.assertIsNone(state["experiment_plan"])
@@ -421,178 +747,6 @@ class DatasetPreparationUiTests(unittest.TestCase):
         self.assertIsNone(state["comparison_result"])
         self.assertEqual(state["prototype_source_control_locator"], source_locator)
         self.assertEqual(state["prototype_selected_local_file_path"], str(preparation.source.local_runtime_path))
-
-    def test_wizard_keeps_explicit_decisions_between_steps_and_confirms_context(self) -> None:
-        """Exercise the six-step UI wiring through its session-owned decisions."""
-        import app.streamlit_app as prototype
-
-        class Status:
-            def write(self, _value):
-                return None
-
-            def update(self, **_kwargs):
-                return None
-
-        class Streamlit:
-            def __init__(self, state):
-                self.session_state = state
-                self.reruns = 0
-
-            def status(self, _label, *, expanded):
-                return Status()
-
-            def rerun(self):
-                self.reruns += 1
-
-        preparation = self._checked_source()
-        state = {}
-        initialize(state)
-        set_dataset_source_preparation(state, preparation)
-        draft = default_preparation_draft(preparation)
-        state["dataset_preparation_draft"] = draft
-        state["dataset_preparation_step"] = 1
-        streamlit = Streamlit(state)
-
-        with patch.object(prototype, "st", streamlit):
-            revision = state["context_revision"]
-            positive_key = prototype._bind_positive_class_to_target(
-                state,
-                form_revision=revision,
-                snapshot_fingerprint=preparation.snapshot.fingerprint,
-                target="target",
-                target_values=[0, 1],
-                placeholder="choose",
-                initial_target=None,
-                initial_positive_class=None,
-            )
-            self.assertEqual(state[positive_key], "choose")
-            state[positive_key] = 1
-            prototype._save_target_selection(preparation, draft, "target", state[positive_key])
-            prototype._onboarding_go_to(2)
-            self.assertEqual(state["dataset_preparation_step"], 2)
-            self.assertEqual(draft["target_column"], "target")
-            self.assertEqual(draft["positive_class"], 1)
-
-            draft["identifier_column"] = "entity_id"
-            prototype._onboarding_go_to(3)
-            self.assertEqual(state["dataset_preparation_step"], 3)
-            self.assertEqual(draft["identifier_column"], "entity_id")
-
-            draft["column_statuses"] = {
-                "entity_id": "DIAGNOSTIC_ONLY",
-                "target": "DIAGNOSTIC_ONLY",
-                "score": "MODEL_ALLOWED",
-                "Q_B1_norm": "BLOCKED",
-            }
-            draft["blocked_reasons"] = {"Q_B1_norm": "Не использовать в модели."}
-            prototype._onboarding_go_to(4)
-            self.assertEqual(state["dataset_preparation_step"], 4)
-            self.assertEqual(draft["blocked_reasons"]["Q_B1_norm"], "Не использовать в модели.")
-
-            draft["population_policy_acknowledged"] = True
-            prototype._onboarding_go_to(5)
-            self.assertEqual(state["dataset_preparation_step"], 5)
-            prototype._confirm_dataset_onboarding(preparation, draft)
-
-        self.assertTrue(state["dataset_source_preparation"].is_prepared)
-        self.assertIsNotNone(state["dataset_context"])
-        self.assertEqual(state["current_step"], 1)
-        self.assertEqual(state["dataset_preparation_step"], 5)
-
-    def test_editing_target_from_review_resets_positive_and_requires_evaluation_again(self) -> None:
-        import app.streamlit_app as prototype
-
-        class Column:
-            def __init__(self, should_edit):
-                self.should_edit = should_edit
-
-            def write(self, _value):
-                return None
-
-            def button(self, _label, *, key):
-                return self.should_edit and key == "dataset-preparation-edit-1"
-
-        class Streamlit:
-            def __init__(self, state):
-                self.session_state = state
-
-            def columns(self, _specification):
-                return [Column(False), Column(True)]
-
-            def rerun(self):
-                return None
-
-        preparation = self._checked_two_target_source()
-        state = {}
-        initialize(state)
-        set_dataset_source_preparation(state, preparation)
-        draft = default_preparation_draft(preparation)
-        draft.update(
-            target_column="target_a",
-            positive_class=1,
-            identifier_column="entity_id",
-            population_policy_acknowledged=True,
-            column_statuses={
-                "entity_id": "DIAGNOSTIC_ONLY",
-                "target_a": "DIAGNOSTIC_ONLY",
-                "target_b": "DIAGNOSTIC_ONLY",
-                "score": "MODEL_ALLOWED",
-            },
-        )
-        state["dataset_preparation_draft"] = draft
-        state["dataset_preparation_step"] = 5
-        streamlit = Streamlit(state)
-
-        with patch.object(prototype, "st", streamlit):
-            prototype._render_completed_onboarding_steps(preparation, draft, active_step=5)
-            self.assertEqual(state["dataset_preparation_step"], 1)
-
-            positive_key = prototype._bind_positive_class_to_target(
-                state,
-                form_revision=state["context_revision"],
-                snapshot_fingerprint=preparation.snapshot.fingerprint,
-                target="target_a",
-                target_values=[0, 1],
-                placeholder="choose",
-                initial_target="target_a",
-                initial_positive_class=1,
-            )
-            self.assertEqual(state[positive_key], 1)
-            prototype._bind_positive_class_to_target(
-                state,
-                form_revision=state["context_revision"],
-                snapshot_fingerprint=preparation.snapshot.fingerprint,
-                target="target_b",
-                target_values=[0, 1],
-                placeholder="choose",
-                initial_target="target_a",
-                initial_positive_class=1,
-            )
-            self.assertEqual(state[positive_key], "choose")
-
-            prototype._save_target_selection(preparation, draft, "target_b", None)
-            prototype._onboarding_go_to(2)
-            self.assertEqual(state["dataset_preparation_step"], 2)
-            self.assertFalse(draft["population_policy_acknowledged"])
-            with self.assertRaisesRegex(ValueError, "POPULATION_POLICY_NOT_ACKNOWLEDGED"):
-                confirm_dataset_preparation(preparation, draft)
-
-            draft["population_policy_acknowledged"] = True
-            with self.assertRaisesRegex(ValueError, "POSITIVE_CLASS_MISSING"):
-                confirm_dataset_preparation(preparation, draft)
-
-            state[positive_key] = 1
-            prototype._save_target_selection(preparation, draft, "target_b", state[positive_key])
-            prototype._onboarding_go_to(3)
-            prototype._onboarding_go_to(4)
-            draft["population_policy_acknowledged"] = False
-            with self.assertRaisesRegex(ValueError, "POPULATION_POLICY_NOT_ACKNOWLEDGED"):
-                confirm_dataset_preparation(preparation, draft)
-
-            draft["population_policy_acknowledged"] = True
-            prototype._onboarding_go_to(5)
-
-        self.assertTrue(confirm_dataset_preparation(preparation, draft).is_prepared)
 
     def test_historical_prepared_change_file_clears_active_preparation_and_returns_to_file_step(self) -> None:
         import app.streamlit_app as prototype

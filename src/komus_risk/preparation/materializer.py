@@ -5,7 +5,6 @@ from dataclasses import asdict
 import math
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
 from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
@@ -23,6 +22,7 @@ from .manifest import (
     CandidateConfirmationDelta, ColumnDecisionDelta, DatasetPreparationManifest,
     ProposalConfirmationDelta,
 )
+from .predictor_compatibility import predictor_compatibility_error
 
 _STATUS_TO_USAGE = {
     ConfirmedColumnStatus.TARGET: FeatureUsageStatus.TARGET,
@@ -149,15 +149,9 @@ class DatasetPreparationMaterializer:
         for name, decision in decisions.items():
             if decision.status is not ConfirmedColumnStatus.MODEL_ALLOWED:
                 continue
-            series = frame[name]
-            if pd.api.types.is_complex_dtype(series) or not (pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series)):
-                raise DatasetPreparationError("UNSUPPORTED_PREDICTOR_REPRESENTATION")
-            try:
-                values = series.to_numpy(dtype=np.float32)
-            except (TypeError, ValueError, OverflowError) as error:
-                raise DatasetPreparationError("UNSUPPORTED_PREDICTOR_REPRESENTATION") from error
-            if not np.isfinite(values).all():
-                raise DatasetPreparationError("NON_FINITE_PREDICTOR")
+            error_code = predictor_compatibility_error(frame[name])
+            if error_code is not None:
+                raise DatasetPreparationError(error_code)
 
     def _registry(self, snapshot: TabularSnapshot, report: DatasetInspectionReport, decisions: dict[str, ConfirmedColumnDecision], confirmation_hash_value: str) -> FeatureRegistry:
         by_position = {column.column_position: column for column in report.columns}
