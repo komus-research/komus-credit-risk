@@ -7,6 +7,13 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from pandas.api.types import (
+    is_bool_dtype,
+    is_complex_dtype,
+    is_datetime64_any_dtype,
+    is_numeric_dtype,
+    is_timedelta64_dtype,
+)
 
 from komus_risk.artifacts import LoadedModelVersion
 from komus_risk.data import TabularSnapshot
@@ -117,7 +124,14 @@ class ModelInferenceService:
     @staticmethod
     def _validated_feature_frame(dataframe: pd.DataFrame, feature_columns: tuple[str, ...]) -> pd.DataFrame:
         try:
-            numeric = dataframe.loc[:, list(feature_columns)].apply(pd.to_numeric, errors="raise").astype(float)
+            feature_frame = dataframe.loc[:, list(feature_columns)]
+            for column in feature_columns:
+                dtype = feature_frame.loc[:, column].dtype
+                if (is_complex_dtype(dtype) or is_datetime64_any_dtype(dtype)
+                        or is_timedelta64_dtype(dtype)
+                        or not (is_numeric_dtype(dtype) or is_bool_dtype(dtype))):
+                    raise ValueError(f"Inference predictor column {column!r} must have a real numeric or boolean dtype.")
+            numeric = feature_frame.astype(float)
         except (TypeError, ValueError) as error:
             raise ValueError("Inference predictor values must all be numeric.") from error
         values = numeric.to_numpy(copy=False)

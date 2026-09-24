@@ -68,6 +68,14 @@ class ModelInferenceTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.service.predict(loaded_model_version=self.model, snapshot=self._snapshot(pd.DataFrame({"company_code": ["x"], "f_a": [value], "f_b": [2]})))
 
+    def test_nonnumeric_predictor_dtypes_fail_before_predictor_call(self) -> None:
+        for value in (pd.Series(pd.to_datetime(["2026-01-01"])), pd.Series([1 + 2j])):
+            with self.subTest(dtype=value.dtype):
+                snapshot = self._snapshot(pd.DataFrame({"company_code": ["x"], "f_a": value, "f_b": [2]}))
+                with self.assertRaisesRegex(ValueError, "predictor values"):
+                    self.service.predict(loaded_model_version=self.model, snapshot=snapshot)
+                self.assertIsNone(self.predictor.received)
+
     def test_invalid_predictor_outputs_fail_closed(self) -> None:
         for output in ([0.2, 0.3], [np.nan], [np.inf], [-0.1], [1.1]):
             with self.subTest(output=output):
