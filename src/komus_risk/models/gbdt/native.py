@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier
+from catboost import CatBoostClassifier, Pool
 from lightgbm import Booster
 from xgboost import XGBClassifier
 
@@ -24,10 +24,20 @@ from .xgboost import XGBoostAdapter
 class NativePredictor:
     """A reloadable predictor which admits exactly the persisted feature order."""
 
-    def __init__(self, model_id: str, feature_columns: tuple[str, ...], predict: Callable[[pd.DataFrame], Any]) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        feature_columns: tuple[str, ...],
+        predict: Callable[[pd.DataFrame], Any],
+        *,
+        local_shap: Callable[[pd.DataFrame], Any] | None = None,
+        raw_predict: Callable[[pd.DataFrame], Any] | None = None,
+    ) -> None:
         self.model_id = model_id
         self.feature_columns = tuple(feature_columns)
         self._predict = predict
+        self._local_shap = local_shap
+        self._raw_predict = raw_predict
 
     def predict_positive_proba(self, X: pd.DataFrame) -> np.ndarray:
         if not isinstance(X, pd.DataFrame) or tuple(X.columns) != self.feature_columns:
@@ -36,6 +46,23 @@ class NativePredictor:
         if values.ndim != 1 or len(values) != len(X) or not np.isfinite(values).all() or (values < 0).any() or (values > 1).any():
             raise ValueError("Native model returned invalid positive probabilities.")
         return values
+
+    def catboost_local_shap(self, X: pd.DataFrame) -> tuple[np.ndarray, float, float]:
+        """Return native CatBoost SHAP values and raw margin for one exact row."""
+        if self.model_id != "catboost" or self._local_shap is None or self._raw_predict is None:
+            raise ValueError("Local explanations are unsupported for this native model.")
+        if not isinstance(X, pd.DataFrame) or tuple(X.columns) != self.feature_columns or len(X) != 1:
+            raise ValueError("Native CatBoost local SHAP requires one row with exact persisted feature columns.")
+        try:
+            shap_matrix = np.asarray(self._local_shap(X), dtype=float)
+            raw_values = np.asarray(self._raw_predict(X), dtype=float)
+        except (TypeError, ValueError) as error:
+            raise ValueError("Native CatBoost local SHAP returned invalid values.") from error
+        expected_shape = (1, len(self.feature_columns) + 1)
+        if (shap_matrix.shape != expected_shape or raw_values.shape not in {(1,), (1, 1)}
+                or not np.isfinite(shap_matrix).all() or not np.isfinite(raw_values).all()):
+            raise ValueError("Native CatBoost local SHAP returned invalid values.")
+        return shap_matrix[0, :-1].copy(), float(shap_matrix[0, -1]), float(raw_values.reshape(-1)[0])
 
 
 def native_model_files(model_id: str) -> tuple[str, ...]:
@@ -126,7 +153,16 @@ def load_native_predictor(model_id: str, directory: str | Path, feature_columns:
         if model_id == "catboost":
             model = CatBoostClassifier()
             model.load_model(path / "model.cbm")
-            return NativePredictor(model_id, feature_columns, lambda X: model.predict_proba(prepare_numeric_input(X))[:, 1])
+            return NativePredictor(
+                model_id,
+                feature_columns,
+                lambda X: model.predict_proba(prepare_numeric_input(X))[:, 1],
+                local_shap=lambda X: model.get_feature_importance(
+                    Pool(prepare_numeric_input(X), feature_names=list(feature_columns)),
+                    type="ShapValues",
+                ),
+                raw_predict=lambda X: model.predict(prepare_numeric_input(X), prediction_type="RawFormulaVal"),
+            )
         if model_id == "xgboost":
             model = XGBClassifier()
             model.load_model(path / "model.json")
