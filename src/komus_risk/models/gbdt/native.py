@@ -92,7 +92,7 @@ def validate_fitted_adapter_recipe(
     if model_id == "lightgbm":
         _validate_component(adapter, LightGBMAdapter, expected_profile, expected_seed, "LightGBM")
         return
-    if model_id != "gbdt_mean" or not isinstance(adapter, GBDTMeanAdapter) or not getattr(adapter, "_fitted", False):
+    if model_id != "gbdt_mean" or type(adapter) is not GBDTMeanAdapter or not getattr(adapter, "_fitted", False):
         raise ValueError("Actual fitted adapter does not match the trusted GBDT mean recipe.")
     components = getattr(adapter, "_component_adapters", None)
     expected_components = expected_profile.get("components") if isinstance(expected_profile, dict) else None
@@ -104,7 +104,7 @@ def validate_fitted_adapter_recipe(
 
 
 def _validate_component(adapter: Any, adapter_type: type[Any], expected_profile: Any, expected_seed: int, label: str) -> None:
-    if not isinstance(adapter, adapter_type):
+    if type(adapter) is not adapter_type:
         raise ValueError(f"Actual fitted adapter is not the trusted {label} adapter type.")
     if adapter.profile != expected_profile or adapter.seed != expected_seed:
         raise ValueError(f"Actual {label} adapter profile or seed does not match the trusted recipe.")

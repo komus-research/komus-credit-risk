@@ -17,7 +17,7 @@ from komus_risk.data import LoadedDataset
 from komus_risk.experiments import EvaluationPopulation, ExperimentRunOutput
 from komus_risk.models.gbdt import (
     CATBOOST_MODEL_SPEC, CATBOOST_PROFILE, GBDT_MEAN_PROFILE, LIGHTGBM_PROFILE,
-    XGBOOST_PROFILE, CatBoostFactory, GBDTMeanAdapter, GBDTMeanFactory, LightGBMFactory, XGBoostFactory,
+    XGBOOST_PROFILE, CatBoostAdapter, CatBoostFactory, GBDTMeanAdapter, GBDTMeanFactory, LightGBMFactory, XGBoostFactory,
 )
 from komus_risk.models.gbdt.native import load_native_predictor, save_native_model, validate_fitted_adapter_recipe
 from komus_risk.registries import FeatureRegistry, ModelRegistry
@@ -155,3 +155,16 @@ class ModelVersionTests(unittest.TestCase):
         incomplete_mean._fitted = True
         with self.assertRaisesRegex(ValueError, "components"):
             validate_fitted_adapter_recipe("gbdt_mean", incomplete_mean, GBDT_MEAN_PROFILE, self.config.seed)
+
+    def test_store_rejects_subclass_adapter_before_publication(self) -> None:
+        class SubclassedCatBoostAdapter(CatBoostAdapter):
+            pass
+
+        X = self.frame.loc[:, ["f_a", "f_b"]]
+        adapter = SubclassedCatBoostAdapter(CATBOOST_PROFILE, self.config.seed)
+        adapter.fit(X, self.frame["target"])
+        root = Path(self.temp.name) / "models"
+        before = set(root.iterdir())
+        with self.assertRaisesRegex(ValueError, "adapter type"):
+            self.versions.save(experiment_artifact_id=self.artifact.artifact_id, dataset_contract=self.contract, config=self.config, feature_specs=self.registry.resolve(self.config.feature_ids), feature_registry=self.registry, population=self.population, adapter=adapter, source_file_sha256=self.loaded.source_file_sha256)
+        self.assertEqual(before, set(root.iterdir()))
