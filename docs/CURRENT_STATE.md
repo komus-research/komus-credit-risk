@@ -834,10 +834,41 @@ Reviewer verdict: **ACCEPT Stage III-C1**.
 
 Принятый UX commit: `492b6dc6`.
 
-**CURRENT PRODUCT PRIORITY — Stage III-C2**
+### Stage III-C2a / External Data Boundary — ACCEPTED
+
+Принята безопасная outbound boundary перед внешним Result Interpreter provider:
+
+`FULL ResultInterpreterRequest → request hash validation → REDACTED_V1 positive allowlist projection → provider-safe payload`.
+
+Подтверждено:
+
+- full internal request и lineage не урезаются;
+- `validate_request()` сохраняет прежнюю hash-integrity semantics, а `interpret_request()` продолжает валидировать request самостоятельно;
+- tampered probability/SHAP/description fail-close до policy/provider;
+- `REDACTED_V1` строится positive allowlist-ом, а не blacklist/delete;
+- наружу разрешены только probability, `shap_output_space` и top-feature `feature_id/column_name/shap_value/abs_rank/description_ru`;
+- identifier metadata/value, `row_id`, `raw_value`, model/evidence provenance, `raw_model_output`, `base_value` наружу не выходят;
+- deterministic `provider_payload_hash` и immutable dispatch receipt связывают sanitized payload с full `request_hash`;
+- policy-bound client передаёт underlying provider только sanitized dispatch payload;
+- accepted Stage III-A Result Interpreter semantics сохранены;
+- runtime/UI/provider configuration/capability activation намеренно отложены до III-C2b.
+
+Reviewer verdict: **ACCEPT Stage III-C2a**.
+
+Implementation commit: `ebb4c7d0`.
+Docs/acceptance commit: `ff2def77`.
+
+Verification перед commit:
+
+- focused: 22 tests PASS;
+- full: 237 tests PASS;
+- `compileall src app` PASS;
+- `git diff --check` PASS.
+
+**CURRENT PRODUCT PRIORITY — Stage III-C2b**
 
 Следующий defense-critical шаг:
 
-`LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → понятное объяснение`.
+`LocalExplanationEvidence → accepted REDACTED_V1 boundary → runtime policy/provider configuration → provider adapter → понятное русское объяснение`.
 
-Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются отдельными workstreams и не должны размывать Stage III-C2.
+Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются отдельными workstreams и не должны размывать Stage III-C2b.

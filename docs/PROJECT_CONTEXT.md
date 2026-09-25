@@ -418,11 +418,25 @@ Generic UI не содержит special-case правил для `Q_B1_norm`, `
 Принятый UX commit: `492b6dc6`.
 Текущая local verification evidence: 52 focused UX tests PASS, 229 full tests PASS, `compileall src app` PASS, `git diff --check` PASS.
 
-**Следующий шаг — Stage III-C2.**
+**Stage III-C2a / External Data Boundary — ACCEPTED.**
 
-`LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
+Принята provider-neutral outbound boundary:
 
-Для III-C2 default external policy — `DISABLED`; defense-ready режим — `REDACTED_V1`, без передачи identifier value, raw feature values и row identity.
+`FULL ResultInterpreterRequest → request hash validation → REDACTED_V1 positive allowlist projection → provider-safe payload`.
+
+Full internal request, lineage и `request_hash` сохраняются. Наружу допускаются только probability, `shap_output_space` и top-feature `feature_id/column_name/shap_value/abs_rank/description_ru`. Identifier, row identity, raw feature values и provenance внешнему provider не передаются.
+
+Policy-bound client игнорирует прежний full internal client payload и передаёт underlying provider только sanitized dispatch payload. Existing Stage III-A direct Result Interpreter contract при этом не изменён.
+
+Implementation commit: `ebb4c7d0`.
+Acceptance/docs commit: `ff2def77`.
+Reviewer verdict: **ACCEPT Stage III-C2a**.
+
+**Следующий шаг — Stage III-C2b / Runtime + Streamlit Integration.**
+
+`LocalExplanationEvidence → accepted REDACTED_V1 boundary → runtime policy/provider configuration → ResultInterpreter → provider adapter → Russian explanation`.
+
+Default external policy остаётся `DISABLED`; без явно configured `REDACTED_V1` внешний provider не вызывается. III-C2b должен подключить runtime config, capability, session-state/invalidation и существующий Result UI без нового top-level экрана.
 
 ---
 
