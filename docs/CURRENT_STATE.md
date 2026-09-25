@@ -865,10 +865,40 @@ Verification перед commit:
 - `compileall src app` PASS;
 - `git diff --check` PASS.
 
-**CURRENT PRODUCT PRIORITY — Stage III-C2b**
+### Stage III-C2b / Runtime + Streamlit Integration — ACCEPTED
 
-Следующий defense-critical шаг:
+Reviewer принял runtime/UI интеграцию внешнего Result Interpreter после одного corrective fix для явного `KOMUS_EXTERNAL_DATA_POLICY=DISABLED`.
 
-`LocalExplanationEvidence → accepted REDACTED_V1 boundary → runtime policy/provider configuration → provider adapter → понятное русское объяснение`.
+Реализовано:
 
-Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются отдельными workstreams и не должны размывать Stage III-C2b.
+- fail-safe runtime policy: отсутствие policy и явный `DISABLED` дают штатный `DISABLED / EXTERNAL_DATA_POLICY_DISABLED`;
+- единственный разрешённый внешний режим V1 — `REDACTED_V1`;
+- provider/model/credential собираются только в composition root;
+- OpenAI adapter остаётся заменяемым provider adapter и не протекает в Streamlit/application core;
+- capability `result_interpretation` различает WAITING/DISABLED/MISCONFIGURED/AVAILABLE стабильными reason codes;
+- application boundary fail-close запрещает provider call при disabled/misconfigured runtime;
+- session state хранит request/response text/dispatch receipt/error code без API key/provider client;
+- retry использует тот же immutable `ResultInterpreterRequest` без повторного prediction/SHAP;
+- LLM failure сохраняет ModelVersion, PredictionBatch, выбранную строку и Local SHAP;
+- существующий экран `Результат` продолжен блоком «Объяснение простыми словами» без нового top-level шага;
+- success/failure UX не показывает raw exception, API key или provider internals.
+
+Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
+
+Локальная verification после corrective fix:
+
+- full suite: **246 tests PASS**;
+- `compileall src app` PASS;
+- `git diff --check` PASS.
+
+Reviewer verdict: **ACCEPT Stage III-C2b**.
+
+**CURRENT PRODUCT PRIORITY — manual defense E2E Stage III-C2**
+
+Осталось вручную проверить реальный пользовательский путь:
+
+`probability → Local SHAP → REDACTED_V1 → external provider → русское объяснение`.
+
+Сейчас на рабочем компьютере runtime policy/provider/model/API credential не настроены, поэтому реальный внешний provider ещё не вызывался. Это не дефект implementation: default state намеренно fail-safe `DISABLED`.
+
+Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются отдельными workstreams и не должны размывать manual defense E2E.

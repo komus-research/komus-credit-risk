@@ -348,6 +348,17 @@ Frontend работает через `IntegrationWorkflowService` и capability 
 
 Главный UX invariant: отказ следующей capability не ломает уже успешные предыдущие результаты. LLM failure не очищает prediction/SHAP; unsupported local explanation не очищает PredictionBatch.
 
+Stage III-C2 runtime/UI contract:
+
+- отсутствие policy или explicit `DISABLED` → `DISABLED / EXTERNAL_DATA_POLICY_DISABLED`;
+- unknown policy/provider и missing model/credential → `MISCONFIGURED` с stable reason code и без provider call;
+- ready `REDACTED_V1` → `AVAILABLE / RESULT_INTERPRETER_READY`;
+- request сохраняется для retry; retry не пересчитывает prediction/SHAP;
+- пользователь видит safe-data notice, provider-generated Russian explanation и non-causality/non-decision disclaimer;
+- raw exception, API key, request JSON и provider internals в основной UI не показываются.
+
+Stage III-C2b принят Reviewer. Реальный provider manual E2E является отдельной финальной проверкой defense flow.
+
 Красивый frontend не строится раньше устойчивого `ExperimentRunner`.
 
 ## 16. История и аудит

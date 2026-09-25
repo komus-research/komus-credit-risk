@@ -831,4 +831,25 @@ III-C2a получил Reviewer `ACCEPT`.
 
 Принятый implementation commit: `ebb4c7d0`.
 
-Следующий defense-critical stage — III-C2b: runtime configuration, provider composition, capability и continuation существующего Result UI.
+### D-084 — III-C2b подключает runtime/provider/UI только поверх принятой REDACTED_V1 boundary
+
+Stage III-C2b получил Reviewer `ACCEPT` после corrective fix.
+
+Принято:
+
+- отсутствие external policy и явный `DISABLED` эквивалентны штатному fail-safe `DISABLED`;
+- единственный разрешённый внешний режим V1 — `REDACTED_V1`;
+- неизвестная policy и неполная provider/model/credential configuration дают `MISCONFIGURED` и zero provider calls;
+- provider registry, model и credential composition находятся только в composition root;
+- frontend вызывает только `IntegrationWorkflowService` и не знает OpenAI/provider API;
+- application `interpret()` самостоятельно запрещает вызов при неготовом runtime и не полагается на disabled UI button;
+- session state не содержит API key/provider client/policy object/raw exception;
+- immutable interpreter request сохраняется для retry;
+- LLM failure не очищает ModelVersion, PredictionBatch, selected row или Local SHAP;
+- explanation продолжает существующий `Результат`, новый top-level экран не создаётся.
+
+Первое review выявило один MAJOR: explicit `KOMUS_EXTERNAL_DATA_POLICY=DISABLED` считался INVALID. Corrective delta установил expected semantics `DISABLED / EXTERNAL_DATA_POLICY_DISABLED` и доказал zero provider factory calls regression-тестом.
+
+Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
+
+Следующий defense-critical шаг — manual Stage III-C2 E2E с реальным provider на synthetic/non-client input при явной runtime-настройке `REDACTED_V1`.

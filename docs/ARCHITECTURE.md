@@ -551,7 +551,22 @@ Defense-ready режим `REDACTED_V1` реализован как **positive al
 
 `ProviderDispatchReceipt` связывает полный `source_request_hash`, policy id/version и deterministic `provider_payload_hash`. Полный raw external sharing до защиты не реализуется.
 
-Следующий этап III-C2b подключает runtime configuration, capability и UI только через уже принятую policy boundary.
+Stage III-C2b / Runtime + Streamlit Integration также принят Reviewer.
+
+Runtime/composition boundary:
+
+- отсутствие `KOMUS_EXTERNAL_DATA_POLICY` или явный `DISABLED` → штатный `DISABLED`, provider не создаётся;
+- единственный разрешённый внешний режим V1 — `REDACTED_V1`;
+- неизвестная policy или неполная provider/model/credential configuration → `MISCONFIGURED`, provider call невозможен;
+- provider registry и provider-specific credential construction живут только в composition root;
+- Streamlit/application core не ветвятся по OpenAI/provider id;
+- `IntegrationWorkflowService.interpret()` повторно enforce-ит readiness и разрешённую outbound policy, поэтому UI не является security boundary.
+
+Downstream session state хранит immutable internal request, displayable response text, dispatch receipt и stable error code; secret/provider client/policy object в session не сохраняются. Retry повторяет только provider call с тем же request. LLM failure не очищает prediction/SHAP.
+
+UI остаётся внутри `Результат`: после Local SHAP доступен блок «Объяснение простыми словами». Новый top-level экран не создаётся.
+
+Реальный provider manual E2E выполняется отдельно только при явной runtime-настройке `REDACTED_V1` и credentials; default запуск остаётся `DISABLED`.
 
 ## 18. Хранение истории
 

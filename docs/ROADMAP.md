@@ -573,24 +573,41 @@ Verification перед commit:
 
 Implementation commit: `ebb4c7d0`.
 
-## NEXT — Stage III-C2b / RUNTIME + STREAMLIT INTEGRATION
+## Stage III-C2b / RUNTIME + STREAMLIT INTEGRATION — ACCEPTED
 
-Следующий шаг:
-
-`LocalExplanationEvidence → full internal request → accepted REDACTED_V1 boundary → configured provider → Russian explanation`.
-
-Нужно подключить:
+Закрыто:
 
 - fail-safe runtime policy;
-- provider/model/credential composition;
-- `result_interpretation` capability;
+- default и explicit `DISABLED`;
+- `REDACTED_V1` как единственный разрешённый external mode V1;
+- provider/model/credential composition в composition root;
+- `result_interpretation` capability со стабильными reason codes;
+- application-level fail-close до policy/provider;
 - downstream session state/invalidation;
-- существующий Result UI;
-- retry/safe degradation без пересчёта prediction/SHAP.
+- сохранение immutable request для retry;
+- Result UI с блоком «Объяснение простыми словами»;
+- safe degradation без повторного prediction/SHAP;
+- отсутствие OpenAI/API-key coupling в Streamlit.
 
-По умолчанию внешний LLM остаётся запрещён: `EXTERNAL_DATA_POLICY=DISABLED`.
+Reviewer сначала нашёл один MAJOR: explicit `KOMUS_EXTERNAL_DATA_POLICY=DISABLED` трактовался как INVALID. Corrective delta исправил это и получил Reviewer **ACCEPT**.
 
-Главный invariant сохраняется: отказ LLM capability не инвалидирует ModelVersion, PredictionBatch, выбранную строку или Local SHAP.
+Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
+
+Verification после corrective fix:
+
+- full: 246 tests PASS;
+- `compileall src app` PASS;
+- `git diff --check` PASS.
+
+## NEXT — MANUAL DEFENSE E2E STAGE III-C2
+
+Вручную проверить на synthetic/non-client input:
+
+`probability → Local SHAP → REDACTED_V1 → configured provider → Russian explanation`.
+
+До настройки runtime внешняя интерпретация намеренно остаётся `DISABLED`.
+
+Главный invariant: failure/отключение LLM не инвалидирует ModelVersion, PredictionBatch, выбранную строку или Local SHAP.
 
 ## AFTER DEFENSE-CRITICAL INTEGRATION
 

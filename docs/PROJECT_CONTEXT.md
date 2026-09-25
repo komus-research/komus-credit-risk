@@ -432,11 +432,28 @@ Implementation commit: `ebb4c7d0`.
 Acceptance/docs commit: `ff2def77`.
 Reviewer verdict: **ACCEPT Stage III-C2a**.
 
-**Следующий шаг — Stage III-C2b / Runtime + Streamlit Integration.**
+**Stage III-C2b / Runtime + Streamlit Integration — ACCEPTED.**
 
 `LocalExplanationEvidence → accepted REDACTED_V1 boundary → runtime policy/provider configuration → ResultInterpreter → provider adapter → Russian explanation`.
 
-Default external policy остаётся `DISABLED`; без явно configured `REDACTED_V1` внешний provider не вызывается. III-C2b должен подключить runtime config, capability, session-state/invalidation и существующий Result UI без нового top-level экрана.
+Принятые свойства:
+
+- default и explicit `DISABLED` — штатный fail-safe режим без provider creation/call;
+- неизвестная policy, отсутствующие provider/model/credential дают `MISCONFIGURED` и zero provider calls;
+- готовый `REDACTED_V1` runtime даёт `AVAILABLE / RESULT_INTERPRETER_READY`;
+- provider/model/API key конфигурируются только на runtime/composition boundary;
+- Streamlit не знает OpenAI API и работает только через `IntegrationWorkflowService`;
+- interpreter request сохраняется для retry, а provider failure не инвалидирует prediction/SHAP;
+- новый top-level экран не добавлен: explanation встроен в существующий `Результат`.
+
+Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
+Reviewer verdict: **ACCEPT Stage III-C2b**.
+
+Локально после corrective fix: 246 full tests PASS, `compileall src app` PASS, `git diff --check` PASS.
+
+**Следующий шаг — manual defense E2E Stage III-C2.**
+
+Нужно вручную проверить реальный путь `probability → Local SHAP → REDACTED_V1 → provider → Russian explanation` на synthetic/non-client input. На текущем рабочем запуске external policy/provider/model/credential ещё не настроены; default остаётся `DISABLED`.
 
 ---
 
