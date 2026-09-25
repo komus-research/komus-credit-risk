@@ -533,6 +533,28 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertEqual(configuration.policy_mode, "DISABLED")
         self.assertFalse(configuration.is_ready)
 
+    def test_explicit_disabled_policy_creates_no_result_interpreter_provider(self) -> None:
+        calls = []
+
+        def factory(model, credential):
+            calls.append((model, credential))
+            return object()
+
+        with TemporaryDirectory() as directory:
+            runtime = bootstrap.create_runtime(
+                directory,
+                environment={"KOMUS_EXTERNAL_DATA_POLICY": "DISABLED"},
+                secrets={"OPENAI_API_KEY": "secret"},
+                result_interpreter_factories={"openai": factory},
+            )
+        workflow = runtime.integration_workflow_service
+        capability = workflow.capabilities(local_explanation_evidence=object())["result_interpretation"]
+
+        self.assertEqual(workflow.result_interpreter_runtime.policy_mode, "DISABLED")
+        self.assertEqual((capability.state, capability.reason_code), ("DISABLED", "EXTERNAL_DATA_POLICY_DISABLED"))
+        self.assertIsNone(workflow.result_interpreter_client)
+        self.assertEqual(calls, [])
+
     def test_result_interpreter_runtime_reports_incomplete_configuration_without_provider_creation(self) -> None:
         cases = (
             ({"KOMUS_EXTERNAL_DATA_POLICY": "UNSAFE"}, "EXTERNAL_DATA_POLICY_INVALID"),

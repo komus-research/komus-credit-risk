@@ -508,7 +508,7 @@ def _result_interpreter_wiring(
 ) -> tuple[ResultInterpreterRuntimeConfiguration, Any | None, RedactedV1OutboundPolicy | None]:
     """Resolve external interpretation exclusively in the composition root."""
     policy = str(environment.get("KOMUS_EXTERNAL_DATA_POLICY", "")).strip()
-    if not policy:
+    if not policy or policy == "DISABLED":
         return ResultInterpreterRuntimeConfiguration.disabled(), None, None
     if policy != "REDACTED_V1":
         return ResultInterpreterRuntimeConfiguration(policy_mode="INVALID"), None, None
