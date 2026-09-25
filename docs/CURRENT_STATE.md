@@ -893,12 +893,24 @@ Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
 
 Reviewer verdict: **ACCEPT Stage III-C2b**.
 
-**CURRENT PRODUCT PRIORITY — manual defense E2E Stage III-C2**
+**Manual defense E2E Stage III-C2 — TECHNICAL PASS / PRODUCT GAP FOUND**
 
-Осталось вручную проверить реальный пользовательский путь:
+Ручной прогон 2026-09-25 подтвердил реальный пользовательский путь:
 
-`probability → Local SHAP → REDACTED_V1 → external provider → русское объяснение`.
+`probability → Local SHAP → REDACTED_V1 → OpenAI → русское объяснение`.
 
-Сейчас на рабочем компьютере runtime policy/provider/model/API credential не настроены, поэтому реальный внешний provider ещё не вызывался. Это не дефект implementation: default state намеренно fail-safe `DISABLED`.
+Подтверждено:
+- disabled path сохраняет рабочие prediction и Local SHAP;
+- ready REDACTED_V1 runtime реально вызывает OpenAI и возвращает текст;
+- failure-safe граница C2b остаётся рабочей.
 
-Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются отдельными workstreams и не должны размывать manual defense E2E.
+Одновременно обнаружен product gap:
+- UI использует один generic Result Interpreter вместо принятой Stage 20 ролевой адаптации;
+- текущий prompt выдаёт техническое SHAP-резюме вместо понятного role-oriented explanation;
+- trusted feature descriptions из сохранённой ModelVersion metadata не передаются в interpreter request, поэтому LLM видит в основном technical column names.
+
+**CURRENT PRODUCT PRIORITY — Stage III-C2c / Role-Based Result Interpretation Integration.**
+
+C2c должен вернуть принятые четыре роли Stage 20 — менеджер по продажам, кредитный контролёр, юрист, информационная безопасность — поверх уже принятой REDACTED_V1 boundary, без identifier/raw values и без business threshold/credit decision.
+
+Визуальная иерархия кнопок и общий UX-polish остаются отдельным проходом после functional C2c ACCEPT.
