@@ -57,6 +57,7 @@ class RedactedV1OutboundPolicy:
                     "column_name": feature.column_name,
                     "shap_value": feature.shap_value,
                     "abs_rank": feature.abs_rank,
+                    "display_name_ru": feature.display_name_ru,
                     "description_ru": feature.description_ru,
                 }
                 for feature in request.features
