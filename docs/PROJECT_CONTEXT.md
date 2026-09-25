@@ -374,7 +374,21 @@ Accepted:
 - Stage III-A — model-independent Result Interpreter Core V1;
 - Stage III-B — modular OpenAI adapter с `store=False`.
 
-Следующий defense-critical вопрос — как минимально встроить эту цепочку в существующий Streamlit UI без hardcode конкретной модели/provider и без переноса ML logic во frontend. До реализации этого шага нужен Architect design.
+Architect Lock для Stage III-C принят.
+
+Следующий implementation stage — **III-C1 / LOCAL MODEL USE FLOW**:
+
+`Result → explicit save ModelVersion → targetless file → PredictionBatch → select row → LocalExplanationEvidence`.
+
+Новый верхнеуровневый экран не создаётся: flow остаётся `Данные → Признаки → Модель → Эксперимент → Результат`, а локальное применение модели добавляется последовательным блоком на экране `Результат`.
+
+Frontend должен работать через тонкий application facade `IntegrationWorkflowService` и capability contract, а не напрямую через stores/native predictors/explainers или hardcoded model_id.
+
+После Reviewer ACCEPT III-C1 открывается III-C2:
+
+`LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
+
+Для III-C2 default external policy — `DISABLED`; defense-ready режим — `REDACTED_V1`, без передачи identifier value, raw feature values и row identity.
 
 ---
 

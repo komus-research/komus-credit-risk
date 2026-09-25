@@ -758,3 +758,40 @@ OpenAI adapter реализует общий ResultInterpreterClient; model name
 Исключение допустимо только как явно зафиксированное временное V1 capability limitation, не как архитектурное правило.
 
 Причина: система должна позволять добавлять или заменять компоненты без переписывания уже принятой цепочки.
+
+### D-078 — Stage III-C разделён на локальный C1 и внешний C2
+
+Принятое разбиение:
+
+- **III-C1 / LOCAL MODEL USE FLOW**: Result → explicit save ModelVersion → targetless file → PredictionBatch → selected row → LocalExplanationEvidence;
+- **III-C2 / EXTERNAL INTERPRETATION FLOW**: LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation.
+
+III-C1 должен получить Reviewer ACCEPT до начала III-C2.
+
+Причина: C1 проверяет model lineage/inference/same-model explainability локально; C2 отдельно вводит внешний provider и data-sharing risk.
+
+### D-079 — III-C не добавляет новый верхнеуровневый экран Streamlit
+
+Верхнеуровневый flow остаётся:
+
+`Данные → Признаки → Модель → Эксперимент → Результат`.
+
+На `Результат` добавляется последовательный блок **«Применить модель к новым данным»**.
+
+Причина: это минимальный defense-ready UX без рефакторинга принятого experiment wizard.
+
+### D-080 — Streamlit работает через IntegrationWorkflowService и capability contract
+
+Frontend не обращается напрямую к stores/native predictors/explainers/provider clients. Тонкий application facade оркестрирует accepted services и возвращает typed results/capabilities.
+
+Capability states V1: `AVAILABLE`, `WAITING_FOR_INPUT`, `UNSUPPORTED`, `DISABLED`, `MISCONFIGURED`.
+
+Неподдерживаемая capability справа не инвалидирует уже рассчитанный результат слева.
+
+### D-081 — External LLM default policy отключена; defense-ready режим REDACTED_V1
+
+По умолчанию `EXTERNAL_DATA_POLICY=DISABLED`; без configured policy provider не вызывается.
+
+В `REDACTED_V1` внешний provider не получает identifier value, raw feature values и row identity. Full raw external sharing до защиты не реализуется.
+
+Один checkbox пользователя не заменяет организационное data-sharing permission. `store=False` также не является таким разрешением.

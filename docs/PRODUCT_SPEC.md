@@ -309,11 +309,44 @@ Backend не содержит собственной копии алгоритм
 - LLM-сводка;
 - Артефакты и воспроизводимость.
 
-Ближайший defense-ready flow должен использовать уже принятые application boundaries:
+Ближайший defense-ready flow использует уже принятые application boundaries и не создаёт новый верхнеуровневый экран.
 
-`Результат эксперимента → сохранить ModelVersion → новый файл → probability → выбрать строку → Local SHAP → LLM-объяснение`.
+Верхнеуровневый путь остаётся:
 
-Frontend не должен знать внутренности CatBoost/OpenAI и не должен содержать hardcoded `INN`, `DefMark`, feature names, provider model или threshold. Недоступная capability (например local SHAP для неподдерживаемой модели или внешний LLM) отображается как недоступная функция и не ломает предыдущие этапы flow.
+`Данные → Признаки → Модель → Эксперимент → Результат`.
+
+На `Результат` добавляется блок **«Применить модель к новым данным»**.
+
+### III-C1 — локальное применение модели
+
+`Результат → explicit save ModelVersion → targetless file → PredictionBatch → selected row → LocalExplanationEvidence`.
+
+Требования:
+
+- ModelVersion создаётся только явным действием пользователя;
+- текущая сохранённая версия становится active для этого Result;
+- targetless файл не проходит Dataset Preparation, его schema source — ModelVersion;
+- prediction table строится из `PredictionBatch` и показывает dynamic identifier + probability;
+- duplicate identifier values допустимы, выбор строки идёт по `row_id`;
+- local explanation вызывается по capability; `UNSUPPORTED` не блокирует inference.
+
+### III-C2 — внешняя интерпретация
+
+`LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
+
+Default: `EXTERNAL_DATA_POLICY=DISABLED`.
+
+Defense-ready режим `REDACTED_V1` не передаёт внешнему provider:
+
+- identifier value;
+- raw feature values;
+- row identity.
+
+Provider/model/API key не хардкодятся в Streamlit и не сохраняются в model/experiment artifacts.
+
+Frontend работает через `IntegrationWorkflowService` и capability contract; он не должен знать внутренности CatBoost/OpenAI и не должен содержать hardcoded `INN`, `DefMark`, feature names, provider model или threshold.
+
+Главный UX invariant: отказ следующей capability не ломает уже успешные предыдущие результаты. LLM failure не очищает prediction/SHAP; unsupported local explanation не очищает PredictionBatch.
 
 Красивый frontend не строится раньше устойчивого `ExperimentRunner`.
 

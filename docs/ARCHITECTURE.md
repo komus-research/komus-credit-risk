@@ -460,7 +460,56 @@ Backend должен:
 
 ## 17. Frontend evolution
 
-Frontend использует backend-контракты и не знает внутренностей библиотек CatBoost/XGBoost/LightGBM.
+Frontend использует application-facing contracts и не знает внутренностей библиотек CatBoost/XGBoost/LightGBM или конкретного LLM provider.
+
+Для Integration V1 принят тонкий application facade:
+
+`IntegrationWorkflowService`
+
+Он оркестрирует уже принятые services/stores и концептуально предоставляет frontend операции:
+
+- `save_model(...)`;
+- `predict(...)`;
+- `explain(...)`;
+- `interpret(...)`;
+- `capabilities(...)`.
+
+`streamlit_app.py` не работает напрямую с `ModelVersionStore`, native predictors, `LocalExplanationService`, OpenAI client, provider credentials или model-specific ветвлениями.
+
+Capability contract достаточен в форме `CapabilityStatus(state, reason_code)` со состояниями:
+
+- `AVAILABLE`;
+- `WAITING_FOR_INPUT`;
+- `UNSUPPORTED`;
+- `DISABLED`;
+- `MISCONFIGURED`.
+
+Capability проверяется отдельно для:
+
+- final model save;
+- inference;
+- local explanation;
+- result interpretation.
+
+Неподдерживаемая capability справа по цепочке не инвалидирует уже рассчитанный результат слева.
+
+Верхнеуровневый Streamlit flow остаётся:
+
+`Данные → Признаки → Модель → Эксперимент → Результат`.
+
+Новый top-level экран для inference/LLM не создаётся. На `Результат` добавляется последовательный блок **«Применить модель к новым данным»**.
+
+Минимальный downstream session-state:
+
+- active ModelVersion;
+- inference snapshot;
+- PredictionBatch;
+- selected prediction row_id;
+- LocalExplanationEvidence;
+- ResultInterpreterRequest/Response;
+- interpreter error.
+
+Invalidation идёт только вниз по цепочке: новая model version очищает inference и ниже; новый inference batch очищает row/SHAP/interpreter; новая row очищает SHAP/interpreter; LLM failure ничего выше себя не очищает.
 
 UI-компоненты:
 
@@ -472,6 +521,20 @@ UI-компоненты:
 - metrics comparison;
 - explanations;
 - artifact/reproducibility panel.
+
+### External interpretation boundary
+
+В III-C2 внешний provider по умолчанию отключён: `EXTERNAL_DATA_POLICY=DISABLED`.
+
+Без configured policy provider call не выполняется. Один пользовательский checkbox не является достаточным организационным разрешением.
+
+Defense-ready режим `REDACTED_V1` перед provider удаляет как минимум:
+
+- `identifier_value`;
+- raw feature values;
+- row identity.
+
+Допустимы probability, SHAP values/ranks/output-space, feature id/column name и trusted descriptions. Полный raw external sharing до защиты не реализуется.
 
 ## 18. Хранение истории
 

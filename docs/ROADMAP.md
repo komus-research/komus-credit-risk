@@ -489,25 +489,37 @@ Backend chain:
 
 Новый ML research stage этим не открывается.
 
-## NEXT — Integration V1 / Stage III-C UI DESIGN + DEFENSE FLOW
+## NEXT — Integration V1 / Stage III-C1 — LOCAL MODEL USE FLOW
 
-Следующий defense-critical product/application workstream — соединить уже принятые backend-компоненты в существующий Streamlit Prototype без переноса ML/business logic во frontend.
+Architect Lock принят.
 
-Целевой пользовательский flow:
+Верхнеуровневый Streamlit flow не расширяется и остаётся:
 
-`Результат эксперимента → сохранить ModelVersion → новый файл → probability → выбрать строку → Local SHAP → понятное LLM-объяснение`.
+`Данные → Признаки → Модель → Эксперимент → Результат`.
 
-Перед реализацией Architect должен зафиксировать:
+На экране `Результат` появляется последовательный блок **«Применить модель к новым данным»**.
 
-- минимальные UI/application boundaries;
-- session-state contract;
-- capability handling для моделей без local SHAP;
-- provider/model configuration без hardcode;
-- поведение при unavailable LLM;
-- правила external data sharing/redaction для реальных identifiers/feature values;
-- acceptance criteria и минимальное разбиение реализации.
+Принятое разбиение:
 
-Кандидатное разбиение `III-C1 / III-C2` пока не является принятым архитектурным решением до ответа Architect.
+### III-C1 — LOCAL MODEL USE FLOW
+
+`Результат → explicit save ModelVersion → targetless file → PredictionBatch → select row → LocalExplanationEvidence`.
+
+III-C1 полностью локален и не зависит от внешнего LLM. Он должен получить Reviewer ACCEPT до начала III-C2.
+
+Frontend работает через application-facing facade `IntegrationWorkflowService`, а не напрямую через `ModelVersionStore`, native predictor, `LocalExplanationService` или model-specific ветвления.
+
+Capability status используется для `final_model_save`, `inference`, `local_explanation`, `result_interpretation`. Неподдерживаемая local explanation не блокирует prediction.
+
+### III-C2 — EXTERNAL INTERPRETATION FLOW
+
+`LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
+
+По умолчанию внешний LLM запрещён: `EXTERNAL_DATA_POLICY=DISABLED`. Без configured policy provider call не выполняется.
+
+Defense-ready разрешённый режим — `REDACTED_V1`: внешний provider не получает `identifier_value`, raw feature values и row identity. Полный raw external sharing до защиты не реализуется.
+
+Главный invariant: отказ следующей capability не инвалидирует уже рассчитанный результат слева по цепочке.
 
 ## AFTER DEFENSE-CRITICAL INTEGRATION
 
