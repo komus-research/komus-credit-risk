@@ -65,7 +65,10 @@ class InterpreterPolicyTests(unittest.TestCase):
             explainer_id="explainer", explainer_version="v1", created_at="2026-09-24T00:00:00+00:00",
         )
         self.request = self.service.build_request(
-            evidence=evidence, descriptions_by_feature_id={"feature-1": "Проверенное описание"},
+            evidence=evidence,
+            recipient_role="lawyer",
+            display_names_by_feature_id={"feature-1": "Понятное название"},
+            descriptions_by_feature_id={"feature-1": "Проверенное описание"},
         )
         self.policy = RedactedV1OutboundPolicy()
 
@@ -77,13 +80,15 @@ class InterpreterPolicyTests(unittest.TestCase):
         self.assertEqual({"probability"}, set(payload["prediction"]))
         self.assertEqual({"shap_output_space"}, set(payload["explanation"]))
         self.assertEqual(
-            {"feature_id", "column_name", "shap_value", "abs_rank", "description_ru"},
+            {"feature_id", "column_name", "shap_value", "abs_rank", "display_name_ru", "description_ru"},
             set(payload["top_features"][0]),
         )
+        self.assertEqual("Понятное название", payload["top_features"][0]["display_name_ru"])
         self.assertEqual("Проверенное описание", payload["top_features"][0]["description_ru"])
+        self.assertIsNone(payload["top_features"][1]["display_name_ru"])
         self.assertIsNone(payload["top_features"][1]["description_ru"])
         forbidden = {
-            "identifier", "identifier_column", "identifier_value", "row_id", "raw_value",
+            "recipient_role", "identifier", "identifier_column", "identifier_value", "row_id", "raw_value",
             "evidence_hash", "model_version_id", "provenance", "raw_model_output", "base_value",
             "experiment_artifact_id", "dataset_id",
         }
@@ -109,8 +114,10 @@ class InterpreterPolicyTests(unittest.TestCase):
 
         self.assertEqual(response.interpreter_id, "underlying")
         self.assertEqual(underlying.calls[0]["payload"], dispatch.payload)
+        self.assertNotIn("recipient_role", underlying.calls[0]["payload"])
         self.assertNotIn("identifier", underlying.calls[0]["payload"])
         self.assertNotIn("raw_value", self._all_keys(underlying.calls[0]["payload"]))
+        self.assertIn("юрист", underlying.calls[0]["system_instruction"].lower())
 
     def test_tampering_fails_before_policy_or_client_access(self) -> None:
         for request in (
@@ -144,7 +151,10 @@ class InterpreterPolicyTests(unittest.TestCase):
                 shap_output_space="raw_margin", raw_model_output=1.0, base_value=0.2,
                 features=tuple(LocalFeatureContribution(f"feature-{rank}", f"technical_{rank}", rank / 10, (rank - 4) / 10, rank) for rank in range(1, 7)),
                 explainer_id="explainer", explainer_version="v1", created_at="2026-09-24T00:00:00+00:00",
-            ), descriptions_by_feature_id={"feature-1": "Проверенное описание"},
+            ),
+            recipient_role="lawyer",
+            display_names_by_feature_id={"feature-1": "Понятное название"},
+            descriptions_by_feature_id={"feature-1": "Проверенное описание"},
         ))
 
     @classmethod
