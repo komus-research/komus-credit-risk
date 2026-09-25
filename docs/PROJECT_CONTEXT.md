@@ -384,7 +384,7 @@ Architect Lock для Stage III-C принят.
 
 Подтверждено:
 
-- новый верхнеуровневый экран не создавался; flow остаётся `Данные → Признаки → Модель → Эксперимент → Результат`;
+- новый верхнеуровневый экран не создавался; после Universal Pipeline UX V1 flow: `Данные → Признаки → Алгоритм → Проверка качества → Результат`;
 - локальное применение модели находится на экране `Результат`;
 - frontend работает через `IntegrationWorkflowService` и capability contract;
 - ModelVersion создаётся explicit action;
@@ -394,13 +394,31 @@ Architect Lock для Stage III-C принят.
 - unsupported explainer не блокирует prediction;
 - stale inference source invalidation закрыта: новый source очищает старый batch/row/evidence, но сохраняет active ModelVersion.
 
-Принятый commit: `ec9f397e7ea30ba509283e095acc74b0a4c4352a`.
+Принятый Stage III-C1 commit: `ec9f397e7ea30ba509283e095acc74b0a4c4352a`.
 
-Локальная verification evidence после corrective fix: 31 focused tests PASS, 225 full tests PASS, `compileall src app` PASS, `git diff --check` PASS.
+**Manual III-C1 E2E — PASS.**
 
-**Следующий шаг — manual III-C1 E2E в Streamlit.**
+Ручной пользовательский прогон подтвердил:
 
-После успешного ручного прогона открывается III-C2:
+- final fit/save CatBoost ModelVersion;
+- targetless inference;
+- duplicate identifiers через отдельный `row_id`;
+- selected-row Local SHAP;
+- source A → B invalidation;
+- fail-closed несовместимого файла без потери active ModelVersion.
+
+Во время E2E найден и закрыт UTF-8 BOM defect физического header reader: commit `c009f3bd8bd94c23e13cf3ebf0db1be5c4c4c6e0`.
+
+**Universal Pipeline UX V1 — ACCEPTED.**
+
+Generic UI не содержит special-case правил для `Q_B1_norm`, `Q_B2_norm`, `INN`, `DefMark`; historical semantics остаются только внутри frozen compatibility profile. Пользовательский flow и терминология приведены к:
+
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
+
+Принятый UX commit: `492b6dc6`.
+Текущая local verification evidence: 52 focused UX tests PASS, 229 full tests PASS, `compileall src app` PASS, `git diff --check` PASS.
+
+**Следующий шаг — Stage III-C2.**
 
 `LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
 

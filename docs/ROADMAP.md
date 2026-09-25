@@ -471,7 +471,7 @@ Streamlit integration получила итоговый Reviewer `ACCEPT`.
 - same-source reconfirmation;
 - единый downstream через `PreparedDatasetContext`.
 
-Ручная продуктовая приёмка UX не пройдена.
+Ручная продуктовая приёмка завершена: Universal Pipeline UX V1 получил Reviewer `ACCEPT`.
 
 ## Product/Application Integration V1 — BACKEND CHAIN ACCEPTED
 
@@ -519,22 +519,33 @@ Verification после corrective fix:
 
 Принятый commit: `ec9f397e7ea30ba509283e095acc74b0a4c4352a`.
 
-## NEXT — Manual Stage III-C1 E2E
+## Manual Stage III-C1 E2E — PASS
 
-До открытия внешнего LLM path выполнить ручной Streamlit прогон:
+Ручной Streamlit E2E завершён.
 
-`experiment → save ModelVersion → targetless inference → select row → Local SHAP`.
+Проверено на реальном пользовательском flow:
 
-Обязательно проверить:
-
-- CatBoost: prediction + Local SHAP;
-- модель без local explainer: prediction работает, explanation недоступен без ошибки;
-- duplicate identifier values различаются по row_id;
+- CatBoost: final fit/save → targetless prediction → Local SHAP;
+- duplicate identifier values различаются по `row_id`;
+- две строки с одинаковым identifier имеют собственные probability и SHAP evidence;
 - source A → source B немедленно убирает stale prediction;
 - invalid targetless file не уничтожает active ModelVersion;
 - probability не превращается в threshold/credit decision.
 
-## AFTER MANUAL C1 E2E — Stage III-C2 / EXTERNAL INTERPRETATION FLOW
+Во время E2E найден и закрыт UTF-8 BOM defect физического header reader.
+Corrective commit: `c009f3bd8bd94c23e13cf3ebf0db1be5c4c4c6e0`.
+
+Universal Pipeline UX V1 после ручной проверки также принят Reviewer.
+UX commit: `492b6dc6`.
+
+Текущий verification state после UX:
+
+- 52 focused UX tests PASS;
+- 229 full tests PASS;
+- `compileall src app` PASS;
+- `git diff --check` PASS.
+
+## NEXT — Stage III-C2 / EXTERNAL INTERPRETATION FLOW
 
 `LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
 

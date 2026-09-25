@@ -753,24 +753,34 @@ Stale source и provenance mismatch работают fail-closed.
 - stale/provenance fail-closed;
 - same-source reconfirmation;
 - lifecycle формы изолирован через `context_revision + snapshot fingerprint`;
-- downstream `Признаки → Модель → Эксперимент → Результат` общий для любого `PreparedDatasetContext`.
+- downstream после UX V1: `Признаки → Алгоритм → Проверка качества → Результат` общий для любого `PreparedDatasetContext`.
 
 Execution evidence Codex: 69 targeted tests PASS, `compileall app` PASS, `git diff --check` PASS.
 
-### Product UX status
+### Universal Pipeline UX V1 — ACCEPTED
 
-Текущий технический UI НЕ принят как конечный пользовательский интерфейс.
+После ручного E2E принят пользовательский слой универсального конвейера.
 
-Ручная проверка показала:
+Верхнеуровневый flow теперь:
 
-- пользователю не нужен отдельный выбор «Исторический набор данных / Другой локальный файл»;
-- «Проверить источник» непонятно по смыслу;
-- стадии подготовки накапливаются вертикальной простынёй;
-- внутренние технические статусы попадают в основной UI;
-- повторяющиеся предупреждения не агрегируются;
-- работа с десятками и сотнями колонок перегружена;
-- Analyzer может предложить неверный semantic target, поэтому proposal нельзя выдавать за решение системы;
-- основной UI должен быть русскоязычным и объяснять смысл действий.
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
+
+Подтверждено:
+
+- generic flow не содержит специальных правил по именам `Q_B1_norm`, `Q_B2_norm`, `INN`, `DefMark`;
+- historical `Data_final` остаётся отдельным frozen compatibility profile и не задаёт правила для новых датасетов;
+- экран подтверждения данных явно отделён от обучения;
+- количество `MODEL_ALLOWED` объясняется как число признаков, доступных к выбору далее, а не как уже выбранный feature set;
+- редкие dataset-level overrides спрятаны в «Дополнительные ограничения колонок»;
+- экран признаков явно фиксирует invariant: выбранные при обучении признаки затем требуются сохранённой ModelVersion на новых данных;
+- пользовательский термин «Алгоритм» заменяет внутренний `Predictor`, а recipe/version остаются в технических деталях;
+- этап обучения называется «Обучение и проверка качества» и показывает реальные progress events по fold/metrics/persistence;
+- Result объясняет OOF-метрики как проверку на строках, не использованных соответствующей моделью для обучения;
+- порог `0.5` обозначен только как техническая точка сравнения, не как business decision;
+- перед final fit явно сказано, что метрики повторно не считаются: качество уже измерено OOF;
+- inference UI объясняет, что target не нужен, а сохранённая модель ожидает тот же feature set; дополнительные колонки допустимы.
+
+Reviewer verdict: **ACCEPT Universal Pipeline UX V1**.
 
 ## Integration V1 / Stage III-C1 — LOCAL MODEL USE FLOW — ACCEPTED
 
@@ -780,7 +790,7 @@ Reviewer принял локальный пользовательский flow:
 
 Реализовано:
 
-- верхнеуровневый Streamlit flow не менялся: `Данные → Признаки → Модель → Эксперимент → Результат`;
+- верхнеуровневый Streamlit flow после UX V1: `Данные → Признаки → Алгоритм → Проверка качества → Результат`;
 - на экране `Результат` добавлен блок **«Применить модель к новым данным»**;
 - frontend работает через application-facing `IntegrationWorkflowService`;
 - ModelVersion создаётся только явным действием пользователя;
@@ -804,16 +814,30 @@ Reviewer verdict: **ACCEPT Stage III-C1**.
 
 Принятый commit в рабочей ветке: `ec9f397e7ea30ba509283e095acc74b0a4c4352a`.
 
-**CURRENT PRODUCT PRIORITY**
+### Manual Stage III-C1 E2E — PASS
 
-Перед Stage III-C2 выполнить ручной Streamlit E2E:
+Ручной Streamlit-прогон завершён успешно:
 
-`experiment → save ModelVersion → targetless inference → select row → Local SHAP`
+`проверка качества → save ModelVersion → targetless inference → select row → Local SHAP`.
 
-включая негативные сценарии и safe degradation.
+Фактически проверено:
 
-После успешного ручного C1 E2E открыть Stage III-C2:
+- CatBoost ModelVersion сохраняется и применяется к новому targetless файлу;
+- duplicate identifier values не схлопываются и различаются по `row_id`;
+- для двух строк с одинаковым identifier получены разные probability и разные Local SHAP;
+- смена source A → B убирает stale batch/row/evidence до нового успешного inference;
+- несовместимый новый файл fail-closed и не уничтожает active ModelVersion;
+- probability остаётся probability, без автоматического threshold/business decision;
+- UTF-8 CSV with BOM выявил реальный `header_identity_mismatch`; corrective fix принят Reviewer и зафиксирован commit `c009f3bd8bd94c23e13cf3ebf0db1be5c4c4c6e0`.
 
-`LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
+После UX-прохода full suite: **229 tests PASS**, `compileall src app` PASS, `git diff --check` PASS.
 
-Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются отдельными workstreams и не должны размывать defense-critical integration.
+Принятый UX commit: `492b6dc6`.
+
+**CURRENT PRODUCT PRIORITY — Stage III-C2**
+
+Следующий defense-critical шаг:
+
+`LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → понятное объяснение`.
+
+Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются отдельными workstreams и не должны размывать Stage III-C2.
