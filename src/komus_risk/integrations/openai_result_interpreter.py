@@ -39,6 +39,7 @@ class OpenAIResultInterpreterClient:
                 {"role": "system", "content": system_instruction},
                 {"role": "user", "content": canonical_json(payload)},
             ],
+            store=False,
         )
         text = getattr(response, "output_text", None)
         if not isinstance(text, str) or not text.strip():

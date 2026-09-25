@@ -58,6 +58,7 @@ class OpenAIResultInterpreterClientTests(unittest.TestCase):
                     {"role": "system", "content": self.instruction},
                     {"role": "user", "content": canonical_json(self.payload)},
                 ],
+                "store": False,
             },
             fake.responses.calls[0],
         )
