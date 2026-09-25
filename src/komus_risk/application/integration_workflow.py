@@ -167,14 +167,52 @@ class IntegrationWorkflowService:
         self,
         *,
         evidence: LocalExplanationEvidence,
+        loaded_model_version: LoadedModelVersion | None = None,
+        recipient_role: str = "credit_controller",
+        display_names_by_feature_id: Mapping[str, str] | None = None,
         descriptions_by_feature_id: Mapping[str, str] | None = None,
     ) -> ResultInterpreterRequest:
         if self.result_interpreter_service is None:
             raise ValueError("Result interpreter service is not configured.")
+        if loaded_model_version is not None:
+            if loaded_model_version.summary.model_version_id != evidence.model_version_id:
+                raise ValueError("Local explanation evidence does not match the active ModelVersion.")
+            display_names, descriptions = self._trusted_feature_text(loaded_model_version)
+        else:
+            display_names = dict(display_names_by_feature_id or {})
+            descriptions = dict(descriptions_by_feature_id or {})
         return self.result_interpreter_service.build_request(
             evidence=evidence,
-            descriptions_by_feature_id=descriptions_by_feature_id,
+            recipient_role=recipient_role,
+            display_names_by_feature_id=display_names,
+            descriptions_by_feature_id=descriptions,
         )
+
+    @staticmethod
+    def _trusted_feature_text(
+        loaded_model_version: LoadedModelVersion,
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        metadata = getattr(loaded_model_version, "metadata", None)
+        if not isinstance(metadata, Mapping):
+            raise ValueError("ModelVersion metadata is unavailable for result interpretation.")
+        specs = metadata.get("feature_specs")
+        if not isinstance(specs, list):
+            raise ValueError("ModelVersion feature metadata is unavailable for result interpretation.")
+        display_names: dict[str, str] = {}
+        descriptions: dict[str, str] = {}
+        for spec in specs:
+            if not isinstance(spec, Mapping):
+                raise ValueError("ModelVersion feature metadata is invalid.")
+            feature_id = spec.get("feature_id")
+            if not isinstance(feature_id, str) or not feature_id.strip():
+                raise ValueError("ModelVersion feature metadata contains an invalid feature ID.")
+            display_name = spec.get("display_name_ru")
+            description = spec.get("description_ru")
+            if isinstance(display_name, str) and display_name.strip():
+                display_names[feature_id] = display_name.strip()
+            if isinstance(description, str) and description.strip():
+                descriptions[feature_id] = description.strip()
+        return display_names, descriptions
 
     def interpret(
         self,
