@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
@@ -151,6 +152,45 @@ def _run_with_progress(
         raise
     status.update(label=completion_label, state="complete", expanded=False)
     return result
+
+
+def _prediction_file_error_message(error: Exception) -> str:
+    """Translate expected inference validation failures into concise Russian UI messages."""
+    message = str(error)
+    missing_prefix = "Required model feature columns are absent from the inference source:"
+    if message.startswith(missing_prefix):
+        raw_missing = message[len(missing_prefix):].strip().removesuffix(".")
+        try:
+            missing = tuple(str(item) for item in ast.literal_eval(raw_missing))
+        except (SyntaxError, ValueError, TypeError):
+            missing = ()
+        if missing:
+            return (
+                "В файле отсутствуют обязательные признаки модели: "
+                + ", ".join(missing)
+                + ". Добавьте эти столбцы и повторите прогноз."
+            )
+        return "В файле отсутствуют обязательные признаки сохранённой модели."
+
+    identifier_prefix = "Required identifier column "
+    if message.startswith(identifier_prefix) and " is absent from the inference source." in message:
+        raw_identifier = message[len(identifier_prefix):].split(" is absent", 1)[0].strip()
+        try:
+            identifier = str(ast.literal_eval(raw_identifier))
+        except (SyntaxError, ValueError, TypeError):
+            identifier = raw_identifier.strip("'\"")
+        return f"В файле отсутствует обязательный идентификатор «{identifier}»."
+
+    if "must all be numeric" in message or "must have a real numeric or boolean dtype" in message:
+        return "В одном или нескольких признаках есть нечисловые значения. Проверьте значения обязательных признаков модели."
+    if "must be finite" in message:
+        return "В одном или нескольких признаках есть пустые или бесконечные значения. Исправьте их и повторите прогноз."
+    if "empty value" in message and "Identifier column" in message:
+        return "В идентификаторе есть пустое значение. Заполните идентификатор для каждой строки."
+    if "physical headers" in message or "dataframe headers" in message:
+        return "Не удалось однозначно прочитать заголовки файла. Проверьте названия столбцов и отсутствие дубликатов."
+
+    return "Не удалось получить прогноз. Проверьте файл и соответствие его столбцов сохранённой модели."
 
 
 def _render_data_step() -> None:
@@ -944,14 +984,14 @@ def _render_models_step(runtime) -> None:
         model for model in runtime.planning_service.list_models(runtime.model_registry, runtime.model_factories) if model.runnable
     )
     if not models:
-        st.error("Нет доступного predictor для выбранного runtime.")
+        st.error("Нет доступного алгоритма для выбранной конфигурации.")
         return
     by_id = {model.model_id: model for model in models}
     revision = st.session_state.context_revision
     current = st.session_state.selected_model_id
     index = tuple(by_id).index(current) if current in by_id else 0
     selected_id = st.selectbox(
-        "Predictor",
+        "Алгоритм",
         tuple(by_id),
         index=index,
         format_func=lambda model_id: by_id[model_id].display_name_ru,
@@ -960,11 +1000,14 @@ def _render_models_step(runtime) -> None:
     set_selected_model_id(st.session_state, selected_id)
     model = by_id[selected_id]
     st.subheader(model.display_name_ru)
-    st.write(model.description_ru)
-    st.write("**Проверенная фиксированная конфигурация**")
-    st.write(f"Версия: {model.model_version}")
+    st.write("Этот алгоритм будет обучен на выбранных признаках текущего набора данных.")
+    st.info(
+        "Для честного сравнения экспериментов используется один и тот же проверенный набор настроек обучения. "
+        "Выбранные признаки и данные при этом остаются частью текущего эксперимента."
+    )
     with st.expander("Технические параметры"):
-        st.caption("Замороженный профиль и требования runtime доступны только для технической проверки.")
+        st.caption("Версия и внутренние настройки нужны только для воспроизводимости и технической проверки.")
+        st.write(f"Версия настроек: {model.model_version}")
         st.json(_plain(model.default_profile))
         st.json(_plain(model.runtime_requirements))
         st.caption(f"model_id: {model.model_id}; adapter version: {model.adapter_version}")
@@ -1229,32 +1272,47 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
     )
     if st.session_state.loaded_model_version is None:
         st.write("Шаг 1. Сохранить модель")
+        st.caption(
+            "После этого система обучит итоговую версию ровно той конфигурации, которую вы только что проверили в эксперименте."
+        )
         if st.button(
             "Сохранить модель для прогноза",
             key="save-model-version-for-inference",
             type="primary",
             disabled=capabilities["final_model_save"].state != "AVAILABLE",
         ):
+            status = st.status("Готовим модель для прогноза", expanded=True)
+            status.write("Обучаем итоговую модель на разрешённой рабочей выборке и сохраняем её.")
             try:
                 loaded = workflow.save_model(
                     experiment_artifact_id=artifact.artifact_id,
                     prepared_dataset_context=context,
                 )
             except (KeyError, TypeError, ValueError, RuntimeError, OSError):
+                status.update(label="Модель не сохранена", state="error", expanded=True)
                 st.error("Не удалось сохранить модель для прогноза. Результат эксперимента сохранён.")
             else:
+                status.update(label="Модель готова для прогноза", state="complete", expanded=False)
                 set_loaded_model_version(st.session_state, loaded)
                 st.rerun()
         return
 
     loaded_model_version = st.session_state.loaded_model_version
     summary = loaded_model_version.summary
-    st.success("Модель сохранена.")
-    st.write(f"{summary.model_id} · признаков: {len(summary.feature_ids)} · источник: текущий эксперимент.")
+    try:
+        model_display_name = runtime.model_registry.get(summary.model_id).display_name_ru
+    except (KeyError, AttributeError):
+        model_display_name = summary.model_id
+    st.success("Модель готова для прогноза.")
+    st.write(f"{model_display_name} · признаков: {len(summary.feature_ids)} · источник: текущий эксперимент.")
     with st.expander("Технические сведения сохранённой модели", expanded=False):
         st.code(summary.model_version_id)
 
-    st.write("Шаг 2. Выбрать файл для прогноза")
+    st.write("Шаг 2. Выбрать новые данные")
+    st.caption(
+        "Выберите файл с организациями, для которых нужно получить прогноз. "
+        "Целевая колонка не нужна — достаточно идентификатора и признаков, использованных этой моделью."
+    )
     if st.button("Выбрать файл…", key="choose-inference-local-file", type="secondary"):
         try:
             selected = choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)
@@ -1279,12 +1337,16 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
         type="primary",
         disabled=not bool(source_path),
     ):
+        status = st.status("Проверяем файл и рассчитываем прогноз", expanded=True)
+        status.write("Читаем файл, проверяем обязательные столбцы и применяем сохранённую модель.")
         try:
             snapshot = TabularReader().read(Path(source_path))
             batch = workflow.predict(loaded_model_version=loaded_model_version, snapshot=snapshot)
-        except (KeyError, TypeError, ValueError, RuntimeError, OSError):
-            st.error("Не удалось получить прогноз. Проверьте файл и соответствие его столбцов сохранённой модели.")
+        except (KeyError, TypeError, ValueError, RuntimeError, OSError) as error:
+            status.update(label="Прогноз не рассчитан", state="error", expanded=True)
+            st.error(_prediction_file_error_message(error))
         else:
+            status.update(label="Прогноз готов", state="complete", expanded=False)
             set_prediction_batch(st.session_state, snapshot, batch)
             st.rerun()
 
@@ -1332,6 +1394,8 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
     if explanation_capability.state != "AVAILABLE":
         return
     if st.button("Показать факторы модели", key="show-local-model-factors", type="secondary"):
+        status = st.status("Рассчитываем факторы для выбранной строки", expanded=True)
+        status.write("Используем ту же сохранённую модель и те же значения признаков, что дали показанную вероятность.")
         try:
             evidence = workflow.explain(
                 loaded_model_version=loaded_model_version,
@@ -1339,8 +1403,10 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
                 row_id=selected_row_id,
             )
         except (KeyError, TypeError, ValueError, RuntimeError, OSError):
+            status.update(label="Факторы не рассчитаны", state="error", expanded=True)
             st.error("Не удалось построить локальное объяснение. Прогноз сохранён.")
         else:
+            status.update(label="Факторы рассчитаны", state="complete", expanded=False)
             set_local_explanation_evidence(st.session_state, evidence)
             st.rerun()
     evidence = st.session_state.local_explanation_evidence
