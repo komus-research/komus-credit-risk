@@ -31,9 +31,9 @@ from app.session_state import (
     save_plan,
     set_loaded_model_version,
     set_local_explanation_evidence,
-    set_result_interpretation_error,
-    set_result_interpretation_success,
-    set_result_interpreter_request,
+    set_role_result_interpretation_error,
+    set_role_result_interpretation_success,
+    set_role_result_interpreter_request,
     set_inference_source_path,
     set_prediction_batch,
     set_selected_prediction_row_id,
@@ -43,6 +43,7 @@ from app.session_state import (
     synchronize_feature_widgets,
     return_to_experiment,
 )
+from komus_risk.application import RESULT_INTERPRETER_ROLES
 from komus_risk.planning import PlanningRequestMetadata
 from komus_risk.data import TabularReadError, TabularReader
 from komus_risk.preparation import DatasetPreparationError
@@ -73,6 +74,12 @@ _EXPERIMENT_PROGRESS_LABELS = {
 _SECONDARY_FEATURE_GROUP_LABELS = {
     "protected_columns": "Служебные поля",
     "restricted_signals": "Недоступные для модели признаки",
+}
+_RESULT_INTERPRETER_ROLE_LABELS = {
+    "sales_manager": "Менеджер по продажам",
+    "credit_controller": "Кредитный контролёр",
+    "lawyer": "Юрист",
+    "information_security": "Информационная безопасность",
 }
 _SOURCE_CONTROL_LOCATOR_KEY = "prototype_source_control_locator"
 _SOURCE_KIND_WIDGET_KEY = "prototype_source_kind"
@@ -1475,12 +1482,12 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
         use_container_width=True,
     )
     st.caption("SHAP описывает поведение модели, а не причинность.")
-    _render_result_interpretation(workflow, evidence)
+    _render_result_interpretation(workflow, evidence, loaded_model_version)
 
 
-def _render_result_interpretation(workflow: Any, evidence: Any) -> None:
-    """Render optional text interpretation after local SHAP evidence only."""
-    st.subheader("Объяснение простыми словами")
+def _render_result_interpretation(workflow: Any, evidence: Any, loaded_model_version: Any) -> None:
+    """Render role-specific text interpretations after local SHAP evidence."""
+    st.subheader("Объяснение для разных ролей")
     capability = workflow.capabilities(local_explanation_evidence=evidence)["result_interpretation"]
     if capability.state == "DISABLED":
         st.info(
@@ -1497,44 +1504,110 @@ def _render_result_interpretation(workflow: Any, evidence: Any) -> None:
     if capability.state != "AVAILABLE":
         return
 
-    response = st.session_state.result_interpreter_response
-    if response is not None:
-        st.write(response.text)
-        st.caption(
-            "Объяснение основано на рассчитанной вероятности и SHAP. Оно описывает "
-            "поведение модели, не доказывает причинность и не является кредитным решением."
-        )
+    st.caption(
+        "Один и тот же результат будет независимо объяснён для четырёх рабочих ролей. "
+        "Во внешний сервис передаются только разрешённые обезличенные модельные факты; "
+        "идентификатор организации и исходные значения признаков не передаются."
+    )
+    responses = st.session_state.result_interpreter_responses_by_role
+    errors = st.session_state.result_interpreter_errors_by_role
+    completed_roles = set(responses)
+    missing_roles = tuple(role for role in RESULT_INTERPRETER_ROLES if role not in completed_roles)
+
+    button_label = (
+        "Получить объяснения для 4 ролей"
+        if not completed_roles
+        else "Получить недостающие объяснения"
+    )
+    if missing_roles and st.button(
+        button_label,
+        key="interpret-result-for-four-roles",
+        type="secondary",
+    ):
+        status = st.status("Формируем ролевые объяснения", expanded=True)
+        for role in missing_roles:
+            status.write(f"Готовим объяснение: {_RESULT_INTERPRETER_ROLE_LABELS[role]}.")
+            _run_role_interpretation(
+                workflow=workflow,
+                evidence=evidence,
+                loaded_model_version=loaded_model_version,
+                recipient_role=role,
+            )
+        updated_errors = st.session_state.result_interpreter_errors_by_role
+        if updated_errors:
+            status.update(
+                label="Часть объяснений недоступна",
+                state="error",
+                expanded=True,
+            )
+        else:
+            status.update(label="Ролевые объяснения готовы", state="complete", expanded=False)
+        st.rerun()
+
+    responses = st.session_state.result_interpreter_responses_by_role
+    errors = st.session_state.result_interpreter_errors_by_role
+    if not responses and not errors:
         return
 
+    tabs = st.tabs([_RESULT_INTERPRETER_ROLE_LABELS[role] for role in RESULT_INTERPRETER_ROLES])
+    for role, tab in zip(RESULT_INTERPRETER_ROLES, tabs, strict=True):
+        with tab:
+            response = responses.get(role)
+            if response is not None:
+                st.write(response.text)
+                continue
+            if role in errors:
+                st.error(
+                    "Текст для этой роли сейчас недоступен. "
+                    "Прогноз, SHAP и объяснения для других ролей сохранены."
+                )
+                if st.button(
+                    f"Повторить для роли «{_RESULT_INTERPRETER_ROLE_LABELS[role]}»",
+                    key=f"retry-result-interpretation-{role}",
+                    type="secondary",
+                ):
+                    _run_role_interpretation(
+                        workflow=workflow,
+                        evidence=evidence,
+                        loaded_model_version=loaded_model_version,
+                        recipient_role=role,
+                    )
+                    st.rerun()
+            else:
+                st.info("Объяснение для этой роли ещё не сформировано.")
+
     st.caption(
-        "Во внешний сервис будут переданы только обезличенные модельные факты. "
-        "Идентификатор организации и исходные значения признаков не передаются."
+        "Ролевые тексты основаны на одной и той же рассчитанной вероятности и Local SHAP. "
+        "Они не изменяют результат модели, не доказывают причинность и не являются кредитным решением."
     )
-    failed = st.session_state.result_interpreter_error_code is not None
-    label = "Повторить объяснение" if failed else "Объяснить результат простыми словами"
-    if failed:
-        st.error(
-            "Текстовое объяснение сейчас недоступно. Прогноз и факторы модели сохранены."
-        )
-    if not st.button(label, key="interpret-result-in-plain-language", type="secondary"):
-        return
-    request = st.session_state.result_interpreter_request
+
+
+def _run_role_interpretation(
+    *,
+    workflow: Any,
+    evidence: Any,
+    loaded_model_version: Any,
+    recipient_role: str,
+) -> None:
+    """Prepare and execute one role-specific interpretation without touching upstream state."""
+    request = st.session_state.result_interpreter_requests_by_role.get(recipient_role)
     try:
         if request is None:
-            request = workflow.prepare_interpretation(evidence=evidence)
-            set_result_interpreter_request(st.session_state, request)
-        status = st.status("Формируем текстовое объяснение", expanded=True)
-        status.write("Передаём только разрешённые обезличенные модельные факты.")
+            request = workflow.prepare_interpretation(
+                evidence=evidence,
+                loaded_model_version=loaded_model_version,
+                recipient_role=recipient_role,
+            )
+            set_role_result_interpreter_request(st.session_state, recipient_role, request)
         outcome = workflow.interpret(request=request)
     except (KeyError, TypeError, ValueError, RuntimeError, OSError):
-        if "status" in locals():
-            status.update(label="Текстовое объяснение недоступно", state="error", expanded=True)
-        set_result_interpretation_error(st.session_state, "RESULT_INTERPRETER_CALL_FAILED")
-        st.rerun()
+        set_role_result_interpretation_error(
+            st.session_state,
+            recipient_role,
+            "RESULT_INTERPRETER_CALL_FAILED",
+        )
     else:
-        status.update(label="Текстовое объяснение готово", state="complete", expanded=False)
-        set_result_interpretation_success(st.session_state, outcome)
-        st.rerun()
+        set_role_result_interpretation_success(st.session_state, recipient_role, outcome)
 
 
 def _navigation_button(
