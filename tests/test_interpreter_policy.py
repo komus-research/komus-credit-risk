@@ -76,7 +76,8 @@ class InterpreterPolicyTests(unittest.TestCase):
         dispatch = self.policy.project(self.request)
         payload = dispatch.payload
 
-        self.assertEqual({"prediction", "explanation", "top_features"}, set(payload))
+        self.assertEqual({"recipient_role", "prediction", "explanation", "top_features"}, set(payload))
+        self.assertEqual("lawyer", payload["recipient_role"])
         self.assertEqual({"probability"}, set(payload["prediction"]))
         self.assertEqual({"shap_output_space"}, set(payload["explanation"]))
         self.assertEqual(
@@ -88,7 +89,7 @@ class InterpreterPolicyTests(unittest.TestCase):
         self.assertIsNone(payload["top_features"][1]["display_name_ru"])
         self.assertIsNone(payload["top_features"][1]["description_ru"])
         forbidden = {
-            "recipient_role", "identifier", "identifier_column", "identifier_value", "row_id", "raw_value",
+            "identifier", "identifier_column", "identifier_value", "row_id", "raw_value",
             "evidence_hash", "model_version_id", "provenance", "raw_model_output", "base_value",
             "experiment_artifact_id", "dataset_id",
         }
@@ -114,7 +115,7 @@ class InterpreterPolicyTests(unittest.TestCase):
 
         self.assertEqual(response.interpreter_id, "underlying")
         self.assertEqual(underlying.calls[0]["payload"], dispatch.payload)
-        self.assertNotIn("recipient_role", underlying.calls[0]["payload"])
+        self.assertEqual("lawyer", underlying.calls[0]["payload"]["recipient_role"])
         self.assertNotIn("identifier", underlying.calls[0]["payload"])
         self.assertNotIn("raw_value", self._all_keys(underlying.calls[0]["payload"]))
         self.assertIn("юрист", underlying.calls[0]["system_instruction"].lower())

@@ -185,7 +185,11 @@ class IntegrationWorkflowTests(unittest.TestCase):
 
         outcome = configured.interpret(request=request)
         self.assertEqual(outcome.dispatch_receipt.source_request_hash, request.request_hash)
-        self.assertEqual(set(client.calls[0]["payload"]), {"prediction", "explanation", "top_features"})
+        self.assertEqual(
+            set(client.calls[0]["payload"]),
+            {"recipient_role", "prediction", "explanation", "top_features"},
+        )
+        self.assertEqual("credit_controller", client.calls[0]["payload"]["recipient_role"])
 
     def test_prepare_interpretation_uses_trusted_model_version_feature_text_and_role(self) -> None:
         evidence = LocalExplanationEvidence(

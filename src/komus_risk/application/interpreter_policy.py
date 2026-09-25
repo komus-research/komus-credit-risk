@@ -49,6 +49,7 @@ class RedactedV1OutboundPolicy:
         # Construct from typed facts: this deliberately has no full-payload copy
         # or blacklist removal path for future request fields to leak through.
         payload = {
+            "recipient_role": request.recipient_role,
             "prediction": {"probability": request.probability},
             "explanation": {"shap_output_space": request.shap_output_space},
             "top_features": [
