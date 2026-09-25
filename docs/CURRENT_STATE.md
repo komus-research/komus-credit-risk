@@ -772,12 +772,48 @@ Execution evidence Codex: 69 targeted tests PASS, `compileall app` PASS, `git di
 - Analyzer может предложить неверный semantic target, поэтому proposal нельзя выдавать за решение системы;
 - основной UI должен быть русскоязычным и объяснять смысл действий.
 
-**CURRENT PRODUCT PRIORITY: Integration V1 / Stage III-C**
+## Integration V1 / Stage III-C1 — LOCAL MODEL USE FLOW — ACCEPTED
 
-Перед защитой нужно собрать уже принятые backend-компоненты в один defense-ready пользовательский flow:
+Reviewer принял локальный пользовательский flow:
 
-`Результат эксперимента → сохранить ModelVersion → новый файл → probability → выбрать строку → Local SHAP → Result Interpreter`.
+`Результат → explicit save ModelVersion → targetless file → PredictionBatch → select row → LocalExplanationEvidence`.
 
-Перед реализацией Architect должен зафиксировать минимальные UI/application boundaries, session-state contract и capability handling без hardcode конкретной модели или LLM provider.
+Реализовано:
 
-Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются следующими отдельными workstreams и не должны размывать defense-critical integration.
+- верхнеуровневый Streamlit flow не менялся: `Данные → Признаки → Модель → Эксперимент → Результат`;
+- на экране `Результат` добавлен блок **«Применить модель к новым данным»**;
+- frontend работает через application-facing `IntegrationWorkflowService`;
+- ModelVersion создаётся только явным действием пользователя;
+- targetless inference использует `TabularReader → TabularSnapshot → ModelInferenceService`;
+- identifier и feature schema берутся из сохранённого ModelVersion contract, без hardcode `INN` / `DefMark`;
+- duplicate identifiers допустимы, строка выбирается по `row_id`;
+- local explanation подключается capability/registry-механизмом;
+- CatBoost Local SHAP работает через существующий `LocalExplanationService`;
+- модель без зарегистрированного explainer сохраняет рабочий prediction path и получает `UNSUPPORTED` для local explanation;
+- смена inference source немедленно инвалидирует только stale snapshot/batch/row/evidence и сохраняет active ModelVersion;
+- failure downstream не удаляет успешный upstream state.
+
+Reviewer verdict: **ACCEPT Stage III-C1**.
+
+Локальная verification evidence после corrective fix:
+
+- focused session/UI: 31 tests PASS;
+- full suite: 225 tests PASS;
+- `compileall src app` PASS;
+- `git diff --check` PASS.
+
+Принятый commit в рабочей ветке: `ec9f397e7ea30ba509283e095acc74b0a4c4352a`.
+
+**CURRENT PRODUCT PRIORITY**
+
+Перед Stage III-C2 выполнить ручной Streamlit E2E:
+
+`experiment → save ModelVersion → targetless inference → select row → Local SHAP`
+
+включая негативные сценарии и safe degradation.
+
+После успешного ручного C1 E2E открыть Stage III-C2:
+
+`LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
+
+Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются отдельными workstreams и не должны размывать defense-critical integration.

@@ -489,29 +489,52 @@ Backend chain:
 
 Новый ML research stage этим не открывается.
 
-## NEXT — Integration V1 / Stage III-C1 — LOCAL MODEL USE FLOW
+## Integration V1 / Stage III-C1 — LOCAL MODEL USE FLOW — ACCEPTED
 
-Architect Lock принят.
+Stage III-C1 реализован и получил итоговый Reviewer `ACCEPT`.
 
-Верхнеуровневый Streamlit flow не расширяется и остаётся:
-
-`Данные → Признаки → Модель → Эксперимент → Результат`.
-
-На экране `Результат` появляется последовательный блок **«Применить модель к новым данным»**.
-
-Принятое разбиение:
-
-### III-C1 — LOCAL MODEL USE FLOW
+Принятый flow:
 
 `Результат → explicit save ModelVersion → targetless file → PredictionBatch → select row → LocalExplanationEvidence`.
 
-III-C1 полностью локален и не зависит от внешнего LLM. Он должен получить Reviewer ACCEPT до начала III-C2.
+Закрыто:
 
-Frontend работает через application-facing facade `IntegrationWorkflowService`, а не напрямую через `ModelVersionStore`, native predictor, `LocalExplanationService` или model-specific ветвления.
+- `IntegrationWorkflowService` как application-facing facade;
+- explicit save ModelVersion;
+- shared ExperimentArtifactStore + отдельный ModelVersionStore;
+- targetless inference через существующий ModelInferenceService;
+- dynamic identifier и row_id selection;
+- capability/registry local explainer;
+- CatBoost native Local SHAP;
+- safe degradation для моделей без explainer;
+- downstream session invalidation;
+- stale inference-source defect исправлен: смена source очищает старый batch/row/evidence и сохраняет active ModelVersion.
 
-Capability status используется для `final_model_save`, `inference`, `local_explanation`, `result_interpretation`. Неподдерживаемая local explanation не блокирует prediction.
+Verification после corrective fix:
 
-### III-C2 — EXTERNAL INTERPRETATION FLOW
+- focused session/UI: 31 tests PASS;
+- full suite: 225 tests PASS;
+- `compileall src app` PASS;
+- `git diff --check` PASS.
+
+Принятый commit: `ec9f397e7ea30ba509283e095acc74b0a4c4352a`.
+
+## NEXT — Manual Stage III-C1 E2E
+
+До открытия внешнего LLM path выполнить ручной Streamlit прогон:
+
+`experiment → save ModelVersion → targetless inference → select row → Local SHAP`.
+
+Обязательно проверить:
+
+- CatBoost: prediction + Local SHAP;
+- модель без local explainer: prediction работает, explanation недоступен без ошибки;
+- duplicate identifier values различаются по row_id;
+- source A → source B немедленно убирает stale prediction;
+- invalid targetless file не уничтожает active ModelVersion;
+- probability не превращается в threshold/credit decision.
+
+## AFTER MANUAL C1 E2E — Stage III-C2 / EXTERNAL INTERPRETATION FLOW
 
 `LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
 
@@ -519,7 +542,7 @@ Capability status используется для `final_model_save`, `inference
 
 Defense-ready разрешённый режим — `REDACTED_V1`: внешний provider не получает `identifier_value`, raw feature values и row identity. Полный raw external sharing до защиты не реализуется.
 
-Главный invariant: отказ следующей capability не инвалидирует уже рассчитанный результат слева по цепочке.
+Главный invariant сохраняется: отказ следующей capability не инвалидирует уже рассчитанный результат слева по цепочке.
 
 ## AFTER DEFENSE-CRITICAL INTEGRATION
 

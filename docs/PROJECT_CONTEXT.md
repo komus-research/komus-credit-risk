@@ -376,15 +376,31 @@ Accepted:
 
 Architect Lock для Stage III-C принят.
 
-Следующий implementation stage — **III-C1 / LOCAL MODEL USE FLOW**:
+**Stage III-C1 / LOCAL MODEL USE FLOW — ACCEPTED.**
+
+Реализован и принят Reviewer flow:
 
 `Result → explicit save ModelVersion → targetless file → PredictionBatch → select row → LocalExplanationEvidence`.
 
-Новый верхнеуровневый экран не создаётся: flow остаётся `Данные → Признаки → Модель → Эксперимент → Результат`, а локальное применение модели добавляется последовательным блоком на экране `Результат`.
+Подтверждено:
 
-Frontend должен работать через тонкий application facade `IntegrationWorkflowService` и capability contract, а не напрямую через stores/native predictors/explainers или hardcoded model_id.
+- новый верхнеуровневый экран не создавался; flow остаётся `Данные → Признаки → Модель → Эксперимент → Результат`;
+- локальное применение модели находится на экране `Результат`;
+- frontend работает через `IntegrationWorkflowService` и capability contract;
+- ModelVersion создаётся explicit action;
+- inference schema динамически берётся из сохранённого ModelVersion;
+- local explainer подключён registry/capability-механизмом;
+- CatBoost Local SHAP работает через accepted backend;
+- unsupported explainer не блокирует prediction;
+- stale inference source invalidation закрыта: новый source очищает старый batch/row/evidence, но сохраняет active ModelVersion.
 
-После Reviewer ACCEPT III-C1 открывается III-C2:
+Принятый commit: `ec9f397e7ea30ba509283e095acc74b0a4c4352a`.
+
+Локальная verification evidence после corrective fix: 31 focused tests PASS, 225 full tests PASS, `compileall src app` PASS, `git diff --check` PASS.
+
+**Следующий шаг — manual III-C1 E2E в Streamlit.**
+
+После успешного ручного прогона открывается III-C2:
 
 `LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
 
