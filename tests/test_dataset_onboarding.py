@@ -85,6 +85,16 @@ class DatasetOnboardingTests(unittest.TestCase):
                 TabularReader().read(Path(directory) / "missing.csv")
             self.assertEqual("file_not_found", error.exception.code)
 
+    def test_reader_accepts_utf8_bom_without_header_identity_mismatch(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "bom.csv"
+            path.write_text("identifier,feature\nDEMO-1,1.5\n", encoding="utf-8-sig")
+
+            snapshot = TabularReader().read(path)
+
+            self.assertEqual(("identifier", "feature"), snapshot.physical_headers)
+            self.assertEqual(("identifier", "feature"), tuple(snapshot.dataframe.columns))
+
     def test_target_with_missing_keeps_target_role(self) -> None:
         frame = pd.DataFrame({"event_flag": [0, 1] * 9 + [None, None], "amount": list(range(20))})
         proposal = self.analyzer.analyze(self._report(frame))
