@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, MutableMapping
+from dataclasses import dataclass
 from typing import Any
 
 from komus_risk.application import RunExperimentRequest
@@ -38,7 +39,18 @@ _DEFAULTS = {
     "prediction_batch": None,
     "selected_prediction_row_id": None,
     "local_explanation_evidence": None,
+    "result_interpreter_request": None,
+    "result_interpreter_response": None,
+    "result_interpreter_dispatch_receipt": None,
+    "result_interpreter_error_code": None,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class ResultInterpreterSessionResponse:
+    """The user-displayable portion of a provider response, without runtime identity."""
+
+    text: str
 
 
 def initialize(state: MutableMapping[str, Any]) -> None:
@@ -312,6 +324,7 @@ def set_prediction_batch(state: MutableMapping[str, Any], snapshot: Any, predict
     state["prediction_batch"] = prediction_batch
     state["selected_prediction_row_id"] = None
     state["local_explanation_evidence"] = None
+    _clear_result_interpretation_state(state)
 
 
 def set_selected_prediction_row_id(state: MutableMapping[str, Any], row_id: str | None) -> None:
@@ -320,10 +333,38 @@ def set_selected_prediction_row_id(state: MutableMapping[str, Any], row_id: str 
         return
     state["selected_prediction_row_id"] = row_id
     state["local_explanation_evidence"] = None
+    _clear_result_interpretation_state(state)
 
 
 def set_local_explanation_evidence(state: MutableMapping[str, Any], evidence: Any) -> None:
+    if evidence is state.get("local_explanation_evidence"):
+        return
     state["local_explanation_evidence"] = evidence
+    _clear_result_interpretation_state(state)
+
+
+def set_result_interpreter_request(state: MutableMapping[str, Any], request: Any) -> None:
+    state["result_interpreter_request"] = request
+    state["result_interpreter_response"] = None
+    state["result_interpreter_dispatch_receipt"] = None
+    state["result_interpreter_error_code"] = None
+
+
+def set_result_interpretation_success(state: MutableMapping[str, Any], outcome: Any) -> None:
+    text = getattr(getattr(outcome, "response", None), "text", None)
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Result interpreter response text must be non-empty.")
+    state["result_interpreter_response"] = ResultInterpreterSessionResponse(text=text)
+    state["result_interpreter_dispatch_receipt"] = outcome.dispatch_receipt
+    state["result_interpreter_error_code"] = None
+
+
+def set_result_interpretation_error(state: MutableMapping[str, Any], error_code: str) -> None:
+    if not isinstance(error_code, str) or not error_code:
+        raise ValueError("Result interpreter error code must be non-empty.")
+    state["result_interpreter_response"] = None
+    state["result_interpreter_dispatch_receipt"] = None
+    state["result_interpreter_error_code"] = error_code
 
 
 def _clear_inference_state(state: MutableMapping[str, Any]) -> None:
@@ -331,6 +372,14 @@ def _clear_inference_state(state: MutableMapping[str, Any]) -> None:
     state["prediction_batch"] = None
     state["selected_prediction_row_id"] = None
     state["local_explanation_evidence"] = None
+    _clear_result_interpretation_state(state)
+
+
+def _clear_result_interpretation_state(state: MutableMapping[str, Any]) -> None:
+    state["result_interpreter_request"] = None
+    state["result_interpreter_response"] = None
+    state["result_interpreter_dispatch_receipt"] = None
+    state["result_interpreter_error_code"] = None
 
 
 def _clear_integration_state(state: MutableMapping[str, Any]) -> None:

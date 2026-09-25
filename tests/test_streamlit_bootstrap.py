@@ -526,6 +526,73 @@ class StreamlitBootstrapTests(unittest.TestCase):
             self.assertEqual(workflow.model_version_store.root, Path(directory) / "model_versions")
             self.assertNotEqual(workflow.model_version_store.root, runtime.application_service.artifact_store.root)
 
+    def test_result_interpreter_runtime_defaults_to_disabled_without_environment(self) -> None:
+        with TemporaryDirectory() as directory:
+            runtime = bootstrap.create_runtime(directory, environment={}, secrets={})
+        configuration = runtime.integration_workflow_service.result_interpreter_runtime
+        self.assertEqual(configuration.policy_mode, "DISABLED")
+        self.assertFalse(configuration.is_ready)
+
+    def test_explicit_disabled_policy_creates_no_result_interpreter_provider(self) -> None:
+        calls = []
+
+        def factory(model, credential):
+            calls.append((model, credential))
+            return object()
+
+        with TemporaryDirectory() as directory:
+            runtime = bootstrap.create_runtime(
+                directory,
+                environment={"KOMUS_EXTERNAL_DATA_POLICY": "DISABLED"},
+                secrets={"OPENAI_API_KEY": "secret"},
+                result_interpreter_factories={"openai": factory},
+            )
+        workflow = runtime.integration_workflow_service
+        capability = workflow.capabilities(local_explanation_evidence=object())["result_interpretation"]
+
+        self.assertEqual(workflow.result_interpreter_runtime.policy_mode, "DISABLED")
+        self.assertEqual((capability.state, capability.reason_code), ("DISABLED", "EXTERNAL_DATA_POLICY_DISABLED"))
+        self.assertIsNone(workflow.result_interpreter_client)
+        self.assertEqual(calls, [])
+
+    def test_result_interpreter_runtime_reports_incomplete_configuration_without_provider_creation(self) -> None:
+        cases = (
+            ({"KOMUS_EXTERNAL_DATA_POLICY": "UNSAFE"}, "EXTERNAL_DATA_POLICY_INVALID"),
+            ({"KOMUS_EXTERNAL_DATA_POLICY": "REDACTED_V1"}, "RESULT_INTERPRETER_PROVIDER_MISSING"),
+            ({"KOMUS_EXTERNAL_DATA_POLICY": "REDACTED_V1", "KOMUS_RESULT_INTERPRETER_PROVIDER": "other"}, "RESULT_INTERPRETER_PROVIDER_NOT_REGISTERED"),
+            ({"KOMUS_EXTERNAL_DATA_POLICY": "REDACTED_V1", "KOMUS_RESULT_INTERPRETER_PROVIDER": "openai"}, "RESULT_INTERPRETER_MODEL_MISSING"),
+            ({"KOMUS_EXTERNAL_DATA_POLICY": "REDACTED_V1", "KOMUS_RESULT_INTERPRETER_PROVIDER": "openai", "KOMUS_RESULT_INTERPRETER_MODEL": "test"}, "RESULT_INTERPRETER_CREDENTIALS_MISSING"),
+        )
+        for environment, reason in cases:
+            with self.subTest(reason=reason), TemporaryDirectory() as directory:
+                runtime = bootstrap.create_runtime(directory, environment=environment, secrets={})
+                capability = runtime.integration_workflow_service.capabilities(local_explanation_evidence=object())["result_interpretation"]
+                self.assertEqual(capability.reason_code, reason)
+                self.assertIsNone(runtime.integration_workflow_service.result_interpreter_client)
+
+    def test_result_interpreter_runtime_uses_injected_factory_only_when_ready(self) -> None:
+        created = []
+        fake_client = SimpleNamespace(interpreter_id="test", interpreter_model="test-model")
+
+        def factory(model, credential):
+            created.append((model, credential))
+            return fake_client
+
+        environment = {
+            "KOMUS_EXTERNAL_DATA_POLICY": "REDACTED_V1",
+            "KOMUS_RESULT_INTERPRETER_PROVIDER": "test",
+            "KOMUS_RESULT_INTERPRETER_MODEL": "configured-model",
+        }
+        with TemporaryDirectory() as directory:
+            runtime = bootstrap.create_runtime(
+                directory, environment=environment, secrets={"OPENAI_API_KEY": "secret"},
+                result_interpreter_factories={"test": factory},
+            )
+        workflow = runtime.integration_workflow_service
+        self.assertEqual(created, [("configured-model", "secret")])
+        self.assertIs(workflow.result_interpreter_client, fake_client)
+        self.assertTrue(workflow.result_interpreter_runtime.is_ready)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,6 +22,9 @@ from app.session_state import (
     set_prediction_batch,
     set_selected_prediction_row_id,
     set_local_explanation_evidence,
+    set_result_interpretation_error,
+    set_result_interpretation_success,
+    set_result_interpreter_request,
     set_selected_feature_ids,
     set_selected_model_id,
     synchronize_feature_widgets,
@@ -467,6 +470,38 @@ class SessionStateTests(unittest.TestCase):
         self.assertIsNone(self.state["prediction_batch"])
         self.assertIsNone(self.state["selected_prediction_row_id"])
         self.assertIsNone(self.state["local_explanation_evidence"])
+
+    def test_result_interpretation_is_invalidated_with_each_downstream_input_change(self) -> None:
+        self.state.update(
+            result_interpreter_request=object(), result_interpreter_response=object(),
+            result_interpreter_dispatch_receipt=object(), result_interpreter_error_code="failed",
+            local_explanation_evidence=object(), selected_prediction_row_id="row-1",
+        )
+        set_selected_prediction_row_id(self.state, "row-2")
+        for key in (
+            "result_interpreter_request", "result_interpreter_response",
+            "result_interpreter_dispatch_receipt", "result_interpreter_error_code",
+        ):
+            self.assertIsNone(self.state[key])
+
+    def test_interpretation_error_preserves_request_and_evidence_for_retry(self) -> None:
+        evidence, request = object(), object()
+        self.state["local_explanation_evidence"] = evidence
+        set_result_interpreter_request(self.state, request)
+        set_result_interpretation_error(self.state, "RESULT_INTERPRETER_CALL_FAILED")
+
+        self.assertIs(self.state["local_explanation_evidence"], evidence)
+        self.assertIs(self.state["result_interpreter_request"], request)
+        self.assertEqual(self.state["result_interpreter_error_code"], "RESULT_INTERPRETER_CALL_FAILED")
+
+    def test_interpretation_success_stores_response_and_receipt(self) -> None:
+        response, receipt = SimpleNamespace(text="safe explanation", interpreter_model="configured-model"), object()
+        set_result_interpretation_success(self.state, SimpleNamespace(response=response, dispatch_receipt=receipt))
+
+        self.assertEqual(self.state["result_interpreter_response"].text, "safe explanation")
+        self.assertFalse(hasattr(self.state["result_interpreter_response"], "interpreter_model"))
+        self.assertIs(self.state["result_interpreter_dispatch_receipt"], receipt)
+        self.assertIsNone(self.state["result_interpreter_error_code"])
 
     def test_changed_inference_source_clears_stale_batch_but_preserves_model(self) -> None:
         model = SimpleNamespace(summary=SimpleNamespace(model_version_id="model-1"))

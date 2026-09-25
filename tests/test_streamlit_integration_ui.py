@@ -11,6 +11,14 @@ class StreamlitIntegrationUiTests(unittest.TestCase):
         self.assertIn("workflow.save_model(", source)
         self.assertIn("workflow.predict(", source)
         self.assertIn("workflow.explain(", source)
+        self.assertIn("workflow.prepare_interpretation(", source)
+        self.assertIn("workflow.interpret(", source)
+        self.assertIn("Объяснить результат простыми словами", source)
+        self.assertIn("Автоматическое текстовое объяснение отключено политикой передачи данных.", source)
+        self.assertIn("Текстовое объяснение разрешено, но не настроено в текущем запуске.", source)
+        self.assertIn("Повторить объяснение", source)
+        self.assertIn("Текстовое объяснение сейчас недоступно.", source)
+        self.assertIn("не является кредитным решением", source)
         self.assertIn("prediction_batch.identifier_column", source)
         self.assertIn("set_inference_source_path(st.session_state, selected)", source)
         self.assertIn("set_inference_source_path(st.session_state, source_path)", source)
@@ -23,6 +31,8 @@ class StreamlitIntegrationUiTests(unittest.TestCase):
         self.assertNotIn("model_id ==", source)
         self.assertNotIn('"INN"', source)
         self.assertNotIn('"DefMark"', source)
+        self.assertNotIn("OpenAI", source)
+        self.assertNotIn("API_KEY", source)
 
     def test_prediction_file_error_explains_missing_features_in_russian(self) -> None:
         from app.streamlit_app import _prediction_file_error_message
