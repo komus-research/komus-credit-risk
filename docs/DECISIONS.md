@@ -774,7 +774,7 @@ III-C1 должен получить Reviewer ACCEPT до начала III-C2.
 
 Верхнеуровневый flow остаётся:
 
-`Данные → Признаки → Модель → Эксперимент → Результат`.
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
 
 На `Результат` добавляется последовательный блок **«Применить модель к новым данным»**.
 
@@ -795,3 +795,15 @@ Capability states V1: `AVAILABLE`, `WAITING_FOR_INPUT`, `UNSUPPORTED`, `DISABLED
 В `REDACTED_V1` внешний provider не получает identifier value, raw feature values и row identity. Full raw external sharing до защиты не реализуется.
 
 Один checkbox пользователя не заменяет организационное data-sharing permission. `store=False` также не является таким разрешением.
+
+### D-082 — Universal Pipeline UX V1 принят после manual III-C1 E2E
+
+Пользовательский flow фиксируется как:
+
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
+
+Generic UI не содержит специальных правил по именам `Q_B1_norm`, `Q_B2_norm`, `INN`, `DefMark`; исторические ограничения `Data_final` остаются только внутри frozen compatibility profile.
+
+Выбранный при обучении feature set является контрактом сохранённой ModelVersion для последующего inference: target на новых данных не требуется, дополнительные колонки допустимы, но все признаки модели должны присутствовать.
+
+Manual III-C1 E2E подтверждён; найденный UTF-8 BOM defect закрыт отдельным corrective fix. Следующий defense-critical stage — III-C2.
