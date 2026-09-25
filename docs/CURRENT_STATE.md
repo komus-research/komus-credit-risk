@@ -893,12 +893,29 @@ Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
 
 Reviewer verdict: **ACCEPT Stage III-C2b**.
 
-**CURRENT PRODUCT PRIORITY — manual defense E2E Stage III-C2**
+**Manual defense E2E Stage III-C2 — TECHNICAL PASS / PRODUCT GAP**
 
-Осталось вручную проверить реальный пользовательский путь:
+Ручной прогон 2026-09-25 подтвердил реальный внешний путь:
 
-`probability → Local SHAP → REDACTED_V1 → external provider → русское объяснение`.
+`probability → Local SHAP → REDACTED_V1 → OpenAI → русское объяснение`.
 
-Сейчас на рабочем компьютере runtime policy/provider/model/API credential не настроены, поэтому реальный внешний provider ещё не вызывался. Это не дефект implementation: default state намеренно fail-safe `DISABLED`.
+Подтверждено вручную:
 
-Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются отдельными workstreams и не должны размывать manual defense E2E.
+- disabled path сохраняет prediction и Local SHAP;
+- `REDACTED_V1` с реальным provider успешно возвращает русский текст;
+- Result Interpreter остаётся downstream capability и не меняет probability/SHAP.
+
+Одновременно выявлен product gap:
+
+- UI использует один generic Result Interpreter вместо принятой Stage 20 ролевой адаптации;
+- текущий ответ слишком технический для заявленного «объяснения простыми словами»;
+- trusted `FeatureSpec.display_name_ru / description_ru` из сохранённой ModelVersion не доходят до interpreter request;
+- отдельная визуальная проблема: вторичные действия на экране Result заметнее основного useful flow.
+
+**CURRENT PRODUCT PRIORITY — Stage III-C2c / Role-Based Result Interpretation Integration.**
+
+Architect Lock: `docs/workstreams/llm_interpreter/02_STAGE_III_C2C_ARCHITECT_LOCK.md`.
+
+C2c должен вернуть четыре уже принятые Stage 20 роли — менеджер по продажам, кредитный контролёр, юрист, информационная безопасность — поверх существующей `REDACTED_V1` boundary. Stage III-C2b ACCEPT не отменяется.
+
+После functional C2c отдельным проходом выполняется UX-polish кнопок и визуальной иерархии Result screen.
