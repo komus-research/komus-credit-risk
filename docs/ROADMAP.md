@@ -599,15 +599,30 @@ Verification после corrective fix:
 - `compileall src app` PASS;
 - `git diff --check` PASS.
 
-## NEXT — MANUAL DEFENSE E2E STAGE III-C2
+## MANUAL DEFENSE E2E STAGE III-C2 — TECHNICAL PASS / PRODUCT GAP
 
-Вручную проверить на synthetic/non-client input:
+Ручной E2E 2026-09-25 подтвердил реальный внешний path:
 
-`probability → Local SHAP → REDACTED_V1 → configured provider → Russian explanation`.
+`probability → Local SHAP → REDACTED_V1 → OpenAI → Russian explanation`.
 
-До настройки runtime внешняя интерпретация намеренно остаётся `DISABLED`.
+Runtime/security contract Stage III-C2b работает. Одновременно выявлено, что product UI подключил только generic explanation и не использует принятую Stage 20 ролевую механику.
 
-Главный invariant: failure/отключение LLM не инвалидирует ModelVersion, PredictionBatch, выбранную строку или Local SHAP.
+## NEXT — STAGE III-C2c / ROLE-BASED RESULT INTERPRETATION INTEGRATION
+
+Зафиксирован Architect Lock:
+
+`docs/workstreams/llm_interpreter/02_STAGE_III_C2C_ARCHITECT_LOCK.md`.
+
+Следующий implementation stage должен:
+
+- поддержать 4 роли: sales manager, credit controller, lawyer, information security;
+- использовать один и тот же probability/Local SHAP evidence для всех ролей;
+- передавать trusted feature display/description metadata из ModelVersion;
+- сохранить `REDACTED_V1` и запрет raw client values;
+- не вводить business threshold / approve-deny decision;
+- иметь независимые role responses/retry.
+
+После functional C2c ACCEPT открыть отдельный UX-pass для визуальной иерархии действий на экране Result.
 
 ## AFTER DEFENSE-CRITICAL INTEGRATION
 
