@@ -187,6 +187,79 @@ class IntegrationWorkflowTests(unittest.TestCase):
         self.assertEqual(outcome.dispatch_receipt.source_request_hash, request.request_hash)
         self.assertEqual(set(client.calls[0]["payload"]), {"prediction", "explanation", "top_features"})
 
+    def test_prepare_interpretation_uses_trusted_model_version_feature_text_and_role(self) -> None:
+        evidence = LocalExplanationEvidence(
+            evidence_version="v1", evidence_hash="evidence", model_version_id="version-1",
+            experiment_artifact_id="experiment", dataset_id="dataset", dataset_fingerprint="fingerprint",
+            feature_set_hash="features", model_id="future-model", model_version="v1", row_id="row-1",
+            identifier_column="client_id", identifier_value="secret", probability=0.7,
+            shap_output_space="raw_margin", raw_model_output=1.0, base_value=0.2,
+            features=(LocalFeatureContribution("feature", "technical", 9.0, 0.5, 1),),
+            explainer_id="local", explainer_version="v1", created_at="2026-09-24T00:00:00+00:00",
+        )
+        client = _InterpreterClient()
+        configured = IntegrationWorkflowService(
+            final_model_training_service=self.training, model_version_store=self.store,
+            model_inference_service=self.inference, local_explainers={"future-model": self.explainer},
+            result_interpreter_service=ResultInterpreterService(), result_interpreter_client=client,
+            outbound_interpreter_policy=RedactedV1OutboundPolicy(),
+            result_interpreter_runtime=ResultInterpreterRuntimeConfiguration(
+                policy_mode="REDACTED_V1", provider_configured=True, provider_registered=True,
+                model_configured=True, credentials_configured=True,
+            ),
+        )
+        loaded = SimpleNamespace(
+            summary=ModelVersionSummary("version-1", "experiment-1", "future-model", "v1", ("feature",)),
+            metadata={
+                "feature_specs": [{
+                    "feature_id": "feature",
+                    "display_name_ru": "Понятное название",
+                    "description_ru": "Проверенное описание из ModelVersion",
+                }],
+            },
+        )
+
+        request = configured.prepare_interpretation(
+            evidence=evidence,
+            loaded_model_version=loaded,
+            recipient_role="lawyer",
+            display_names_by_feature_id={"feature": "Недоверенное имя"},
+            descriptions_by_feature_id={"feature": "Недоверенное описание"},
+        )
+
+        self.assertEqual("lawyer", request.recipient_role)
+        self.assertEqual("Понятное название", request.features[0].display_name_ru)
+        self.assertEqual("Проверенное описание из ModelVersion", request.features[0].description_ru)
+        self.assertEqual(client.calls, [])
+
+    def test_prepare_interpretation_rejects_evidence_from_another_model_version(self) -> None:
+        evidence = LocalExplanationEvidence(
+            evidence_version="v1", evidence_hash="evidence", model_version_id="version-1",
+            experiment_artifact_id="experiment", dataset_id="dataset", dataset_fingerprint="fingerprint",
+            feature_set_hash="features", model_id="future-model", model_version="v1", row_id="row-1",
+            identifier_column="client_id", identifier_value="secret", probability=0.7,
+            shap_output_space="raw_margin", raw_model_output=1.0, base_value=0.2,
+            features=(LocalFeatureContribution("feature", "technical", 9.0, 0.5, 1),),
+            explainer_id="local", explainer_version="v1", created_at="2026-09-24T00:00:00+00:00",
+        )
+        loaded = SimpleNamespace(
+            summary=ModelVersionSummary("different-version", "experiment-1", "future-model", "v1", ("feature",)),
+            metadata={"feature_specs": []},
+        )
+        workflow = IntegrationWorkflowService(
+            final_model_training_service=self.training,
+            model_version_store=self.store,
+            model_inference_service=self.inference,
+            local_explainers={},
+            result_interpreter_service=ResultInterpreterService(),
+        )
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            workflow.prepare_interpretation(
+                evidence=evidence,
+                loaded_model_version=loaded,
+                recipient_role="lawyer",
+            )
+
     def test_interpretation_validates_before_policy_or_provider_access(self) -> None:
         client = _InterpreterClient()
         policy = _CountingPolicy()
