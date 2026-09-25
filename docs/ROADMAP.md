@@ -625,7 +625,11 @@ Out of scope C2c:
 - расширение external-data policy;
 - production auth/DB/deployment.
 
-После functional C2c ACCEPT выполняется отдельный UX pass для визуальной иерархии действий на экране Result.
+Implementation C2c готов к проверке: четыре role calls, role-bound request identity, trusted ModelVersion feature text, role-specific retry state и неизменная REDACTED_V1 privacy boundary.
+
+Verification: 68 focused tests PASS; **253 full tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
+
+Следующий gate: Reviewer + manual E2E всех четырёх реальных OpenAI explanations. После functional C2c ACCEPT выполняется отдельный UX pass для визуальной иерархии действий на экране Result.
 
 ## AFTER DEFENSE-CRITICAL INTEGRATION
 
