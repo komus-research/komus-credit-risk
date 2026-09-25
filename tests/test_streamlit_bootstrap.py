@@ -168,22 +168,22 @@ class StreamlitBootstrapTests(unittest.TestCase):
 
         source = Path(prototype.__file__).read_text(encoding="utf-8")
 
-        self.assertIn('"Файл → Подготовка → Проверка → Признаки → Модель → Эксперимент → Результат"', source)
-        self.assertIn('"Загрузите файл, который хотите подготовить для эксперимента."', source)
+        self.assertIn('"Данные → Признаки → Алгоритм → Проверка качества → Результат"', source)
+        self.assertIn('"Выберите файл с данными для обучения и проверки качества модели."', source)
         self.assertNotIn('"Какие данные использовать?"', source)
         self.assertNotIn('"Исторический набор данных"', source)
         self.assertIn('"Выбрать файл…"', source)
         self.assertIn('"Указать расположение файла вручную"', source)
         self.assertIn('choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)', source)
         self.assertIn('st.expander("Технические сведения", expanded=False)', source)
-        self.assertIn('"Данные готовы к эксперименту"', source)
+        self.assertIn('"Данные подготовлены"', source)
         self.assertIn('"Продолжить к признакам →"', source)
         self.assertIn('completion_label="Проверка файла завершена"', source)
         self.assertIn('status.update(label=completion_label, state="complete", expanded=False)', source)
         self.assertIn('_restore_source_controls(st.session_state)', source)
         self.assertIn('"Продолжить к подготовке →"', source)
         self.assertIn('"Подтвердить и продолжить"', source)
-        self.assertIn('"Подтверждаю это условие оценки."', source)
+        self.assertIn('"Понимаю: качество будет оцениваться перекрёстно, без отдельной финальной тестовой выборки."', source)
         self.assertIn('columns[0].metric("Строки"', source)
         self.assertIn('columns[1].metric("Популяция оценки"', source)
         self.assertIn('columns[2].metric("Реестр признаков"', source)
@@ -200,10 +200,10 @@ class StreamlitBootstrapTests(unittest.TestCase):
 
         self.assertIn('"← Назад"', source)
         self.assertIn('"В начало"', source)
-        self.assertIn('"Новый эксперимент на этих данных"', source)
+        self.assertIn('"Попробовать другой вариант на этих данных"', source)
         self.assertIn('navigate_to_step(st.session_state, target_step)', source)
         self.assertIn("return_to_experiment(st.session_state)", source)
-        self.assertIn('navigation[2].button("Новый эксперимент на этих данных", type="primary")', source)
+        self.assertIn('navigation[2].button("Попробовать другой вариант на этих данных", type="primary")', source)
 
     def test_step_navigator_keeps_the_compact_caption_visual(self) -> None:
         import app.streamlit_app as prototype
@@ -244,8 +244,8 @@ class StreamlitBootstrapTests(unittest.TestCase):
             [
                 ("button", "○ Данные"), ("caption", "→"),
                 ("button", "● Признаки"), ("caption", "→"),
-                ("caption", "○ Модель"), ("caption", "→"),
-                ("caption", "○ Эксперимент"), ("caption", "→"),
+                ("caption", "○ Алгоритм"), ("caption", "→"),
+                ("caption", "○ Проверка качества"), ("caption", "→"),
                 ("caption", "○ Результат"),
             ],
         )
