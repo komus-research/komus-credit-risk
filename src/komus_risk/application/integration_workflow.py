@@ -12,6 +12,17 @@ from komus_risk.data import TabularSnapshot
 from .local_explanation import LocalExplanationEvidence
 from .model_inference import ModelInferenceService, PredictionBatch
 from .model_training import FinalModelTrainingService
+from .interpreter_policy import (
+    OutboundInterpreterPolicy,
+    PolicyBoundResultInterpreterClient,
+    ProviderDispatchReceipt,
+)
+from .result_interpreter import (
+    ResultInterpreterClient,
+    ResultInterpreterRequest,
+    ResultInterpreterResponse,
+    ResultInterpreterService,
+)
 
 
 _CAPABILITY_STATES = frozenset({
@@ -31,6 +42,12 @@ class CapabilityStatus:
             raise ValueError("Unknown capability state.")
         if not isinstance(self.reason_code, str) or not self.reason_code:
             raise ValueError("Capability reason_code must be non-empty.")
+
+
+@dataclass(frozen=True, slots=True)
+class ResultInterpretationOutcome:
+    response: ResultInterpreterResponse
+    dispatch_receipt: ProviderDispatchReceipt
 
 
 class LocalExplanationProvider(Protocol):
@@ -55,11 +72,17 @@ class IntegrationWorkflowService:
         model_version_store: ModelVersionStore,
         model_inference_service: ModelInferenceService,
         local_explainers: Mapping[str, LocalExplanationProvider],
+        result_interpreter_service: ResultInterpreterService | None = None,
+        result_interpreter_client: ResultInterpreterClient | None = None,
+        outbound_interpreter_policy: OutboundInterpreterPolicy | None = None,
     ) -> None:
         self.final_model_training_service = final_model_training_service
         self.model_version_store = model_version_store
         self.model_inference_service = model_inference_service
         self.local_explainers = dict(local_explainers)
+        self.result_interpreter_service = result_interpreter_service
+        self.result_interpreter_client = result_interpreter_client
+        self.outbound_interpreter_policy = outbound_interpreter_policy
         training_store = getattr(final_model_training_service, "model_version_store", model_version_store)
         if training_store is not model_version_store:
             raise ValueError("FinalModelTrainingService must use the supplied ModelVersionStore.")
@@ -111,6 +134,45 @@ class IntegrationWorkflowService:
             loaded_model_version=loaded_model_version,
             prediction_batch=prediction_batch,
             row_id=row_id,
+        )
+
+    def prepare_interpretation(
+        self,
+        *,
+        evidence: LocalExplanationEvidence,
+        descriptions_by_feature_id: Mapping[str, str] | None = None,
+    ) -> ResultInterpreterRequest:
+        if self.result_interpreter_service is None:
+            raise ValueError("Result interpreter service is not configured.")
+        return self.result_interpreter_service.build_request(
+            evidence=evidence,
+            descriptions_by_feature_id=descriptions_by_feature_id,
+        )
+
+    def interpret(
+        self,
+        *,
+        request: ResultInterpreterRequest,
+    ) -> ResultInterpretationOutcome:
+        if self.result_interpreter_service is None:
+            raise ValueError("Result interpreter service is not configured.")
+        if self.result_interpreter_client is None:
+            raise ValueError("Result interpreter client is not configured.")
+        if self.outbound_interpreter_policy is None:
+            raise ValueError("Outbound interpreter policy is not configured.")
+
+        self.result_interpreter_service.validate_request(request)
+        dispatch = self.outbound_interpreter_policy.project(request)
+        response = self.result_interpreter_service.interpret_request(
+            request=request,
+            client=PolicyBoundResultInterpreterClient(
+                underlying_client=self.result_interpreter_client,
+                dispatch=dispatch,
+            ),
+        )
+        return ResultInterpretationOutcome(
+            response=response,
+            dispatch_receipt=dispatch.receipt,
         )
 
     def capabilities(
