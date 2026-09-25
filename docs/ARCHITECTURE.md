@@ -524,17 +524,34 @@ UI-компоненты:
 
 ### External interpretation boundary
 
+Stage III-C2a / External Data Boundary принят Reviewer.
+
+Полный внутренний `ResultInterpreterRequest` сохраняется без урезания и сначала проходит проверку `request_hash`. После этого отдельная outbound policy строит provider-safe payload.
+
 В III-C2 внешний provider по умолчанию отключён: `EXTERNAL_DATA_POLICY=DISABLED`.
 
 Без configured policy provider call не выполняется. Один пользовательский checkbox не является достаточным организационным разрешением.
 
-Defense-ready режим `REDACTED_V1` перед provider удаляет как минимум:
+Defense-ready режим `REDACTED_V1` реализован как **positive allowlist projection**, а не blacklist/delete.
 
-- `identifier_value`;
+Во внешний provider допускаются только:
+
+- `prediction.probability`;
+- `explanation.shap_output_space`;
+- для top features: `feature_id`, `column_name`, `shap_value`, `abs_rank`, optional trusted `description_ru`.
+
+Не передаются:
+
+- identifier column/value;
+- `row_id`;
 - raw feature values;
-- row identity.
+- evidence/model provenance;
+- `raw_model_output`;
+- `base_value`.
 
-Допустимы probability, SHAP values/ranks/output-space, feature id/column name и trusted descriptions. Полный raw external sharing до защиты не реализуется.
+`ProviderDispatchReceipt` связывает полный `source_request_hash`, policy id/version и deterministic `provider_payload_hash`. Полный raw external sharing до защиты не реализуется.
+
+Следующий этап III-C2b подключает runtime configuration, capability и UI только через уже принятую policy boundary.
 
 ## 18. Хранение истории
 

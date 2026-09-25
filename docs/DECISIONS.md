@@ -806,4 +806,29 @@ Generic UI не содержит специальных правил по име
 
 Выбранный при обучении feature set является контрактом сохранённой ModelVersion для последующего inference: target на новых данных не требуется, дополнительные колонки допустимы, но все признаки модели должны присутствовать.
 
-Manual III-C1 E2E подтверждён; найденный UTF-8 BOM defect закрыт отдельным corrective fix. Следующий defense-critical stage — III-C2.
+Manual III-C1 E2E подтверждён; найденный UTF-8 BOM defect закрыт отдельным corrective fix.
+
+### D-083 — III-C2a фиксирует отдельную outbound policy boundary
+
+Stage III-C2 разделён на:
+
+- **III-C2a / External Data Boundary**;
+- **III-C2b / Runtime + Streamlit Integration**.
+
+III-C2a получил Reviewer `ACCEPT`.
+
+Принято:
+
+- полный `ResultInterpreterRequest` остаётся internal и не редактируется;
+- `request_hash` проверяется до outbound projection;
+- `REDACTED_V1` строится только positive allowlist-ом;
+- внешний provider не получает identifier, row identity, raw feature values и internal provenance;
+- sanitized payload имеет deterministic hash;
+- `ProviderDispatchReceipt` связывает source request hash, policy id/version и exact provider payload hash;
+- `PolicyBoundResultInterpreterClient` передаёт underlying provider только sanitized dispatch payload;
+- существующий Stage III-A direct internal client contract не переписывается;
+- capability `result_interpretation` до III-C2b остаётся `DISABLED / STAGE_III_C2_NOT_ENABLED`.
+
+Принятый implementation commit: `ebb4c7d0`.
+
+Следующий defense-critical stage — III-C2b: runtime configuration, provider composition, capability и continuation существующего Result UI.

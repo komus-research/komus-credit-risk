@@ -545,15 +545,52 @@ UX commit: `492b6dc6`.
 - `compileall src app` PASS;
 - `git diff --check` PASS.
 
-## NEXT — Stage III-C2 / EXTERNAL INTERPRETATION FLOW
+## Stage III-C2a / EXTERNAL DATA BOUNDARY — ACCEPTED
 
-`LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
+Принята безопасная outbound boundary:
 
-По умолчанию внешний LLM запрещён: `EXTERNAL_DATA_POLICY=DISABLED`. Без configured policy provider call не выполняется.
+`FULL ResultInterpreterRequest → request hash validation → REDACTED_V1 allowlist projection → provider-safe payload`.
 
-Defense-ready разрешённый режим — `REDACTED_V1`: внешний provider не получает `identifier_value`, raw feature values и row identity. Полный raw external sharing до защиты не реализуется.
+Закрыто:
 
-Главный invariant сохраняется: отказ следующей capability не инвалидирует уже рассчитанный результат слева по цепочке.
+- full internal request и lineage не урезаются;
+- tampered request fail-close до policy/provider;
+- REDACTED_V1 — positive allowlist, не blacklist;
+- наружу разрешены только probability, SHAP output space и top-feature id/name/SHAP/rank/trusted description;
+- identifier, row identity, raw feature values и provenance наружу не выходят;
+- deterministic `provider_payload_hash`;
+- immutable dispatch receipt;
+- provider-neutral policy-bound client;
+- existing Stage III-A semantics сохранены;
+- runtime/UI/capability пока не включены.
+
+Verification перед commit:
+
+- focused: 22 tests PASS;
+- full: 237 tests PASS;
+- `compileall src app` PASS;
+- `git diff --check` PASS.
+
+Implementation commit: `ebb4c7d0`.
+
+## NEXT — Stage III-C2b / RUNTIME + STREAMLIT INTEGRATION
+
+Следующий шаг:
+
+`LocalExplanationEvidence → full internal request → accepted REDACTED_V1 boundary → configured provider → Russian explanation`.
+
+Нужно подключить:
+
+- fail-safe runtime policy;
+- provider/model/credential composition;
+- `result_interpretation` capability;
+- downstream session state/invalidation;
+- существующий Result UI;
+- retry/safe degradation без пересчёта prediction/SHAP.
+
+По умолчанию внешний LLM остаётся запрещён: `EXTERNAL_DATA_POLICY=DISABLED`.
+
+Главный invariant сохраняется: отказ LLM capability не инвалидирует ModelVersion, PredictionBatch, выбранную строку или Local SHAP.
 
 ## AFTER DEFENSE-CRITICAL INTEGRATION
 
