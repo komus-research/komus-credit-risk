@@ -914,3 +914,16 @@ Reviewer verdict: **ACCEPT Stage III-C2b**.
 C2c должен вернуть принятые четыре роли Stage 20 — менеджер по продажам, кредитный контролёр, юрист, информационная безопасность — поверх уже принятой REDACTED_V1 boundary, без identifier/raw values и без business threshold/credit decision.
 
 Визуальная иерархия кнопок и общий UX-polish остаются отдельным проходом после functional C2c ACCEPT.
+
+**Stage III-C2c implementation — READY FOR REVIEW / MANUAL E2E.**
+
+Реализовано:
+- четыре независимых объяснения для ролей Stage 20;
+- role входит в request identity/hash;
+- trusted feature display/description metadata берётся из сохранённой ModelVersion;
+- раздельные request/response/error/retry states по ролям;
+- REDACTED_V1 сохраняет запрет на identifier, row identity и raw feature values.
+
+Локальная verification: 68 focused tests PASS; **253 full tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
+
+Следующий шаг: review C2c и короткий manual E2E реального OpenAI-path с просмотром качества всех четырёх текстов. После functional ACCEPT — отдельный UX-pass по визуальной иерархии кнопок.
