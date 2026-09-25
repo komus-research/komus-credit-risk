@@ -82,7 +82,9 @@ class TabularReader:
     def _physical_headers(cls, path: Path, fmt: str, separator: str, encoding: str, sheet_name: str | int) -> tuple[str, ...]:
         try:
             if fmt == "csv":
-                with path.open("r", encoding=encoding, newline="") as file:
+                normalized_encoding = encoding.lower().replace("_", "-")
+                physical_encoding = "utf-8-sig" if normalized_encoding in {"utf-8", "utf8"} else encoding
+                with path.open("r", encoding=physical_encoding, newline="") as file:
                     headers = next(csv.reader(file, delimiter=separator), [])
             elif fmt == "xlsx":
                 from openpyxl import load_workbook
