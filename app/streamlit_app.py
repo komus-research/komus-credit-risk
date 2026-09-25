@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
@@ -40,7 +41,7 @@ from app.session_state import (
     return_to_experiment,
 )
 from komus_risk.planning import PlanningRequestMetadata
-from komus_risk.data import TabularReader
+from komus_risk.data import TabularReadError, TabularReader
 from komus_risk.preparation import DatasetPreparationError
 from komus_risk.preparation.predictor_compatibility import predictor_compatibility_error
 
@@ -59,12 +60,12 @@ _DATA_PROGRESS_LABELS = {
     "preparing_context": "Подготовка рабочего контекста",
 }
 _EXPERIMENT_PROGRESS_LABELS = {
-    "run_started": "Подготовка эксперимента",
-    "fold_started": "Проверка на части данных",
-    "fold_completed": "Проверка части данных завершена",
-    "aggregate_metrics_started": "Расчёт итоговых метрик",
-    "persistence_started": "Сохранение результата",
-    "completed": "Эксперимент завершён",
+    "run_started": "Подготовка обучения и проверки",
+    "fold_started": "Обучение и проверка на части данных",
+    "fold_completed": "Часть проверки завершена",
+    "aggregate_metrics_started": "Расчёт итоговых метрик качества",
+    "persistence_started": "Сохранение результатов проверки",
+    "completed": "Обучение и проверка качества завершены",
 }
 _SECONDARY_FEATURE_GROUP_LABELS = {
     "protected_columns": "Служебные поля",
@@ -85,8 +86,8 @@ _STALE_PREPARATION_ERROR_CODES = frozenset({
     "CONFIRMATION_IDENTITY_MISMATCH",
 })
 _SUPPORTED_SOURCE_EXTENSIONS = tuple(LocalDatasetSourceResolver._FORMATS)
-_DATASET_ONBOARDING_STEPS = ("Файл", "Подготовка", "Проверка")
-_STEP_NAVIGATION_LABELS = ("Данные", "Признаки", "Модель", "Эксперимент", "Результат")
+_DATASET_ONBOARDING_STEPS = ("Файл", "Роли колонок", "Подтверждение")
+_STEP_NAVIGATION_LABELS = ("Данные", "Признаки", "Алгоритм", "Проверка качества", "Результат")
 _STEP_NAVIGATION_CONTAINER_KEY = "step-navigator"
 _INFERENCE_SELECTED_LOCAL_FILE_PATH_KEY = "prototype_inference_selected_local_file_path"
 _INFERENCE_MANUAL_LOCAL_FILE_PATH_KEY = "prototype_inference_manual_local_file_path"
@@ -102,7 +103,7 @@ def main() -> None:
     initialize(st.session_state)
     runtime = _runtime()
     step = st.session_state.current_step
-    st.title("KOMUS · Experiment Prototype V1")
+    st.title("KOMUS · Прототип кредитного скоринга")
     _render_step_navigation()
 
     if step == 0:
@@ -153,9 +154,51 @@ def _run_with_progress(
     return result
 
 
+def _prediction_file_error_message(error: Exception) -> str:
+    """Translate expected inference validation failures into concise Russian UI messages."""
+    message = str(error)
+    missing_prefix = "Required model feature columns are absent from the inference source:"
+    if message.startswith(missing_prefix):
+        raw_missing = message[len(missing_prefix):].strip().removesuffix(".")
+        try:
+            missing = tuple(str(item) for item in ast.literal_eval(raw_missing))
+        except (SyntaxError, ValueError, TypeError):
+            missing = ()
+        if missing:
+            return (
+                "В файле отсутствуют обязательные признаки модели: "
+                + ", ".join(missing)
+                + ". Добавьте эти столбцы и повторите прогноз."
+            )
+        return "В файле отсутствуют обязательные признаки сохранённой модели."
+
+    identifier_prefix = "Required identifier column "
+    if message.startswith(identifier_prefix) and " is absent from the inference source." in message:
+        raw_identifier = message[len(identifier_prefix):].split(" is absent", 1)[0].strip()
+        try:
+            identifier = str(ast.literal_eval(raw_identifier))
+        except (SyntaxError, ValueError, TypeError):
+            identifier = raw_identifier.strip("'\"")
+        return f"В файле отсутствует обязательный идентификатор «{identifier}»."
+
+    if "must all be numeric" in message or "must have a real numeric or boolean dtype" in message:
+        return "В одном или нескольких признаках есть нечисловые значения. Проверьте значения обязательных признаков модели."
+    if "must be finite" in message:
+        return "В одном или нескольких признаках есть пустые или бесконечные значения. Исправьте их и повторите прогноз."
+    if "empty value" in message and "Identifier column" in message:
+        return "В идентификаторе есть пустое значение. Заполните идентификатор для каждой строки."
+    if isinstance(error, TabularReadError) and error.code in {"invalid_physical_header", "header_identity_mismatch"}:
+        return "Не удалось однозначно прочитать заголовки файла. Проверьте названия столбцов, пустые имена и дубликаты."
+    lowered = message.lower()
+    if "physical headers" in lowered or "physical source headers" in lowered or "dataframe headers" in lowered:
+        return "Не удалось однозначно прочитать заголовки файла. Проверьте названия столбцов, пустые имена и дубликаты."
+
+    return "Не удалось получить прогноз. Проверьте файл и соответствие его столбцов сохранённой модели."
+
+
 def _render_data_step() -> None:
     st.header("Подготовка набора данных")
-    st.caption("Файл → Подготовка → Проверка → Признаки → Модель → Эксперимент → Результат")
+    st.caption("Данные → Признаки → Алгоритм → Проверка качества → Результат")
     preparation = st.session_state.dataset_source_preparation
     if preparation is not None and preparation.is_prepared and getattr(preparation, "preparation_status", None) == "historical_context_prepared":
         _render_prepared_source(preparation)
@@ -186,8 +229,8 @@ def _render_data_step() -> None:
         st.success("Файл успешно проверен")
         st.subheader(source.file_name)
         st.write(
-            "Этот набор данных ещё не подготовлен для эксперимента. "
-            "Для продолжения потребуется отдельная подготовка данных и признаков."
+            "Этот набор данных ещё не подготовлен для обучения и проверки качества. "
+            "Для продолжения нужно подтвердить роли колонок и доступные признаки."
         )
     else:
         _render_prepared_source(preparation)
@@ -215,8 +258,8 @@ def _render_data_step() -> None:
 def _render_local_source_controls() -> str:
     """Render local-source selection without showing a host filesystem path."""
     st.subheader("1. Файл")
-    st.write("Загрузите файл, который хотите подготовить для эксперимента.")
-    st.caption("Новый файл не становится автоматически готовым к эксперименту.")
+    st.write("Выберите файл с данными для обучения и проверки качества модели.")
+    st.caption("Сначала система проверит структуру файла и предложит роли колонок. Обучение начнётся только после вашего подтверждения.")
     if st.button("Выбрать файл…", type="primary"):
         try:
             selected = choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)
@@ -341,7 +384,7 @@ def _render_prepared_source(preparation: Any) -> None:
     context = preparation.context
     if context is None:
         return
-    st.success("Данные готовы к эксперименту")
+    st.success("Данные подготовлены")
     passport = context.loaded_dataset.contract
     population_size = len(context.population.row_positions)
     st.subheader(passport.dataset_name or context.display_name)
@@ -423,7 +466,7 @@ def _render_completed_onboarding_steps(preparation: Any, draft: Mapping[str, Any
 
 
 def _render_file_onboarding_step(preparation: Any) -> None:
-    st.subheader("1. Файл")
+    st.subheader("Файл")
     st.success("Файл успешно проверен")
     summary = st.columns(2)
     summary[0].metric("Строки", f"{preparation.snapshot.row_count:,}")
@@ -459,8 +502,11 @@ def _render_preparation_onboarding_step(
     """Confirm the only user decisions required before final preparation."""
     snapshot = preparation.snapshot
     state = st.session_state
-    st.subheader("2. Подготовка")
-    st.caption("Проверьте предложенные цель и идентификатор. Разрешения признаков сформированы автоматически.")
+    st.subheader("Роли колонок")
+    st.caption(
+        "Проверьте, что система правильно поняла цель и идентификатор. "
+        "На этом шаге модель ещё не обучается."
+    )
     placeholder = "— выберите —"
     revision = int(state.get("context_revision", 0))
     target_key = _preparation_form_key(revision, snapshot.fingerprint, "target")
@@ -493,7 +539,7 @@ def _render_preparation_onboarding_step(
         state[identifier_key] = candidate if candidate in identifier_options else placeholder
     identifier = st.selectbox("Колонка-идентификатор", identifier_options, key=identifier_key)
     complete = target != placeholder and positive != positive_placeholder and identifier != placeholder
-    if st.button("Продолжить к проверке →", type="primary", disabled=not complete):
+    if st.button("Продолжить к подтверждению →", type="primary", disabled=not complete):
         draft["target_column"] = target
         draft["positive_class"] = positive
         draft["identifier_column"] = identifier
@@ -508,16 +554,24 @@ _ADVANCED_STATUS_LABELS = {
 
 
 def _render_review_onboarding_step(preparation: Any, draft: MutableMapping[str, Any]) -> None:
-    st.subheader("3. Проверка")
+    st.subheader("Подтверждение данных")
+    st.info(
+        "Здесь модель ещё не обучается. Мы только подтверждаем, как использовать колонки этого файла "
+        "в следующих шагах."
+    )
     statuses = _predictor_statuses(draft)
     st.write(f"Файл: {preparation.source.file_name}")
     st.write(f"Цель: {draft.get('target_column') or 'не выбрана'}")
-    st.write(f"Положительное событие: {draft.get('positive_class')!r}")
-    st.write(f"Идентификатор: {draft.get('identifier_column') or 'не выбран'}")
-    st.write(f"Признаки модели: {sum(value == 'MODEL_ALLOWED' for value in statuses.values())}")
+    st.write(f"Событие, которое прогнозируем: {draft.get('positive_class')!r}")
+    st.write(f"Идентификатор строки: {draft.get('identifier_column') or 'не выбран'}")
+    st.write(f"Разрешены к выбору на следующем шаге: {sum(value == 'MODEL_ALLOWED' for value in statuses.values())}")
     st.write(f"Только для анализа: {sum(value == 'DIAGNOSTIC_ONLY' for value in statuses.values())}")
     st.write(f"Исключены: {sum(value == 'BLOCKED' for value in statuses.values())}")
-    st.write("Оценка: OOF на всех строках без отдельной финальной тестовой выборки")
+    st.write(
+        "Проверка качества: перекрёстная OOF-проверка на всех строках. "
+        "Каждая строка получит прогноз модели, которая на ней не обучалась. "
+        "Отдельной финальной тестовой выборки у этого файла нет."
+    )
     _render_feature_constraints(preparation, draft)
     key = _preparation_form_key(
         int(st.session_state.get("context_revision", 0)),
@@ -526,7 +580,10 @@ def _render_review_onboarding_step(preparation: Any, draft: MutableMapping[str, 
     )
     if key not in st.session_state:
         st.session_state[key] = bool(draft.get("population_policy_acknowledged", False))
-    acknowledged = st.checkbox("Подтверждаю это условие оценки.", key=key)
+    acknowledged = st.checkbox(
+        "Понимаю: качество будет оцениваться перекрёстно, без отдельной финальной тестовой выборки.",
+        key=key,
+    )
     confirmation_blocked = _has_blocked_predictor_without_reason(draft)
     if confirmation_blocked:
         st.warning("Укажите причину для каждого заблокированного признака.")
@@ -561,8 +618,12 @@ def _render_feature_constraints(preparation: Any, draft: MutableMapping[str, Any
     protected = {str(draft.get("target_column") or ""), str(draft.get("identifier_column") or "")}
     revision = int(state.get("context_revision", 0))
 
-    with st.expander("Ограничения признаков", expanded=False):
-        st.caption("Меняйте только редкие исключения. Цель и идентификатор здесь не редактируются.")
+    with st.expander("Дополнительные ограничения колонок", expanded=False):
+        st.caption(
+            "Обычно здесь ничего менять не нужно. Этот раздел нужен только для редких случаев, "
+            "когда колонку надо оставить для анализа или полностью исключить. "
+            "Цель и идентификатор здесь не редактируются."
+        )
         for name in snapshot.physical_headers:
             if name in protected:
                 continue
@@ -809,6 +870,11 @@ def _render_features_step(runtime) -> None:
     if context is None:
         return
     st.header("2. Признаки")
+    st.info(
+        "Выберите признаки, которые будут использоваться моделью. "
+        "Сохранённая модель затем будет ожидать эти же признаки в новых данных для прогноза. "
+        "Если какого-то показателя в будущих файлах не будет, не включайте его в модель сейчас."
+    )
     views = runtime.planning_service.list_features(context.feature_registry)
     groups = runtime.planning_service.list_feature_groups(context.feature_registry)
     views_by_group = {group.group_id: [view for view in views if view.group_id == group.group_id] for group in groups}
@@ -939,19 +1005,19 @@ def _render_models_step(runtime) -> None:
     context = _context_or_previous_step()
     if context is None:
         return
-    st.header("3. Модель")
+    st.header("3. Алгоритм")
     models = tuple(
         model for model in runtime.planning_service.list_models(runtime.model_registry, runtime.model_factories) if model.runnable
     )
     if not models:
-        st.error("Нет доступного predictor для выбранного runtime.")
+        st.error("Нет доступного алгоритма для выбранной конфигурации.")
         return
     by_id = {model.model_id: model for model in models}
     revision = st.session_state.context_revision
     current = st.session_state.selected_model_id
     index = tuple(by_id).index(current) if current in by_id else 0
     selected_id = st.selectbox(
-        "Predictor",
+        "Алгоритм",
         tuple(by_id),
         index=index,
         format_func=lambda model_id: by_id[model_id].display_name_ru,
@@ -960,26 +1026,29 @@ def _render_models_step(runtime) -> None:
     set_selected_model_id(st.session_state, selected_id)
     model = by_id[selected_id]
     st.subheader(model.display_name_ru)
-    st.write(model.description_ru)
-    st.write("**Проверенная фиксированная конфигурация**")
-    st.write(f"Версия: {model.model_version}")
+    st.write("Этот алгоритм будет обучен на выбранных признаках текущего набора данных.")
+    st.info(
+        "Для честного сравнения разных вариантов используется один и тот же проверенный набор настроек обучения. "
+        "Меняются только выбранные вами данные, признаки и алгоритм."
+    )
     with st.expander("Технические параметры"):
-        st.caption("Замороженный профиль и требования runtime доступны только для технической проверки.")
+        st.caption("Версия и внутренние настройки нужны только для воспроизводимости и технической проверки.")
+        st.write(f"Версия настроек: {model.model_version}")
         st.json(_plain(model.default_profile))
         st.json(_plain(model.runtime_requirements))
         st.caption(f"model_id: {model.model_id}; adapter version: {model.adapter_version}")
     navigation = st.columns(3)
     _navigation_button(navigation[0], "← Назад", 1)
     _navigation_button(navigation[1], "В начало", 0)
-    _navigation_button(navigation[2], "Далее: эксперимент →", 3, primary=True)
+    _navigation_button(navigation[2], "Далее: проверка качества →", 3, primary=True)
 
 
 def _render_experiment_step(runtime) -> None:
     context = _context_or_previous_step()
     if context is None or not st.session_state.selected_feature_ids or not st.session_state.selected_model_id:
-        st.warning("Сначала подтвердите признаки и модель.")
+        st.warning("Сначала выберите признаки и алгоритм.")
         return
-    st.header("4. Эксперимент")
+    st.header("4. Обучение и проверка качества")
     navigation = st.columns(3)
     _navigation_button(navigation[0], "← Назад", 2)
     _navigation_button(navigation[1], "В начало", 0)
@@ -999,7 +1068,7 @@ def _render_experiment_step(runtime) -> None:
         step=1,
         help=(
             "Что это: число, задающее случайное разбиение организаций на части проверки. "
-            "Зачем: позволяет воспроизвести один и тот же эксперимент. "
+            "Зачем: позволяет воспроизвести одну и ту же проверку качества. "
             "Когда менять: только для заранее запланированной новой проверки. "
             "Что изменится: разбиение, OOF-прогнозы и итоговые метрики могут измениться; "
             "сопоставление с запуском на другом seed не является прямым. "
@@ -1022,7 +1091,11 @@ def _render_experiment_step(runtime) -> None:
         ),
         key=f"prototype_{revision}_folds",
     )
-    st.info("OOF-оценка: для каждой организации прогноз получен моделью, которая не обучалась на этой организации.")
+    st.info(
+        "Модель будет несколько раз обучена на разных частях данных. "
+        "Каждая строка получит прогноз модели, которая на ней не обучалась. "
+        "Так мы оцениваем качество честнее, чем на тех же строках, на которых модель училась."
+    )
     reference_default = previous.get("reference_artifact_id") or st.session_state.last_successful_artifact_id or ""
     with st.expander("Сравнение с предыдущим успешным результатом", expanded=False):
         compare_with_reference = st.checkbox(
@@ -1048,7 +1121,7 @@ def _render_experiment_step(runtime) -> None:
         "changed_elements": (),
     }
     set_experiment_inputs(st.session_state, values)
-    if st.button("Построить план", type="primary"):
+    if st.button("Проверить настройки", type="primary"):
         validation_message = validate_supported_protocol(values, protocol)
         if validation_message:
             st.error(validation_message)
@@ -1057,7 +1130,7 @@ def _render_experiment_step(runtime) -> None:
             try:
                 runtime.application_service.load_experiment(values["reference_artifact_id"])
             except ValueError:
-                st.error("Указанный reference artifact не найден или повреждён.")
+                st.error("Предыдущий результат для сравнения не найден или повреждён.")
                 return
         try:
             snapshot = PlanningRequestMetadata(
@@ -1067,7 +1140,7 @@ def _render_experiment_step(runtime) -> None:
             )
             run_request_from_snapshot(snapshot)
         except ValueError:
-            st.error("Проверьте параметры эксперимента.")
+            st.error("Проверьте параметры обучения и проверки качества.")
             return
         try:
             plan = runtime.planning_service.build_plan(
@@ -1079,7 +1152,7 @@ def _render_experiment_step(runtime) -> None:
                 population=context.population,
             )
         except (TypeError, ValueError):
-            st.error("Эксперимент не запущен: обнаружена ошибка согласованности backend-контрактов.")
+            st.error("Не удалось подготовить проверку качества: обнаружена техническая ошибка согласованности.")
             return
         save_plan(st.session_state, snapshot, plan)
 
@@ -1091,8 +1164,8 @@ def _render_experiment_step(runtime) -> None:
         st.error("План содержит ошибки пользовательского выбора: " + ", ".join(_plan_error_message(error) for error in plan.validation_errors))
         return
     if plan.request.reference_artifact_id:
-        st.info("Выбран reference для будущей проверки.")
-    if st.button("Запустить эксперимент", type="primary", disabled=not can_run(st.session_state)):
+        st.info("Выбран предыдущий результат для сравнения.")
+    if st.button("Обучить и проверить качество", type="primary", disabled=not can_run(st.session_state)):
         snapshot = st.session_state.planning_request_snapshot
         try:
             artifact = _run_with_progress(
@@ -1104,19 +1177,21 @@ def _render_experiment_step(runtime) -> None:
                     request=run_request_from_snapshot(snapshot),
                     progress_listener=listener,
                 ),
+                initial_label="Обучаем и проверяем качество",
+                completion_label="Обучение и проверка качества завершены",
             )
             comparison = None
             if snapshot.reference_artifact_id:
                 comparison = runtime.application_service.compare_experiments(snapshot.reference_artifact_id, artifact.artifact_id)
         except (KeyError, TypeError, ValueError, RuntimeError, OSError):
-            st.error("Эксперимент не запущен: обнаружена ошибка согласованности backend-контрактов.")
+            st.error("Не удалось выполнить обучение и проверку качества из-за технической ошибки согласованности.")
             return
         save_artifact(st.session_state, artifact, comparison)
         st.rerun()
 
 
 def _render_plan(plan) -> None:
-    st.subheader("Подтверждённый план")
+    st.subheader("Перед запуском")
     request = plan.request
     with st.expander("Данные", expanded=True):
         st.write(f"{plan.dataset.dataset_name} · версия {plan.dataset.dataset_version}")
@@ -1132,12 +1207,16 @@ def _render_plan(plan) -> None:
             st.caption(f"Версия: {plan.model.model_version}")
             with st.expander("Технические параметры"):
                 st.json(_plain(plan.model.default_profile))
-    with st.expander("Проверка", expanded=True):
-        st.write(f"OOF · {request.folds} частей · seed {request.seed}")
+    with st.expander("Проверка качества", expanded=True):
+        st.write(f"Перекрёстная проверка (OOF) · {request.folds} частей · seed {request.seed}")
         with st.expander("Технические сведения протокола", expanded=False):
             st.caption(f"{request.protocol_id} v{request.protocol_version}")
     with st.expander("Сравнение", expanded=False):
-        st.write("Не выбрано" if request.reference_artifact_id is None else f"Reference: {request.reference_artifact_id}")
+        st.write(
+            "Не выбрано"
+            if request.reference_artifact_id is None
+            else f"Предыдущий результат: {request.reference_artifact_id}"
+        )
     st.caption(f"Статус валидации: {'валиден' if plan.is_valid else 'невалиден'}")
 
 
@@ -1150,12 +1229,18 @@ def _render_result_step(runtime) -> None:
     st.header("5. Результат")
     result = artifact.run_output.result
     metrics = result.metrics
+    st.success("Обучение и перекрёстная проверка качества завершены.")
+    st.info(
+        "Ниже показана оценка качества модели на строках, которые она не использовала для своего обучения в соответствующем фолде. "
+        "Если качество вас устраивает, ниже можно обучить итоговую версию для применения к новым данным."
+    )
     st.subheader("Качество ранжирования")
     labels = (("gini", "Gini"), ("roc_auc", "ROC-AUC"), ("pr_auc", "PR-AUC"))
     columns = st.columns(3)
     for index, (key, label) in enumerate(labels):
         columns[index % 3].metric(label, _number(metrics.get(key)))
-    st.subheader("При фиксированном пороге 0.5")
+    st.subheader("При техническом пороге 0.5")
+    st.caption("Порог 0.5 используется только как единая точка сравнения метрик и не является бизнес-решением.")
     threshold_columns = st.columns(3)
     for index, (key, label) in enumerate((("precision_at_0_5", "Precision"), ("recall_at_0_5", "Recall"), ("f1_at_0_5", "F1"))):
         threshold_columns[index].metric(label, _number(metrics.get(key)))
@@ -1201,7 +1286,7 @@ def _render_result_step(runtime) -> None:
         })
     comparison = st.session_state.comparison_result
     if comparison is not None:
-        with st.expander("Сопоставление с reference", expanded=False):
+        with st.expander("Сравнение с предыдущим результатом", expanded=False):
             st.write(f"Сопоставимы: {'да' if comparison.is_comparable else 'нет'}")
             st.write(f"Причины: {', '.join(comparison.reason_codes) or 'не указаны'}")
             st.json({"metrics": comparison.metric_deltas, "confusion": comparison.confusion_deltas, "feature_change": comparison.feature_change, "model_change": comparison.model_change})
@@ -1209,7 +1294,7 @@ def _render_result_step(runtime) -> None:
     navigation = st.columns(3)
     _navigation_button(navigation[0], "← Назад", 3)
     _navigation_button(navigation[1], "В начало", 0)
-    if navigation[2].button("Новый эксперимент на этих данных", type="primary"):
+    if navigation[2].button("Попробовать другой вариант на этих данных", type="primary"):
         return_to_experiment(st.session_state)
         st.rerun()
 
@@ -1229,32 +1314,50 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
     )
     if st.session_state.loaded_model_version is None:
         st.write("Шаг 1. Сохранить модель")
+        st.caption(
+            "Если показанное выше качество вас устраивает, система обучит итоговую версию той же конфигурации "
+            "на всей разрешённой рабочей выборке и сохранит её для новых данных. "
+            "Метрики здесь повторно не считаются: качество уже измерено выше на перекрёстной проверке."
+        )
         if st.button(
             "Сохранить модель для прогноза",
             key="save-model-version-for-inference",
             type="primary",
             disabled=capabilities["final_model_save"].state != "AVAILABLE",
         ):
+            status = st.status("Готовим модель для прогноза", expanded=True)
+            status.write("Обучаем итоговую модель на разрешённой рабочей выборке и сохраняем её.")
             try:
                 loaded = workflow.save_model(
                     experiment_artifact_id=artifact.artifact_id,
                     prepared_dataset_context=context,
                 )
             except (KeyError, TypeError, ValueError, RuntimeError, OSError):
-                st.error("Не удалось сохранить модель для прогноза. Результат эксперимента сохранён.")
+                status.update(label="Модель не сохранена", state="error", expanded=True)
+                st.error("Не удалось сохранить модель для прогноза. Результаты проверки качества сохранены.")
             else:
+                status.update(label="Модель готова для прогноза", state="complete", expanded=False)
                 set_loaded_model_version(st.session_state, loaded)
                 st.rerun()
         return
 
     loaded_model_version = st.session_state.loaded_model_version
     summary = loaded_model_version.summary
-    st.success("Модель сохранена.")
-    st.write(f"{summary.model_id} · признаков: {len(summary.feature_ids)} · источник: текущий эксперимент.")
+    try:
+        model_display_name = runtime.model_registry.get(summary.model_id).display_name_ru
+    except (KeyError, AttributeError):
+        model_display_name = summary.model_id
+    st.success("Модель готова для прогноза.")
+    st.write(f"{model_display_name} · признаков: {len(summary.feature_ids)} · источник: текущая проверка качества.")
     with st.expander("Технические сведения сохранённой модели", expanded=False):
         st.code(summary.model_version_id)
 
-    st.write("Шаг 2. Выбрать файл для прогноза")
+    st.write("Шаг 2. Выбрать новые данные")
+    st.caption(
+        "Выберите файл с организациями, для которых нужно получить прогноз. "
+        "Целевая колонка не нужна. Сохранённая модель ожидает тот же набор признаков, на котором была обучена; "
+        "дополнительные колонки допустимы."
+    )
     if st.button("Выбрать файл…", key="choose-inference-local-file", type="secondary"):
         try:
             selected = choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)
@@ -1279,12 +1382,16 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
         type="primary",
         disabled=not bool(source_path),
     ):
+        status = st.status("Проверяем файл и рассчитываем прогноз", expanded=True)
+        status.write("Читаем файл, проверяем обязательные столбцы и применяем сохранённую модель.")
         try:
             snapshot = TabularReader().read(Path(source_path))
             batch = workflow.predict(loaded_model_version=loaded_model_version, snapshot=snapshot)
-        except (KeyError, TypeError, ValueError, RuntimeError, OSError):
-            st.error("Не удалось получить прогноз. Проверьте файл и соответствие его столбцов сохранённой модели.")
+        except (KeyError, TypeError, ValueError, RuntimeError, OSError) as error:
+            status.update(label="Прогноз не рассчитан", state="error", expanded=True)
+            st.error(_prediction_file_error_message(error))
         else:
+            status.update(label="Прогноз готов", state="complete", expanded=False)
             set_prediction_batch(st.session_state, snapshot, batch)
             st.rerun()
 
@@ -1332,6 +1439,8 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
     if explanation_capability.state != "AVAILABLE":
         return
     if st.button("Показать факторы модели", key="show-local-model-factors", type="secondary"):
+        status = st.status("Рассчитываем факторы для выбранной строки", expanded=True)
+        status.write("Используем ту же сохранённую модель и те же значения признаков, что дали показанную вероятность.")
         try:
             evidence = workflow.explain(
                 loaded_model_version=loaded_model_version,
@@ -1339,8 +1448,10 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
                 row_id=selected_row_id,
             )
         except (KeyError, TypeError, ValueError, RuntimeError, OSError):
+            status.update(label="Факторы не рассчитаны", state="error", expanded=True)
             st.error("Не удалось построить локальное объяснение. Прогноз сохранён.")
         else:
+            status.update(label="Факторы рассчитаны", state="complete", expanded=False)
             set_local_explanation_evidence(st.session_state, evidence)
             st.rerun()
     evidence = st.session_state.local_explanation_evidence

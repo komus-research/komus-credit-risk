@@ -78,7 +78,7 @@ class DatasetPreparationUiTests(unittest.TestCase):
     def test_generic_onboarding_does_not_render_legacy_footer_navigation(self) -> None:
         import app.streamlit_app as prototype
 
-        self.assertEqual(prototype._DATASET_ONBOARDING_STEPS, ("Файл", "Подготовка", "Проверка"))
+        self.assertEqual(prototype._DATASET_ONBOARDING_STEPS, ("Файл", "Роли колонок", "Подтверждение"))
         self.assertFalse(hasattr(prototype, "_render_feature_onboarding_step"))
         self.assertFalse(hasattr(prototype, "_render_evaluation_onboarding_step"))
 
@@ -185,7 +185,7 @@ class DatasetPreparationUiTests(unittest.TestCase):
         with patch.object(prototype, "st", streamlit):
             prototype._render_review_onboarding_step(preparation, draft)
 
-        self.assertIn(("Ограничения признаков", {"expanded": False}), streamlit.expanders)
+        self.assertIn(("Дополнительные ограничения колонок", {"expanded": False}), streamlit.expanders)
         controls = dict(streamlit.selectboxes)
         self.assertNotIn("target", controls)
         self.assertNotIn("entity_id", controls)
@@ -256,7 +256,7 @@ class DatasetPreparationUiTests(unittest.TestCase):
         streamlit = Streamlit()
         with patch.object(prototype, "st", streamlit):
             prototype._render_review_onboarding_step(preparation, draft)
-            self.assertIn("Признаки модели: 1", streamlit.writes)
+            self.assertIn("Разрешены к выбору на следующем шаге: 1", streamlit.writes)
             self.assertIn("Только для анализа: 1", streamlit.writes)
 
             callback, args = streamlit.callbacks["score"]
@@ -269,7 +269,7 @@ class DatasetPreparationUiTests(unittest.TestCase):
             prototype._render_review_onboarding_step(preparation, draft)
 
         self.assertEqual(draft["column_statuses"]["score"], "DIAGNOSTIC_ONLY")
-        self.assertIn("Признаки модели: 0", streamlit.writes)
+        self.assertIn("Разрешены к выбору на следующем шаге: 0", streamlit.writes)
         self.assertIn("Только для анализа: 2", streamlit.writes)
 
     def test_advanced_status_changes_only_the_preparation_draft(self) -> None:
