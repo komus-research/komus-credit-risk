@@ -4,6 +4,7 @@ from dataclasses import replace
 import unittest
 
 from komus_risk.application import (
+    RESULT_INTERPRETER_ROLES,
     LocalExplanationEvidence,
     LocalFeatureContribution,
     ResultInterpreterService,
@@ -98,17 +99,70 @@ class ResultInterpreterTests(unittest.TestCase):
         self.assertIsNone(request.features[1].description_ru)
         self.assertIsNone(request.features[2].description_ru)
 
+    def test_role_is_part_of_request_identity_and_changes_instruction(self) -> None:
+        requests = {
+            role: self.service.build_request(evidence=self.evidence, recipient_role=role)
+            for role in RESULT_INTERPRETER_ROLES
+        }
+        self.assertEqual(set(RESULT_INTERPRETER_ROLES), set(requests))
+        self.assertEqual(4, len({request.request_hash for request in requests.values()}))
+
+        expected_phrases = {
+            "sales_manager": "менеджер по продажам",
+            "credit_controller": "кредитный контролёр",
+            "lawyer": "юрист",
+            "information_security": "информационной безопасности",
+        }
+        for role, phrase in expected_phrases.items():
+            with self.subTest(role=role):
+                client = FakeInterpreter()
+                self.service.interpret_request(request=requests[role], client=client)
+                self.assertIn(phrase, (client.received_instruction or "").lower())
+
+    def test_invalid_role_fails_before_client_access(self) -> None:
+        with self.assertRaisesRegex(ValueError, "recipient role"):
+            self.service.build_request(evidence=self.evidence, recipient_role="not-a-role")
+
+        request = self.service.build_request(evidence=self.evidence, recipient_role="lawyer")
+        client = FakeInterpreter()
+        with self.assertRaisesRegex(ValueError, "recipient role"):
+            self.service.interpret_request(
+                request=replace(request, recipient_role="not-a-role"),
+                client=client,
+            )
+        self.assertFalse(client.interpreter_id_read)
+        self.assertFalse(client.interpreter_model_read)
+        self.assertFalse(client.interpret_called)
+
+    def test_display_name_and_description_are_preserved_as_trusted_metadata(self) -> None:
+        request = self.service.build_request(
+            evidence=self.evidence,
+            recipient_role="sales_manager",
+            display_names_by_feature_id={"feature-1": "Понятное название"},
+            descriptions_by_feature_id={"feature-1": "Проверенное предметное описание"},
+        )
+        self.assertEqual("Понятное название", request.features[0].display_name_ru)
+        self.assertEqual("Проверенное предметное описание", request.features[0].description_ru)
+        self.assertIsNone(request.features[1].display_name_ru)
+
     def test_client_receives_json_compatible_minimal_payload_and_instruction_boundaries(self) -> None:
         client = FakeInterpreter()
         response = self.service.interpret(evidence=self.evidence, client=client)
         self.assertEqual("fake-interpreter", response.interpreter_id)
         self.assertEqual(
-            {"identifier", "prediction", "explanation", "top_features", "provenance"},
+            {"recipient_role", "identifier", "prediction", "explanation", "top_features", "provenance"},
             set(client.received_payload or {}),
         )
         self._assert_json_primitives(client.received_payload)
         instruction = (client.received_instruction or "").lower()
-        for phrase in ("русском", "не пересчитывайте", "не доказывает причинность", "одобрить/отказать", "не придумывайте смысл"):
+        for phrase in (
+            "русском",
+            "не пересчитывайте",
+            "не доказывает причинность",
+            "одобрить/отказать",
+            "предметный смысл не задан",
+            "кредитный контролёр",
+        ):
             self.assertIn(phrase, instruction)
 
     def test_request_hash_is_stable(self) -> None:
