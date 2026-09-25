@@ -147,24 +147,7 @@ class ResultInterpreterService:
         request: ResultInterpreterRequest,
         client: ResultInterpreterClient,
     ) -> ResultInterpreterResponse:
-        if not isinstance(request, ResultInterpreterRequest):
-            raise ValueError("Result interpreter requires a ResultInterpreterRequest.")
-        semantic_request = _semantic_request_payload(
-            request_version=request.request_version,
-            evidence_hash=request.evidence_hash,
-            model_version_id=request.model_version_id,
-            row_id=request.row_id,
-            identifier_column=request.identifier_column,
-            identifier_value=request.identifier_value,
-            probability=request.probability,
-            shap_output_space=request.shap_output_space,
-            raw_model_output=request.raw_model_output,
-            base_value=request.base_value,
-            features=request.features,
-        )
-        self._require_json_compatible(semantic_request, "Result interpreter request")
-        if stable_hash(semantic_request) != request.request_hash:
-            raise ValueError("Result interpreter request hash integrity check failed.")
+        self.validate_request(request)
         payload = self._client_payload(request)
         try:
             interpreter_id = client.interpreter_id
@@ -187,6 +170,27 @@ class ResultInterpreterService:
             created_at=datetime.now(timezone.utc).isoformat(),
             response_hash=stable_hash(semantic_response),
         )
+
+    def validate_request(self, request: ResultInterpreterRequest) -> None:
+        """Validate the full internal request before any external projection."""
+        if not isinstance(request, ResultInterpreterRequest):
+            raise ValueError("Result interpreter requires a ResultInterpreterRequest.")
+        semantic_request = _semantic_request_payload(
+            request_version=request.request_version,
+            evidence_hash=request.evidence_hash,
+            model_version_id=request.model_version_id,
+            row_id=request.row_id,
+            identifier_column=request.identifier_column,
+            identifier_value=request.identifier_value,
+            probability=request.probability,
+            shap_output_space=request.shap_output_space,
+            raw_model_output=request.raw_model_output,
+            base_value=request.base_value,
+            features=request.features,
+        )
+        self._require_json_compatible(semantic_request, "Result interpreter request")
+        if stable_hash(semantic_request) != request.request_hash:
+            raise ValueError("Result interpreter request hash integrity check failed.")
 
     @staticmethod
     def _descriptions(value: Mapping[str, str] | None) -> Mapping[str, str]:

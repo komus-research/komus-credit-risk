@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 import unittest
 
-from komus_risk.application import IntegrationWorkflowService
+from komus_risk.application import (
+    IntegrationWorkflowService,
+    LocalExplanationEvidence,
+    LocalFeatureContribution,
+    RedactedV1OutboundPolicy,
+    ResultInterpreterService,
+)
 from komus_risk.artifacts import ModelVersionSummary
 
 
@@ -45,6 +52,32 @@ class _Explainer:
     def explain(self, **kwargs):
         self.calls.append(kwargs)
         return self.evidence
+
+
+class _InterpreterClient:
+    def __init__(self) -> None:
+        self.calls = []
+
+    @property
+    def interpreter_id(self):
+        return "fake-interpreter"
+
+    @property
+    def interpreter_model(self):
+        return "fake-model"
+
+    def interpret(self, *, system_instruction, payload):
+        self.calls.append({"system_instruction": system_instruction, "payload": payload})
+        return "Текст интерпретации."
+
+
+class _CountingPolicy(RedactedV1OutboundPolicy):
+    def __init__(self) -> None:
+        self.project_calls = 0
+
+    def project(self, request):
+        self.project_calls += 1
+        return super().project(request)
 
 
 class IntegrationWorkflowTests(unittest.TestCase):
@@ -124,6 +157,62 @@ class IntegrationWorkflowTests(unittest.TestCase):
     def test_workflow_has_no_fallback_predictor_or_explainer(self) -> None:
         self.assertFalse(hasattr(self.workflow, "fallback_predictor"))
         self.assertFalse(hasattr(self.workflow, "fallback_explainer"))
+
+    def test_interpretation_is_opt_in_and_prepare_makes_no_provider_call(self) -> None:
+        evidence = LocalExplanationEvidence(
+            evidence_version="v1", evidence_hash="evidence", model_version_id="version-1",
+            experiment_artifact_id="experiment", dataset_id="dataset", dataset_fingerprint="fingerprint",
+            feature_set_hash="features", model_id="future-model", model_version="v1", row_id="row-1",
+            identifier_column="client_id", identifier_value="secret", probability=0.7,
+            shap_output_space="raw_margin", raw_model_output=1.0, base_value=0.2,
+            features=(LocalFeatureContribution("feature", "technical", 9.0, 0.5, 1),),
+            explainer_id="local", explainer_version="v1", created_at="2026-09-24T00:00:00+00:00",
+        )
+        client = _InterpreterClient()
+        configured = IntegrationWorkflowService(
+            final_model_training_service=self.training, model_version_store=self.store,
+            model_inference_service=self.inference, local_explainers={"future-model": self.explainer},
+            result_interpreter_service=ResultInterpreterService(), result_interpreter_client=client,
+            outbound_interpreter_policy=RedactedV1OutboundPolicy(),
+        )
+        request = configured.prepare_interpretation(evidence=evidence)
+        self.assertEqual(client.calls, [])
+
+        outcome = configured.interpret(request=request)
+        self.assertEqual(outcome.dispatch_receipt.source_request_hash, request.request_hash)
+        self.assertEqual(set(client.calls[0]["payload"]), {"prediction", "explanation", "top_features"})
+
+    def test_interpretation_validates_before_policy_or_provider_access(self) -> None:
+        client = _InterpreterClient()
+        policy = _CountingPolicy()
+        workflow = IntegrationWorkflowService(
+            final_model_training_service=self.training, model_version_store=self.store,
+            model_inference_service=self.inference, local_explainers={},
+            result_interpreter_service=ResultInterpreterService(), result_interpreter_client=client,
+            outbound_interpreter_policy=policy,
+        )
+        valid = ResultInterpreterService().build_request(evidence=LocalExplanationEvidence(
+            evidence_version="v1", evidence_hash="evidence", model_version_id="version-1",
+            experiment_artifact_id="experiment", dataset_id="dataset", dataset_fingerprint="fingerprint",
+            feature_set_hash="features", model_id="future-model", model_version="v1", row_id="row-1",
+            identifier_column="client_id", identifier_value="secret", probability=0.7,
+            shap_output_space="raw_margin", raw_model_output=1.0, base_value=0.2,
+            features=(LocalFeatureContribution("feature", "technical", 9.0, 0.5, 1),),
+            explainer_id="local", explainer_version="v1", created_at="2026-09-24T00:00:00+00:00",
+        ))
+        for tampered in (
+            replace(valid, probability=0.8),
+            replace(valid, features=(replace(valid.features[0], shap_value=0.8),)),
+        ):
+            with self.subTest(tampered=tampered):
+                with self.assertRaisesRegex(ValueError, "hash integrity"):
+                    workflow.interpret(request=tampered)
+        self.assertEqual(policy.project_calls, 0)
+        self.assertEqual(client.calls, [])
+
+    def test_interpretation_without_dependencies_fails_before_provider_access(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not configured"):
+            self.workflow.interpret(request=object())
 
 
 if __name__ == "__main__":
