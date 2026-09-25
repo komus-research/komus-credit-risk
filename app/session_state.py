@@ -31,6 +31,12 @@ _DEFAULTS = {
     "last_successful_artifact_id": None,
     "context_revision": 0,
     "highest_reached_step": 0,
+    "active_model_version_id": None,
+    "loaded_model_version": None,
+    "inference_snapshot": None,
+    "prediction_batch": None,
+    "selected_prediction_row_id": None,
+    "local_explanation_evidence": None,
 }
 
 
@@ -242,6 +248,7 @@ def run_request_from_snapshot(snapshot: PlanningRequestMetadata) -> RunExperimen
 
 
 def save_artifact(state: MutableMapping[str, Any], artifact: Any, comparison: Any | None) -> None:
+    _clear_integration_state(state)
     state["loaded_artifact"] = artifact
     state["comparison_result"] = comparison
     state["last_successful_artifact_id"] = artifact.artifact_id
@@ -275,6 +282,51 @@ def _clear_plan_and_result(state: MutableMapping[str, Any]) -> None:
     state["experiment_plan"] = None
     state["loaded_artifact"] = None
     state["comparison_result"] = None
+    _clear_integration_state(state)
+
+
+def set_loaded_model_version(state: MutableMapping[str, Any], loaded_model_version: Any) -> None:
+    """Activate a new saved model and invalidate its downstream local use data."""
+    if loaded_model_version is state.get("loaded_model_version"):
+        return
+    state["loaded_model_version"] = loaded_model_version
+    state["active_model_version_id"] = getattr(getattr(loaded_model_version, "summary", None), "model_version_id", None)
+    _clear_inference_state(state)
+
+
+def set_prediction_batch(state: MutableMapping[str, Any], snapshot: Any, prediction_batch: Any) -> None:
+    """Store one targetless inference result and reset row-level state."""
+    if snapshot is state.get("inference_snapshot") and prediction_batch is state.get("prediction_batch"):
+        return
+    state["inference_snapshot"] = snapshot
+    state["prediction_batch"] = prediction_batch
+    state["selected_prediction_row_id"] = None
+    state["local_explanation_evidence"] = None
+
+
+def set_selected_prediction_row_id(state: MutableMapping[str, Any], row_id: str | None) -> None:
+    """Change the selected prediction row without clearing evidence for the same row."""
+    if row_id == state.get("selected_prediction_row_id"):
+        return
+    state["selected_prediction_row_id"] = row_id
+    state["local_explanation_evidence"] = None
+
+
+def set_local_explanation_evidence(state: MutableMapping[str, Any], evidence: Any) -> None:
+    state["local_explanation_evidence"] = evidence
+
+
+def _clear_inference_state(state: MutableMapping[str, Any]) -> None:
+    state["inference_snapshot"] = None
+    state["prediction_batch"] = None
+    state["selected_prediction_row_id"] = None
+    state["local_explanation_evidence"] = None
+
+
+def _clear_integration_state(state: MutableMapping[str, Any]) -> None:
+    state["active_model_version_id"] = None
+    state["loaded_model_version"] = None
+    _clear_inference_state(state)
 
 
 def _store_preparation_transients(state: MutableMapping[str, Any], preparation: Any) -> None:
