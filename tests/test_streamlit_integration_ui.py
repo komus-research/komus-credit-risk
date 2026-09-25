@@ -12,6 +12,8 @@ class StreamlitIntegrationUiTests(unittest.TestCase):
         self.assertIn("workflow.predict(", source)
         self.assertIn("workflow.explain(", source)
         self.assertIn("prediction_batch.identifier_column", source)
+        self.assertIn("set_inference_source_path(st.session_state, selected)", source)
+        self.assertIn("set_inference_source_path(st.session_state, source_path)", source)
         self.assertNotIn("model_id ==", source)
         self.assertNotIn('"INN"', source)
         self.assertNotIn('"DefMark"', source)

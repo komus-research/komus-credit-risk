@@ -33,6 +33,7 @@ _DEFAULTS = {
     "highest_reached_step": 0,
     "active_model_version_id": None,
     "loaded_model_version": None,
+    "inference_source_path": "",
     "inference_snapshot": None,
     "prediction_batch": None,
     "selected_prediction_row_id": None,
@@ -291,6 +292,15 @@ def set_loaded_model_version(state: MutableMapping[str, Any], loaded_model_versi
         return
     state["loaded_model_version"] = loaded_model_version
     state["active_model_version_id"] = getattr(getattr(loaded_model_version, "summary", None), "model_version_id", None)
+    _clear_inference_state(state)
+
+
+def set_inference_source_path(state: MutableMapping[str, Any], source_path: str | None) -> None:
+    """Change the targetless source and invalidate stale inference results below the active model."""
+    normalized = str(source_path or "").strip()
+    if normalized == state.get("inference_source_path", ""):
+        return
+    state["inference_source_path"] = normalized
     _clear_inference_state(state)
 
 

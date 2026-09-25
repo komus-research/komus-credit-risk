@@ -18,6 +18,7 @@ from app.session_state import (
     set_experiment_inputs,
     set_group_selection,
     set_loaded_model_version,
+    set_inference_source_path,
     set_prediction_batch,
     set_selected_prediction_row_id,
     set_local_explanation_evidence,
@@ -466,6 +467,50 @@ class SessionStateTests(unittest.TestCase):
         self.assertIsNone(self.state["prediction_batch"])
         self.assertIsNone(self.state["selected_prediction_row_id"])
         self.assertIsNone(self.state["local_explanation_evidence"])
+
+    def test_changed_inference_source_clears_stale_batch_but_preserves_model(self) -> None:
+        model = SimpleNamespace(summary=SimpleNamespace(model_version_id="model-1"))
+        snapshot = SimpleNamespace(source_path="A.csv")
+        batch = object()
+        evidence = object()
+        self.state.update(
+            active_model_version_id="model-1",
+            loaded_model_version=model,
+            inference_source_path="A.csv",
+            inference_snapshot=snapshot,
+            prediction_batch=batch,
+            selected_prediction_row_id="row-1",
+            local_explanation_evidence=evidence,
+        )
+
+        set_inference_source_path(self.state, "B.csv")
+
+        self.assertEqual(self.state["inference_source_path"], "B.csv")
+        self.assertIs(self.state["loaded_model_version"], model)
+        self.assertEqual(self.state["active_model_version_id"], "model-1")
+        self.assertIsNone(self.state["inference_snapshot"])
+        self.assertIsNone(self.state["prediction_batch"])
+        self.assertIsNone(self.state["selected_prediction_row_id"])
+        self.assertIsNone(self.state["local_explanation_evidence"])
+
+    def test_same_inference_source_preserves_current_batch(self) -> None:
+        snapshot = object()
+        batch = object()
+        evidence = object()
+        self.state.update(
+            inference_source_path="A.csv",
+            inference_snapshot=snapshot,
+            prediction_batch=batch,
+            selected_prediction_row_id="row-1",
+            local_explanation_evidence=evidence,
+        )
+
+        set_inference_source_path(self.state, " A.csv ")
+
+        self.assertIs(self.state["inference_snapshot"], snapshot)
+        self.assertIs(self.state["prediction_batch"], batch)
+        self.assertEqual(self.state["selected_prediction_row_id"], "row-1")
+        self.assertIs(self.state["local_explanation_evidence"], evidence)
 
     def test_new_prediction_batch_clears_row_and_evidence(self) -> None:
         self.state.update(selected_prediction_row_id="row-1", local_explanation_evidence=object())

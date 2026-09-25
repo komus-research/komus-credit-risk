@@ -30,6 +30,7 @@ from app.session_state import (
     save_plan,
     set_loaded_model_version,
     set_local_explanation_evidence,
+    set_inference_source_path,
     set_prediction_batch,
     set_selected_prediction_row_id,
     set_dataset_source_preparation,
@@ -1263,6 +1264,7 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
             if selected:
                 st.session_state[_INFERENCE_SELECTED_LOCAL_FILE_PATH_KEY] = selected
                 st.session_state[_INFERENCE_MANUAL_LOCAL_FILE_PATH_KEY] = ""
+                set_inference_source_path(st.session_state, selected)
     with st.expander("Указать расположение файла вручную", expanded=False):
         manual_path = st.text_input(
             "Путь к файлу для прогноза",
@@ -1270,6 +1272,7 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
             placeholder="Выберите файл или укажите его расположение",
         )
     source_path = manual_path.strip() or st.session_state.get(_INFERENCE_SELECTED_LOCAL_FILE_PATH_KEY, "")
+    set_inference_source_path(st.session_state, source_path)
     if st.button(
         "Получить прогноз",
         key="run-targetless-inference",
