@@ -12,16 +12,43 @@ from komus_risk.hashing import canonical_json, stable_hash
 
 from .local_explanation import LocalExplanationEvidence
 
-REQUEST_VERSION = "result_interpreter_v1"
+REQUEST_VERSION = "result_interpreter_v2"
 TOP_N = 5
-SYSTEM_INSTRUCTION = """Отвечайте только на русском языке и используйте исключительно факты из payload.
-Probability — это уже готовый результат модели: не пересчитывайте и не изменяйте его.
-Не пересчитывайте и не изменяйте SHAP. Объясняйте SHAP только в указанном shap_output_space:
-положительный SHAP повышает model score положительного класса, отрицательный SHAP снижает его.
-SHAP не доказывает причинность. Не придумывайте смысл признака без description_ru; если описания нет,
-используйте только technical column_name. Не принимайте решение «одобрить/отказать», не выбирайте
-threshold, не давайте нормативных кредитных рекомендаций и не утверждайте, что дефолт или событие
-обязательно произойдёт. Не изменяйте числа из payload."""
+RESULT_INTERPRETER_ROLES = (
+    "sales_manager",
+    "credit_controller",
+    "lawyer",
+    "information_security",
+)
+
+_BASE_SYSTEM_INSTRUCTION = """Отвечайте только на русском языке и используйте исключительно факты из payload.
+Probability — уже рассчитанный результат модели: не пересчитывайте и не изменяйте его.
+Не пересчитывайте и не изменяйте SHAP. Положительный SHAP повышает model score положительного класса,
+отрицательный SHAP снижает его. SHAP описывает поведение модели и не доказывает причинность.
+Если у признака есть display_name_ru/description_ru, используйте их. Если полезного описания нет,
+называйте только technical column_name и прямо говорите, что предметный смысл не задан.
+Не принимайте решение «одобрить/отказать», не выбирайте threshold, не давайте нормативных кредитных
+или юридических рекомендаций и не утверждайте, что событие обязательно произойдёт.
+Пишите человеческим языком: не объясняйте raw_margin и внутреннюю механику SHAP, если роль этого не требует."""
+
+_ROLE_INSTRUCTIONS = {
+    "sales_manager": """Аудитория — менеджер по продажам.
+Дайте короткое понятное резюме в 3–5 предложениях: что показала модель и какие 2–3 фактора сильнее всего
+сдвинули её оценку вверх или вниз. Избегайте формул и технических терминов. Завершите одной фразой о том,
+что это объяснение модели, а не самостоятельное кредитное решение.""",
+    "credit_controller": """Аудитория — кредитный контролёр.
+Кратко зафиксируйте probability и затем разберите наиболее значимые факторы по направлению влияния.
+Отделяйте факты модели от интерпретации, отмечайте отсутствие предметного описания признака и не вводите
+неутверждённый threshold или business decision. Завершите ограничениями SHAP.""",
+    "lawyer": """Аудитория — юрист.
+Сформулируйте аккуратное фактическое объяснение происхождения результата: probability рассчитана моделью,
+а перечисленные факторы — локальные SHAP-вклады. Явно укажите, что SHAP не устанавливает причинность,
+интерпретация не является юридическим или кредитным решением и не добавляет фактов, которых нет в payload.""",
+    "information_security": """Аудитория — специалист по информационной безопасности.
+Кратко объясните модельный результат, затем опишите только категории данных, фактически присутствующие в
+полученном payload. Если идентификатор организации, row identity или raw feature values отсутствуют,
+можно прямо указать их отсутствие. Не делайте выводов о хранении данных, retention или Zero Data Retention.""",
+}
 
 
 class ResultInterpreterClient(Protocol):
@@ -41,12 +68,14 @@ class InterpreterFeatureFact:
     raw_value: float
     shap_value: float
     abs_rank: int
+    display_name_ru: str | None
     description_ru: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class ResultInterpreterRequest:
     request_version: str
+    recipient_role: str
     evidence_hash: str
     model_version_id: str
     row_id: str
@@ -73,6 +102,7 @@ class ResultInterpreterResponse:
 def _semantic_request_payload(
     *,
     request_version: str,
+    recipient_role: str,
     evidence_hash: str,
     model_version_id: str,
     row_id: str,
@@ -87,6 +117,7 @@ def _semantic_request_payload(
     """Return the complete canonical semantic representation of a request."""
     return {
         "request_version": request_version,
+        "recipient_role": recipient_role,
         "evidence_hash": evidence_hash,
         "model_version_id": model_version_id,
         "row_id": row_id,
@@ -107,14 +138,19 @@ class ResultInterpreterService:
         self,
         *,
         evidence: LocalExplanationEvidence,
+        recipient_role: str = "credit_controller",
+        display_names_by_feature_id: Mapping[str, str] | None = None,
         descriptions_by_feature_id: Mapping[str, str] | None = None,
     ) -> ResultInterpreterRequest:
         if not isinstance(evidence, LocalExplanationEvidence):
             raise ValueError("Result interpreter requires LocalExplanationEvidence.")
-        descriptions = self._descriptions(descriptions_by_feature_id)
-        features = self._top_features(evidence, descriptions)
+        self._validate_role(recipient_role)
+        display_names = self._text_map(display_names_by_feature_id, "display_names_by_feature_id")
+        descriptions = self._text_map(descriptions_by_feature_id, "descriptions_by_feature_id")
+        features = self._top_features(evidence, display_names, descriptions)
         payload = _semantic_request_payload(
             request_version=REQUEST_VERSION,
+            recipient_role=recipient_role,
             evidence_hash=evidence.evidence_hash,
             model_version_id=evidence.model_version_id,
             row_id=evidence.row_id,
@@ -134,10 +170,17 @@ class ResultInterpreterService:
         *,
         evidence: LocalExplanationEvidence,
         client: ResultInterpreterClient,
+        recipient_role: str = "credit_controller",
+        display_names_by_feature_id: Mapping[str, str] | None = None,
         descriptions_by_feature_id: Mapping[str, str] | None = None,
     ) -> ResultInterpreterResponse:
         return self.interpret_request(
-            request=self.build_request(evidence=evidence, descriptions_by_feature_id=descriptions_by_feature_id),
+            request=self.build_request(
+                evidence=evidence,
+                recipient_role=recipient_role,
+                display_names_by_feature_id=display_names_by_feature_id,
+                descriptions_by_feature_id=descriptions_by_feature_id,
+            ),
             client=client,
         )
 
@@ -152,7 +195,10 @@ class ResultInterpreterService:
         try:
             interpreter_id = client.interpreter_id
             interpreter_model = client.interpreter_model
-            text = client.interpret(system_instruction=SYSTEM_INSTRUCTION, payload=payload)
+            text = client.interpret(
+                system_instruction=self._system_instruction(request.recipient_role),
+                payload=payload,
+            )
         except Exception as error:
             raise RuntimeError("Result interpreter client failed.") from error
         self._validate_client_identity(interpreter_id, "interpreter_id")
@@ -175,8 +221,10 @@ class ResultInterpreterService:
         """Validate the full internal request before any external projection."""
         if not isinstance(request, ResultInterpreterRequest):
             raise ValueError("Result interpreter requires a ResultInterpreterRequest.")
+        self._validate_role(request.recipient_role)
         semantic_request = _semantic_request_payload(
             request_version=request.request_version,
+            recipient_role=request.recipient_role,
             evidence_hash=request.evidence_hash,
             model_version_id=request.model_version_id,
             row_id=request.row_id,
@@ -193,22 +241,33 @@ class ResultInterpreterService:
             raise ValueError("Result interpreter request hash integrity check failed.")
 
     @staticmethod
-    def _descriptions(value: Mapping[str, str] | None) -> Mapping[str, str]:
+    def _text_map(value: Mapping[str, str] | None, field_name: str) -> Mapping[str, str]:
         if value is None:
             return {}
         if not isinstance(value, Mapping):
-            raise ValueError("descriptions_by_feature_id must be a mapping or None.")
+            raise ValueError(f"{field_name} must be a mapping or None.")
         normalized: dict[str, str] = {}
-        for feature_id, description in value.items():
-            if not isinstance(feature_id, str) or not isinstance(description, str):
-                raise ValueError("Feature descriptions must use string feature IDs and text values.")
-            if description.strip():
-                normalized[feature_id] = description
+        for feature_id, text in value.items():
+            if not isinstance(feature_id, str) or not isinstance(text, str):
+                raise ValueError("Feature metadata must use string feature IDs and text values.")
+            if text.strip():
+                normalized[feature_id] = text.strip()
         return normalized
+
+    @staticmethod
+    def _validate_role(recipient_role: str) -> None:
+        if recipient_role not in RESULT_INTERPRETER_ROLES:
+            raise ValueError("Unknown result interpreter recipient role.")
+
+    @staticmethod
+    def _system_instruction(recipient_role: str) -> str:
+        ResultInterpreterService._validate_role(recipient_role)
+        return _BASE_SYSTEM_INSTRUCTION + "\n\n" + _ROLE_INSTRUCTIONS[recipient_role]
 
     @staticmethod
     def _top_features(
         evidence: LocalExplanationEvidence,
+        display_names: Mapping[str, str],
         descriptions: Mapping[str, str],
     ) -> tuple[InterpreterFeatureFact, ...]:
         source = tuple(evidence.features)
@@ -232,6 +291,7 @@ class ResultInterpreterService:
                 raw_value=item.raw_value,
                 shap_value=item.shap_value,
                 abs_rank=item.abs_rank,
+                display_name_ru=display_names.get(item.feature_id),
                 description_ru=descriptions.get(item.feature_id),
             )
             for item in selected
@@ -240,6 +300,7 @@ class ResultInterpreterService:
     @staticmethod
     def _client_payload(request: ResultInterpreterRequest) -> dict[str, Any]:
         payload = {
+            "recipient_role": request.recipient_role,
             "identifier": {"column": request.identifier_column, "value": request.identifier_value},
             "prediction": {"probability": request.probability},
             "explanation": {
@@ -254,6 +315,7 @@ class ResultInterpreterService:
                     "raw_value": item.raw_value,
                     "shap_value": item.shap_value,
                     "abs_rank": item.abs_rank,
+                    "display_name_ru": item.display_name_ru,
                     "description_ru": item.description_ru,
                 }
                 for item in request.features
