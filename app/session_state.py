@@ -6,7 +6,7 @@ from collections.abc import Iterable, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
-from komus_risk.application import RunExperimentRequest
+from komus_risk.application import RESULT_INTERPRETER_ROLES, RunExperimentRequest
 from komus_risk.contracts import FeatureUsageStatus
 from komus_risk.planning import ExperimentPlan, PlanningRequestMetadata
 
@@ -43,6 +43,10 @@ _DEFAULTS = {
     "result_interpreter_response": None,
     "result_interpreter_dispatch_receipt": None,
     "result_interpreter_error_code": None,
+    "result_interpreter_requests_by_role": None,
+    "result_interpreter_responses_by_role": None,
+    "result_interpreter_receipts_by_role": None,
+    "result_interpreter_errors_by_role": None,
 }
 
 
@@ -56,6 +60,14 @@ class ResultInterpreterSessionResponse:
 def initialize(state: MutableMapping[str, Any]) -> None:
     for key, value in _DEFAULTS.items():
         state.setdefault(key, value)
+    for key in (
+        "result_interpreter_requests_by_role",
+        "result_interpreter_responses_by_role",
+        "result_interpreter_receipts_by_role",
+        "result_interpreter_errors_by_role",
+    ):
+        if not isinstance(state.get(key), dict):
+            state[key] = {}
     if "highest_reached_step" not in state:
         state["highest_reached_step"] = 0
     state["highest_reached_step"] = max(
@@ -367,6 +379,50 @@ def set_result_interpretation_error(state: MutableMapping[str, Any], error_code:
     state["result_interpreter_error_code"] = error_code
 
 
+def set_role_result_interpreter_request(
+    state: MutableMapping[str, Any],
+    recipient_role: str,
+    request: Any,
+) -> None:
+    _validate_interpreter_role(recipient_role)
+    state["result_interpreter_requests_by_role"][recipient_role] = request
+    state["result_interpreter_responses_by_role"].pop(recipient_role, None)
+    state["result_interpreter_receipts_by_role"].pop(recipient_role, None)
+    state["result_interpreter_errors_by_role"].pop(recipient_role, None)
+
+
+def set_role_result_interpretation_success(
+    state: MutableMapping[str, Any],
+    recipient_role: str,
+    outcome: Any,
+) -> None:
+    _validate_interpreter_role(recipient_role)
+    text = getattr(getattr(outcome, "response", None), "text", None)
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Result interpreter response text must be non-empty.")
+    state["result_interpreter_responses_by_role"][recipient_role] = ResultInterpreterSessionResponse(text=text)
+    state["result_interpreter_receipts_by_role"][recipient_role] = outcome.dispatch_receipt
+    state["result_interpreter_errors_by_role"].pop(recipient_role, None)
+
+
+def set_role_result_interpretation_error(
+    state: MutableMapping[str, Any],
+    recipient_role: str,
+    error_code: str,
+) -> None:
+    _validate_interpreter_role(recipient_role)
+    if not isinstance(error_code, str) or not error_code:
+        raise ValueError("Result interpreter error code must be non-empty.")
+    state["result_interpreter_responses_by_role"].pop(recipient_role, None)
+    state["result_interpreter_receipts_by_role"].pop(recipient_role, None)
+    state["result_interpreter_errors_by_role"][recipient_role] = error_code
+
+
+def _validate_interpreter_role(recipient_role: str) -> None:
+    if recipient_role not in RESULT_INTERPRETER_ROLES:
+        raise ValueError("Unknown result interpreter recipient role.")
+
+
 def _clear_inference_state(state: MutableMapping[str, Any]) -> None:
     state["inference_snapshot"] = None
     state["prediction_batch"] = None
@@ -380,6 +436,10 @@ def _clear_result_interpretation_state(state: MutableMapping[str, Any]) -> None:
     state["result_interpreter_response"] = None
     state["result_interpreter_dispatch_receipt"] = None
     state["result_interpreter_error_code"] = None
+    state["result_interpreter_requests_by_role"] = {}
+    state["result_interpreter_responses_by_role"] = {}
+    state["result_interpreter_receipts_by_role"] = {}
+    state["result_interpreter_errors_by_role"] = {}
 
 
 def _clear_integration_state(state: MutableMapping[str, Any]) -> None:
