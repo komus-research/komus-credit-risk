@@ -599,15 +599,33 @@ Verification после corrective fix:
 - `compileall src app` PASS;
 - `git diff --check` PASS.
 
-## NEXT — MANUAL DEFENSE E2E STAGE III-C2
+## MANUAL DEFENSE E2E STAGE III-C2 — TECHNICAL PASS / PRODUCT GAP
 
-Вручную проверить на synthetic/non-client input:
+Ручной E2E 2026-09-25 подтвердил реальный внешний path:
 
-`probability → Local SHAP → REDACTED_V1 → configured provider → Russian explanation`.
+`probability → Local SHAP → REDACTED_V1 → OpenAI → Russian explanation`.
 
-До настройки runtime внешняя интерпретация намеренно остаётся `DISABLED`.
+Security/runtime contract C2b работает: disabled path безопасен, ready REDACTED_V1 вызывает provider, а upstream prediction/SHAP не зависят от LLM.
 
-Главный invariant: failure/отключение LLM не инвалидирует ModelVersion, PredictionBatch, выбранную строку или Local SHAP.
+Product gap: подключённый generic interpreter не использует принятую Stage 20 role-based механику и не получает trusted feature descriptions из ModelVersion metadata.
+
+## NEXT — STAGE III-C2c / ROLE-BASED RESULT INTERPRETATION INTEGRATION
+
+Functional scope:
+- четыре принятые роли: sales manager, credit controller, lawyer, information security;
+- role-aware prompt semantics без изменения probability/SHAP;
+- trusted feature display/description metadata в request;
+- REDACTED_V1 allowlist и zero raw client values сохраняются;
+- role-specific response/retry state;
+- no business threshold / approve-deny decision.
+
+Out of scope C2c:
+- визуальный редизайн кнопок и общий UX-polish;
+- изменение ML protocol;
+- расширение external-data policy;
+- production auth/DB/deployment.
+
+После functional C2c ACCEPT выполняется отдельный UX pass для визуальной иерархии действий на экране Result.
 
 ## AFTER DEFENSE-CRITICAL INTEGRATION
 
