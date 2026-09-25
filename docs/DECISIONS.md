@@ -852,4 +852,30 @@ Stage III-C2b получил Reviewer `ACCEPT` после corrective fix.
 
 Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
 
-Следующий defense-critical шаг — manual Stage III-C2 E2E с реальным provider на synthetic/non-client input при явной runtime-настройке `REDACTED_V1`.
+### D-085 — Manual III-C2 E2E выявил product gap; Stage III-C2c возвращает принятую ролевую интерпретацию
+
+Manual defense E2E 2026-09-25 подтвердил технический внешний path:
+
+`probability → Local SHAP → REDACTED_V1 → OpenAI → Russian explanation`.
+
+Подтверждено вручную:
+- default/explicit disabled path не мешает prediction и Local SHAP;
+- ready `REDACTED_V1` реально вызывает provider и возвращает русский текст;
+- prediction/SHAP остаются доступны независимо от Result Interpreter.
+
+Одновременно выявлен product gap: текущий generic prompt выдаёт техническое SHAP-резюме и не использует принятый Stage 20 role-based contract. Кроме того, Streamlit не передаёт trusted feature descriptions в `prepare_interpretation()`, хотя `FeatureSpec.description_ru` сохраняется в ModelVersion metadata.
+
+Открыт узкий **Stage III-C2c / Role-Based Result Interpretation Integration**.
+
+Architect lock:
+- поддержать ровно четыре принятые Stage 20 роли: `sales_manager`, `credit_controller`, `lawyer`, `information_security`;
+- один и тот же immutable ML-result/Local SHAP evidence интерпретируется отдельно для выбранной роли; LLM не пересчитывает probability/SHAP и не принимает credit/business decision;
+- role является частью interpreter request semantics и hash identity;
+- trusted `display_name_ru` / `description_ru` берутся только из сохранённой ModelVersion metadata; при отсутствии полезного описания допускается technical column name без выдумывания смысла;
+- `REDACTED_V1` остаётся единственной разрешённой external policy и не расширяет outbound allowlist данными клиента: identifier, row identity и raw feature values наружу не передаются;
+- frontend по-прежнему вызывает только `IntegrationWorkflowService`;
+- отдельные role responses/retry state не должны инвалидировать ModelVersion, PredictionBatch, selected row или Local SHAP;
+- threshold/business policy не возвращается из Stage 20 prototype: текущая product chain не имеет принятого business threshold;
+- visual/button UX polish не входит в C2c и идёт отдельным проходом после functional ACCEPT.
+
+Stage III-C2b ACCEPT не отменяется: найденный gap относится к следующей продуктовой capability поверх уже принятой runtime/security boundary.
