@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from hashlib import sha256
+import os
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,11 @@ from komus_risk.application import (
     IntegrationWorkflowService,
     LocalExplanationService,
     ModelInferenceService,
+    RedactedV1OutboundPolicy,
+    ResultInterpreterRuntimeConfiguration,
+    ResultInterpreterService,
 )
+from komus_risk.integrations.openai_result_interpreter import OpenAIResultInterpreterClient
 from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
 from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
@@ -435,7 +440,13 @@ def reopen_dataset_preparation(preparation: DatasetSourcePreparation) -> Dataset
     return replace(preparation, preparation_status="context_not_prepared", context=None, manifest=None)
 
 
-def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:
+def create_runtime(
+    artifact_root: str | Path | None = None,
+    *,
+    environment: Mapping[str, str] | None = None,
+    secrets: Mapping[str, Any] | None = None,
+    result_interpreter_factories: Mapping[str, Callable[[str, str], Any]] | None = None,
+) -> PrototypeRuntime:
     """Wire existing model, planning, application, persistence and comparison services."""
     component_factories = (CatBoostFactory(), XGBoostFactory(), LightGBMFactory())
     mean_factory = GBDTMeanFactory({factory.model_id: factory for factory in component_factories})
@@ -458,11 +469,20 @@ def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:
         model_factories=factories,
         code_version=code_version,
     )
+    runtime_configuration, interpreter_client, outbound_policy = _result_interpreter_wiring(
+        environment=os.environ if environment is None else environment,
+        secrets=secrets,
+        factories=result_interpreter_factories,
+    )
     integration_workflow_service = IntegrationWorkflowService(
         final_model_training_service=final_model_training_service,
         model_version_store=model_version_store,
         model_inference_service=ModelInferenceService(),
         local_explainers={"catboost": LocalExplanationService()},
+        result_interpreter_service=ResultInterpreterService(),
+        result_interpreter_client=interpreter_client,
+        outbound_interpreter_policy=outbound_policy,
+        result_interpreter_runtime=runtime_configuration,
     )
     return PrototypeRuntime(
         ExperimentPlanningService(),
@@ -478,6 +498,81 @@ def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:
         SUPPORTED_PROTOCOL,
         integration_workflow_service,
     )
+
+
+def _result_interpreter_wiring(
+    *,
+    environment: Mapping[str, str],
+    secrets: Mapping[str, Any] | None,
+    factories: Mapping[str, Callable[[str, str], Any]] | None,
+) -> tuple[ResultInterpreterRuntimeConfiguration, Any | None, RedactedV1OutboundPolicy | None]:
+    """Resolve external interpretation exclusively in the composition root."""
+    policy = str(environment.get("KOMUS_EXTERNAL_DATA_POLICY", "")).strip()
+    if not policy:
+        return ResultInterpreterRuntimeConfiguration.disabled(), None, None
+    if policy != "REDACTED_V1":
+        return ResultInterpreterRuntimeConfiguration(policy_mode="INVALID"), None, None
+
+    provider = str(environment.get("KOMUS_RESULT_INTERPRETER_PROVIDER", "")).strip()
+    if not provider:
+        return ResultInterpreterRuntimeConfiguration(policy_mode=policy), None, None
+    provider_registry = dict(factories or {"openai": _openai_result_interpreter_factory})
+    factory = provider_registry.get(provider)
+    if factory is None:
+        return ResultInterpreterRuntimeConfiguration(
+            policy_mode=policy, provider_configured=True,
+        ), None, None
+
+    model = str(environment.get("KOMUS_RESULT_INTERPRETER_MODEL", "")).strip()
+    if not model:
+        return ResultInterpreterRuntimeConfiguration(
+            policy_mode=policy, provider_configured=True, provider_registered=True,
+        ), None, None
+    credential = _runtime_secret("OPENAI_API_KEY", secrets=secrets, environment=environment)
+    if not credential:
+        return ResultInterpreterRuntimeConfiguration(
+            policy_mode=policy, provider_configured=True, provider_registered=True,
+            model_configured=True,
+        ), None, None
+    return (
+        ResultInterpreterRuntimeConfiguration(
+            policy_mode=policy, provider_configured=True, provider_registered=True,
+            model_configured=True, credentials_configured=True,
+        ),
+        factory(model, credential),
+        RedactedV1OutboundPolicy(),
+    )
+
+
+def _runtime_secret(
+    name: str,
+    *,
+    secrets: Mapping[str, Any] | None,
+    environment: Mapping[str, str],
+) -> str:
+    available_secrets = _streamlit_secrets() if secrets is None else secrets
+    try:
+        value = available_secrets.get(name) if available_secrets is not None else None
+    except Exception:
+        value = None
+    if value is None:
+        value = environment.get(name)
+    return str(value).strip() if value is not None else ""
+
+
+def _streamlit_secrets() -> Mapping[str, Any] | None:
+    """Best-effort secrets access: a missing secrets file must not prevent launch."""
+    try:
+        import streamlit as st
+        return st.secrets
+    except Exception:
+        return None
+
+
+def _openai_result_interpreter_factory(model: str, credential: str) -> OpenAIResultInterpreterClient:
+    from openai import OpenAI
+
+    return OpenAIResultInterpreterClient(model=model, client=OpenAI(api_key=credential))
 
 
 def validate_supported_protocol(values: Mapping[str, Any], protocol: SupportedProtocol = SUPPORTED_PROTOCOL) -> str | None:

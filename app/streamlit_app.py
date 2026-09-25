@@ -31,6 +31,9 @@ from app.session_state import (
     save_plan,
     set_loaded_model_version,
     set_local_explanation_evidence,
+    set_result_interpretation_error,
+    set_result_interpretation_success,
+    set_result_interpreter_request,
     set_inference_source_path,
     set_prediction_batch,
     set_selected_prediction_row_id,
@@ -1472,6 +1475,66 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
         use_container_width=True,
     )
     st.caption("SHAP описывает поведение модели, а не причинность.")
+    _render_result_interpretation(workflow, evidence)
+
+
+def _render_result_interpretation(workflow: Any, evidence: Any) -> None:
+    """Render optional text interpretation after local SHAP evidence only."""
+    st.subheader("Объяснение простыми словами")
+    capability = workflow.capabilities(local_explanation_evidence=evidence)["result_interpretation"]
+    if capability.state == "DISABLED":
+        st.info(
+            "Автоматическое текстовое объяснение отключено политикой передачи данных. "
+            "Прогноз и факторы модели доступны."
+        )
+        return
+    if capability.state == "MISCONFIGURED":
+        st.info(
+            "Текстовое объяснение разрешено, но не настроено в текущем запуске. "
+            "Прогноз и факторы модели доступны."
+        )
+        return
+    if capability.state != "AVAILABLE":
+        return
+
+    response = st.session_state.result_interpreter_response
+    if response is not None:
+        st.write(response.text)
+        st.caption(
+            "Объяснение основано на рассчитанной вероятности и SHAP. Оно описывает "
+            "поведение модели, не доказывает причинность и не является кредитным решением."
+        )
+        return
+
+    st.caption(
+        "Во внешний сервис будут переданы только обезличенные модельные факты. "
+        "Идентификатор организации и исходные значения признаков не передаются."
+    )
+    failed = st.session_state.result_interpreter_error_code is not None
+    label = "Повторить объяснение" if failed else "Объяснить результат простыми словами"
+    if failed:
+        st.error(
+            "Текстовое объяснение сейчас недоступно. Прогноз и факторы модели сохранены."
+        )
+    if not st.button(label, key="interpret-result-in-plain-language", type="secondary"):
+        return
+    request = st.session_state.result_interpreter_request
+    try:
+        if request is None:
+            request = workflow.prepare_interpretation(evidence=evidence)
+            set_result_interpreter_request(st.session_state, request)
+        status = st.status("Формируем текстовое объяснение", expanded=True)
+        status.write("Передаём только разрешённые обезличенные модельные факты.")
+        outcome = workflow.interpret(request=request)
+    except (KeyError, TypeError, ValueError, RuntimeError, OSError):
+        if "status" in locals():
+            status.update(label="Текстовое объяснение недоступно", state="error", expanded=True)
+        set_result_interpretation_error(st.session_state, "RESULT_INTERPRETER_CALL_FAILED")
+        st.rerun()
+    else:
+        status.update(label="Текстовое объяснение готово", state="complete", expanded=False)
+        set_result_interpretation_success(st.session_state, outcome)
+        st.rerun()
 
 
 def _navigation_button(

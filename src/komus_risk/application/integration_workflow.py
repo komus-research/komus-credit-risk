@@ -31,6 +31,31 @@ _CAPABILITY_STATES = frozenset({
 
 
 @dataclass(frozen=True, slots=True)
+class ResultInterpreterRuntimeConfiguration:
+    """Provider-neutral, secret-free interpretation readiness configuration."""
+
+    policy_mode: str = "DISABLED"
+    provider_configured: bool = False
+    provider_registered: bool = False
+    model_configured: bool = False
+    credentials_configured: bool = False
+
+    @classmethod
+    def disabled(cls) -> "ResultInterpreterRuntimeConfiguration":
+        return cls()
+
+    @property
+    def is_ready(self) -> bool:
+        return (
+            self.policy_mode == "REDACTED_V1"
+            and self.provider_configured
+            and self.provider_registered
+            and self.model_configured
+            and self.credentials_configured
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class CapabilityStatus:
     """A small immutable statement of whether a workflow action may run."""
 
@@ -75,6 +100,7 @@ class IntegrationWorkflowService:
         result_interpreter_service: ResultInterpreterService | None = None,
         result_interpreter_client: ResultInterpreterClient | None = None,
         outbound_interpreter_policy: OutboundInterpreterPolicy | None = None,
+        result_interpreter_runtime: ResultInterpreterRuntimeConfiguration | None = None,
     ) -> None:
         self.final_model_training_service = final_model_training_service
         self.model_version_store = model_version_store
@@ -83,6 +109,7 @@ class IntegrationWorkflowService:
         self.result_interpreter_service = result_interpreter_service
         self.result_interpreter_client = result_interpreter_client
         self.outbound_interpreter_policy = outbound_interpreter_policy
+        self.result_interpreter_runtime = result_interpreter_runtime or ResultInterpreterRuntimeConfiguration.disabled()
         training_store = getattr(final_model_training_service, "model_version_store", model_version_store)
         if training_store is not model_version_store:
             raise ValueError("FinalModelTrainingService must use the supplied ModelVersionStore.")
@@ -154,12 +181,21 @@ class IntegrationWorkflowService:
         *,
         request: ResultInterpreterRequest,
     ) -> ResultInterpretationOutcome:
+        # The application boundary is deliberately authoritative.  A frontend
+        # must not be able to bypass a disabled or incomplete runtime setup.
+        if not self.result_interpreter_runtime.is_ready:
+            raise ValueError("Result interpreter runtime is not ready.")
         if self.result_interpreter_service is None:
             raise ValueError("Result interpreter service is not configured.")
         if self.result_interpreter_client is None:
             raise ValueError("Result interpreter client is not configured.")
         if self.outbound_interpreter_policy is None:
             raise ValueError("Outbound interpreter policy is not configured.")
+        if (
+            self.outbound_interpreter_policy.policy_id != "REDACTED_V1"
+            or self.outbound_interpreter_policy.policy_version != 1
+        ):
+            raise ValueError("Only REDACTED_V1 outbound interpreter policy is permitted.")
 
         self.result_interpreter_service.validate_request(request)
         dispatch = self.outbound_interpreter_policy.project(request)
@@ -183,6 +219,7 @@ class IntegrationWorkflowService:
         loaded_model_version: LoadedModelVersion | None = None,
         prediction_batch: PredictionBatch | None = None,
         selected_row_id: str | None = None,
+        local_explanation_evidence: LocalExplanationEvidence | None = None,
     ) -> dict[str, CapabilityStatus]:
         """Describe prerequisites without leaking model-specific rules to a frontend."""
         save = (
@@ -209,5 +246,34 @@ class IntegrationWorkflowService:
             "final_model_save": save,
             "inference": inference,
             "local_explanation": explanation,
-            "result_interpretation": CapabilityStatus("DISABLED", "STAGE_III_C2_NOT_ENABLED"),
+            "result_interpretation": self._result_interpretation_capability(local_explanation_evidence),
         }
+
+    def _result_interpretation_capability(
+        self,
+        evidence: LocalExplanationEvidence | None,
+    ) -> CapabilityStatus:
+        runtime = self.result_interpreter_runtime
+        if evidence is None:
+            return CapabilityStatus("WAITING_FOR_INPUT", "LOCAL_EXPLANATION_MISSING")
+        if runtime.policy_mode == "DISABLED":
+            return CapabilityStatus("DISABLED", "EXTERNAL_DATA_POLICY_DISABLED")
+        if runtime.policy_mode != "REDACTED_V1":
+            return CapabilityStatus("MISCONFIGURED", "EXTERNAL_DATA_POLICY_INVALID")
+        if not runtime.provider_configured:
+            return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_PROVIDER_MISSING")
+        if not runtime.provider_registered:
+            return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_PROVIDER_NOT_REGISTERED")
+        if not runtime.model_configured:
+            return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_MODEL_MISSING")
+        if not runtime.credentials_configured:
+            return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_CREDENTIALS_MISSING")
+        if (
+            self.result_interpreter_service is None
+            or self.result_interpreter_client is None
+            or self.outbound_interpreter_policy is None
+            or self.outbound_interpreter_policy.policy_id != "REDACTED_V1"
+            or self.outbound_interpreter_policy.policy_version != 1
+        ):
+            return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_RUNTIME_INCOMPLETE")
+        return CapabilityStatus("AVAILABLE", "RESULT_INTERPRETER_READY")

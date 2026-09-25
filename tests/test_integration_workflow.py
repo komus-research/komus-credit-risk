@@ -9,6 +9,7 @@ from komus_risk.application import (
     LocalExplanationEvidence,
     LocalFeatureContribution,
     RedactedV1OutboundPolicy,
+    ResultInterpreterRuntimeConfiguration,
     ResultInterpreterService,
 )
 from komus_risk.artifacts import ModelVersionSummary
@@ -174,6 +175,10 @@ class IntegrationWorkflowTests(unittest.TestCase):
             model_inference_service=self.inference, local_explainers={"future-model": self.explainer},
             result_interpreter_service=ResultInterpreterService(), result_interpreter_client=client,
             outbound_interpreter_policy=RedactedV1OutboundPolicy(),
+            result_interpreter_runtime=ResultInterpreterRuntimeConfiguration(
+                policy_mode="REDACTED_V1", provider_configured=True, provider_registered=True,
+                model_configured=True, credentials_configured=True,
+            ),
         )
         request = configured.prepare_interpretation(evidence=evidence)
         self.assertEqual(client.calls, [])
@@ -190,6 +195,10 @@ class IntegrationWorkflowTests(unittest.TestCase):
             model_inference_service=self.inference, local_explainers={},
             result_interpreter_service=ResultInterpreterService(), result_interpreter_client=client,
             outbound_interpreter_policy=policy,
+            result_interpreter_runtime=ResultInterpreterRuntimeConfiguration(
+                policy_mode="REDACTED_V1", provider_configured=True, provider_registered=True,
+                model_configured=True, credentials_configured=True,
+            ),
         )
         valid = ResultInterpreterService().build_request(evidence=LocalExplanationEvidence(
             evidence_version="v1", evidence_hash="evidence", model_version_id="version-1",
@@ -211,8 +220,46 @@ class IntegrationWorkflowTests(unittest.TestCase):
         self.assertEqual(client.calls, [])
 
     def test_interpretation_without_dependencies_fails_before_provider_access(self) -> None:
-        with self.assertRaisesRegex(ValueError, "not configured"):
+        with self.assertRaisesRegex(ValueError, "runtime is not ready"):
             self.workflow.interpret(request=object())
+
+    def test_interpretation_capability_reports_runtime_readiness_in_priority_order(self) -> None:
+        evidence = object()
+        expected = (
+            (ResultInterpreterRuntimeConfiguration.disabled(), ("DISABLED", "EXTERNAL_DATA_POLICY_DISABLED")),
+            (ResultInterpreterRuntimeConfiguration(policy_mode="INVALID"), ("MISCONFIGURED", "EXTERNAL_DATA_POLICY_INVALID")),
+            (ResultInterpreterRuntimeConfiguration(policy_mode="REDACTED_V1"), ("MISCONFIGURED", "RESULT_INTERPRETER_PROVIDER_MISSING")),
+            (ResultInterpreterRuntimeConfiguration(policy_mode="REDACTED_V1", provider_configured=True), ("MISCONFIGURED", "RESULT_INTERPRETER_PROVIDER_NOT_REGISTERED")),
+            (ResultInterpreterRuntimeConfiguration(policy_mode="REDACTED_V1", provider_configured=True, provider_registered=True), ("MISCONFIGURED", "RESULT_INTERPRETER_MODEL_MISSING")),
+            (ResultInterpreterRuntimeConfiguration(policy_mode="REDACTED_V1", provider_configured=True, provider_registered=True, model_configured=True), ("MISCONFIGURED", "RESULT_INTERPRETER_CREDENTIALS_MISSING")),
+        )
+        for runtime, status in expected:
+            with self.subTest(status=status):
+                workflow = IntegrationWorkflowService(
+                    final_model_training_service=self.training, model_version_store=self.store,
+                    model_inference_service=self.inference, local_explainers={},
+                    result_interpreter_runtime=runtime,
+                )
+                capability = workflow.capabilities(local_explanation_evidence=evidence)["result_interpretation"]
+                self.assertEqual((capability.state, capability.reason_code), status)
+
+        waiting = self.workflow.capabilities()["result_interpretation"]
+        self.assertEqual((waiting.state, waiting.reason_code), ("WAITING_FOR_INPUT", "LOCAL_EXPLANATION_MISSING"))
+
+    def test_disabled_interpretation_fails_before_policy_or_provider_call(self) -> None:
+        client = _InterpreterClient()
+        policy = _CountingPolicy()
+        workflow = IntegrationWorkflowService(
+            final_model_training_service=self.training, model_version_store=self.store,
+            model_inference_service=self.inference, local_explainers={},
+            result_interpreter_service=ResultInterpreterService(), result_interpreter_client=client,
+            outbound_interpreter_policy=policy,
+        )
+
+        with self.assertRaisesRegex(ValueError, "runtime is not ready"):
+            workflow.interpret(request=object())
+        self.assertEqual(policy.project_calls, 0)
+        self.assertEqual(client.calls, [])
 
 
 if __name__ == "__main__":
