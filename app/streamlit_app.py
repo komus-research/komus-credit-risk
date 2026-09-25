@@ -28,6 +28,11 @@ from app.session_state import (
     run_request_from_snapshot,
     save_artifact,
     save_plan,
+    set_loaded_model_version,
+    set_local_explanation_evidence,
+    set_inference_source_path,
+    set_prediction_batch,
+    set_selected_prediction_row_id,
     set_dataset_source_preparation,
     set_experiment_inputs,
     set_selected_model_id,
@@ -35,6 +40,7 @@ from app.session_state import (
     return_to_experiment,
 )
 from komus_risk.planning import PlanningRequestMetadata
+from komus_risk.data import TabularReader
 from komus_risk.preparation import DatasetPreparationError
 from komus_risk.preparation.predictor_compatibility import predictor_compatibility_error
 
@@ -82,6 +88,8 @@ _SUPPORTED_SOURCE_EXTENSIONS = tuple(LocalDatasetSourceResolver._FORMATS)
 _DATASET_ONBOARDING_STEPS = ("Файл", "Подготовка", "Проверка")
 _STEP_NAVIGATION_LABELS = ("Данные", "Признаки", "Модель", "Эксперимент", "Результат")
 _STEP_NAVIGATION_CONTAINER_KEY = "step-navigator"
+_INFERENCE_SELECTED_LOCAL_FILE_PATH_KEY = "prototype_inference_selected_local_file_path"
+_INFERENCE_MANUAL_LOCAL_FILE_PATH_KEY = "prototype_inference_manual_local_file_path"
 
 
 @st.cache_resource
@@ -106,7 +114,7 @@ def main() -> None:
     elif step == 3:
         _render_experiment_step(runtime)
     else:
-        _render_result_step()
+        _render_result_step(runtime)
 
 
 def _progress_description(event: Any, labels: Mapping[str, str]) -> str:
@@ -1133,7 +1141,7 @@ def _render_plan(plan) -> None:
     st.caption(f"Статус валидации: {'валиден' if plan.is_valid else 'невалиден'}")
 
 
-def _render_result_step() -> None:
+def _render_result_step(runtime) -> None:
     artifact = st.session_state.loaded_artifact
     if artifact is None:
         st.info("Текущего успешного результата нет.")
@@ -1197,12 +1205,162 @@ def _render_result_step() -> None:
             st.write(f"Сопоставимы: {'да' if comparison.is_comparable else 'нет'}")
             st.write(f"Причины: {', '.join(comparison.reason_codes) or 'не указаны'}")
             st.json({"metrics": comparison.metric_deltas, "confusion": comparison.confusion_deltas, "feature_change": comparison.feature_change, "model_change": comparison.model_change})
+    _render_local_model_use_flow(runtime, artifact)
     navigation = st.columns(3)
     _navigation_button(navigation[0], "← Назад", 3)
     _navigation_button(navigation[1], "В начало", 0)
     if navigation[2].button("Новый эксперимент на этих данных", type="primary"):
         return_to_experiment(st.session_state)
         st.rerun()
+
+
+def _render_local_model_use_flow(runtime, artifact: Any) -> None:
+    """Keep the local ModelVersion → inference → evidence sequence on Result."""
+    workflow = runtime.integration_workflow_service
+    context = st.session_state.get("dataset_context")
+    st.divider()
+    st.subheader("Применить модель к новым данным")
+    capabilities = workflow.capabilities(
+        experiment_artifact_id=artifact.artifact_id,
+        prepared_dataset_context=context,
+        loaded_model_version=st.session_state.loaded_model_version,
+        prediction_batch=st.session_state.prediction_batch,
+        selected_row_id=st.session_state.selected_prediction_row_id,
+    )
+    if st.session_state.loaded_model_version is None:
+        st.write("Шаг 1. Сохранить модель")
+        if st.button(
+            "Сохранить модель для прогноза",
+            key="save-model-version-for-inference",
+            type="primary",
+            disabled=capabilities["final_model_save"].state != "AVAILABLE",
+        ):
+            try:
+                loaded = workflow.save_model(
+                    experiment_artifact_id=artifact.artifact_id,
+                    prepared_dataset_context=context,
+                )
+            except (KeyError, TypeError, ValueError, RuntimeError, OSError):
+                st.error("Не удалось сохранить модель для прогноза. Результат эксперимента сохранён.")
+            else:
+                set_loaded_model_version(st.session_state, loaded)
+                st.rerun()
+        return
+
+    loaded_model_version = st.session_state.loaded_model_version
+    summary = loaded_model_version.summary
+    st.success("Модель сохранена.")
+    st.write(f"{summary.model_id} · признаков: {len(summary.feature_ids)} · источник: текущий эксперимент.")
+    with st.expander("Технические сведения сохранённой модели", expanded=False):
+        st.code(summary.model_version_id)
+
+    st.write("Шаг 2. Выбрать файл для прогноза")
+    if st.button("Выбрать файл…", key="choose-inference-local-file", type="secondary"):
+        try:
+            selected = choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)
+        except NativeFilePickerUnavailable:
+            st.warning("Не удалось открыть окно выбора файла. Укажите путь вручную ниже.")
+        else:
+            if selected:
+                st.session_state[_INFERENCE_SELECTED_LOCAL_FILE_PATH_KEY] = selected
+                st.session_state[_INFERENCE_MANUAL_LOCAL_FILE_PATH_KEY] = ""
+                set_inference_source_path(st.session_state, selected)
+    with st.expander("Указать расположение файла вручную", expanded=False):
+        manual_path = st.text_input(
+            "Путь к файлу для прогноза",
+            key=_INFERENCE_MANUAL_LOCAL_FILE_PATH_KEY,
+            placeholder="Выберите файл или укажите его расположение",
+        )
+    source_path = manual_path.strip() or st.session_state.get(_INFERENCE_SELECTED_LOCAL_FILE_PATH_KEY, "")
+    set_inference_source_path(st.session_state, source_path)
+    if st.button(
+        "Получить прогноз",
+        key="run-targetless-inference",
+        type="primary",
+        disabled=not bool(source_path),
+    ):
+        try:
+            snapshot = TabularReader().read(Path(source_path))
+            batch = workflow.predict(loaded_model_version=loaded_model_version, snapshot=snapshot)
+        except (KeyError, TypeError, ValueError, RuntimeError, OSError):
+            st.error("Не удалось получить прогноз. Проверьте файл и соответствие его столбцов сохранённой модели.")
+        else:
+            set_prediction_batch(st.session_state, snapshot, batch)
+            st.rerun()
+
+    prediction_batch = st.session_state.prediction_batch
+    if prediction_batch is None:
+        return
+    st.write("Шаг 3. Результаты прогноза")
+    st.dataframe(
+        [
+            {
+                "Строка": row.source_row_position + 1,
+                prediction_batch.identifier_column: row.identifier_value,
+                "Вероятность": row.probability,
+            }
+            for row in prediction_batch.rows
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
+    row_ids = tuple(row.row_id for row in prediction_batch.rows)
+    row_by_id = {row.row_id: row for row in prediction_batch.rows}
+    selected_row_id = st.session_state.selected_prediction_row_id
+    if selected_row_id not in row_by_id:
+        st.session_state.pop("selected-prediction-row-widget", None)
+    selected_index = row_ids.index(selected_row_id) if selected_row_id in row_by_id else 0
+    selected_row_id = st.selectbox(
+        "Выберите строку для объяснения",
+        row_ids,
+        index=selected_index,
+        key="selected-prediction-row-widget",
+        format_func=lambda row_id: (
+            f"{row_by_id[row_id].identifier_value} · строка {row_by_id[row_id].source_row_position + 1}"
+        ),
+    )
+    set_selected_prediction_row_id(st.session_state, selected_row_id)
+    capabilities = workflow.capabilities(
+        loaded_model_version=loaded_model_version,
+        prediction_batch=prediction_batch,
+        selected_row_id=selected_row_id,
+    )
+    explanation_capability = capabilities["local_explanation"]
+    if explanation_capability.state == "UNSUPPORTED":
+        st.info("Для этой версии модели локальное объяснение пока недоступно.")
+        return
+    if explanation_capability.state != "AVAILABLE":
+        return
+    if st.button("Показать факторы модели", key="show-local-model-factors", type="secondary"):
+        try:
+            evidence = workflow.explain(
+                loaded_model_version=loaded_model_version,
+                prediction_batch=prediction_batch,
+                row_id=selected_row_id,
+            )
+        except (KeyError, TypeError, ValueError, RuntimeError, OSError):
+            st.error("Не удалось построить локальное объяснение. Прогноз сохранён.")
+        else:
+            set_local_explanation_evidence(st.session_state, evidence)
+            st.rerun()
+    evidence = st.session_state.local_explanation_evidence
+    if evidence is None:
+        return
+    st.write(f"Вероятность: {evidence.probability:.4f}")
+    st.dataframe(
+        [
+            {
+                "Признак / столбец": feature.column_name,
+                "Значение": feature.raw_value,
+                "SHAP": feature.shap_value,
+                "Ранг": feature.abs_rank,
+            }
+            for feature in evidence.features
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption("SHAP описывает поведение модели, а не причинность.")
 
 
 def _navigation_button(

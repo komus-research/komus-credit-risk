@@ -15,8 +15,14 @@ from typing import Any
 
 import numpy as np
 
-from komus_risk.application import ExperimentApplicationService
-from komus_risk.artifacts import ExperimentArtifactStore
+from komus_risk.application import (
+    ExperimentApplicationService,
+    FinalModelTrainingService,
+    IntegrationWorkflowService,
+    LocalExplanationService,
+    ModelInferenceService,
+)
+from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
 from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
 from komus_risk.data import DatasetInspector, LoadedDataset, ReadyDatasetAdapter, TabularReader, TabularSnapshot
@@ -92,6 +98,7 @@ class PrototypeRuntime:
     model_registry: ModelRegistry
     model_factories: Mapping[str, ModelAdapterFactory]
     supported_protocol: "SupportedProtocol"
+    integration_workflow_service: IntegrationWorkflowService
 
 
 @dataclass(frozen=True, slots=True)
@@ -437,18 +444,39 @@ def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:
     for spec in (CATBOOST_MODEL_SPEC, XGBOOST_MODEL_SPEC, LIGHTGBM_MODEL_SPEC, GBDT_MEAN_MODEL_SPEC):
         registry.register(spec)
     store_root = Path(artifact_root) if artifact_root is not None else _repository_root() / ".streamlit-artifacts"
+    code_version = "streamlit-prototype-v1"
+    artifact_store = ExperimentArtifactStore(store_root)
+    model_version_store = ModelVersionStore(
+        store_root / "model_versions",
+        code_version=code_version,
+        model_specs={spec.model_id: spec for spec in (CATBOOST_MODEL_SPEC, XGBOOST_MODEL_SPEC, LIGHTGBM_MODEL_SPEC, GBDT_MEAN_MODEL_SPEC)},
+    )
+    final_model_training_service = FinalModelTrainingService(
+        experiment_artifact_store=artifact_store,
+        model_version_store=model_version_store,
+        model_registry=registry,
+        model_factories=factories,
+        code_version=code_version,
+    )
+    integration_workflow_service = IntegrationWorkflowService(
+        final_model_training_service=final_model_training_service,
+        model_version_store=model_version_store,
+        model_inference_service=ModelInferenceService(),
+        local_explainers={"catboost": LocalExplanationService()},
+    )
     return PrototypeRuntime(
         ExperimentPlanningService(),
         ExperimentApplicationService(
             model_registry=registry,
             model_factories=factories,
-            artifact_store=ExperimentArtifactStore(store_root),
+            artifact_store=artifact_store,
             comparison_service=ExperimentComparisonService(),
-            code_version="streamlit-prototype-v1",
+            code_version=code_version,
         ),
         registry,
         factories,
         SUPPORTED_PROTOCOL,
+        integration_workflow_service,
     )
 
 

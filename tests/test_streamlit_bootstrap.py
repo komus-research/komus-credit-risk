@@ -514,6 +514,18 @@ class StreamlitBootstrapTests(unittest.TestCase):
             "folds": protocol.minimum_folds,
         }))
 
+    def test_runtime_composes_shared_experiment_store_and_isolated_model_version_store(self) -> None:
+        with TemporaryDirectory() as directory:
+            runtime = bootstrap.create_runtime(directory)
+            workflow = runtime.integration_workflow_service
+
+            self.assertIs(
+                runtime.application_service.artifact_store,
+                workflow.final_model_training_service.experiment_artifact_store,
+            )
+            self.assertEqual(workflow.model_version_store.root, Path(directory) / "model_versions")
+            self.assertNotEqual(workflow.model_version_store.root, runtime.application_service.artifact_store.root)
+
 
 if __name__ == "__main__":
     unittest.main()

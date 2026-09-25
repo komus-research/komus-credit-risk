@@ -17,6 +17,11 @@ from app.session_state import (
     set_dataset_source_preparation,
     set_experiment_inputs,
     set_group_selection,
+    set_loaded_model_version,
+    set_inference_source_path,
+    set_prediction_batch,
+    set_selected_prediction_row_id,
+    set_local_explanation_evidence,
     set_selected_feature_ids,
     set_selected_model_id,
     synchronize_feature_widgets,
@@ -451,6 +456,93 @@ class SessionStateTests(unittest.TestCase):
 
         self.assertEqual(self.state["last_successful_artifact_id"], "saved-artifact")
         self.assertEqual(self.state["current_step"], 4)
+
+    def test_new_model_version_clears_inference_row_and_evidence(self) -> None:
+        self.state.update(inference_snapshot=object(), prediction_batch=object(), selected_prediction_row_id="row-1", local_explanation_evidence=object())
+
+        set_loaded_model_version(self.state, SimpleNamespace(summary=SimpleNamespace(model_version_id="model-1")))
+
+        self.assertEqual(self.state["active_model_version_id"], "model-1")
+        self.assertIsNone(self.state["inference_snapshot"])
+        self.assertIsNone(self.state["prediction_batch"])
+        self.assertIsNone(self.state["selected_prediction_row_id"])
+        self.assertIsNone(self.state["local_explanation_evidence"])
+
+    def test_changed_inference_source_clears_stale_batch_but_preserves_model(self) -> None:
+        model = SimpleNamespace(summary=SimpleNamespace(model_version_id="model-1"))
+        snapshot = SimpleNamespace(source_path="A.csv")
+        batch = object()
+        evidence = object()
+        self.state.update(
+            active_model_version_id="model-1",
+            loaded_model_version=model,
+            inference_source_path="A.csv",
+            inference_snapshot=snapshot,
+            prediction_batch=batch,
+            selected_prediction_row_id="row-1",
+            local_explanation_evidence=evidence,
+        )
+
+        set_inference_source_path(self.state, "B.csv")
+
+        self.assertEqual(self.state["inference_source_path"], "B.csv")
+        self.assertIs(self.state["loaded_model_version"], model)
+        self.assertEqual(self.state["active_model_version_id"], "model-1")
+        self.assertIsNone(self.state["inference_snapshot"])
+        self.assertIsNone(self.state["prediction_batch"])
+        self.assertIsNone(self.state["selected_prediction_row_id"])
+        self.assertIsNone(self.state["local_explanation_evidence"])
+
+    def test_same_inference_source_preserves_current_batch(self) -> None:
+        snapshot = object()
+        batch = object()
+        evidence = object()
+        self.state.update(
+            inference_source_path="A.csv",
+            inference_snapshot=snapshot,
+            prediction_batch=batch,
+            selected_prediction_row_id="row-1",
+            local_explanation_evidence=evidence,
+        )
+
+        set_inference_source_path(self.state, " A.csv ")
+
+        self.assertIs(self.state["inference_snapshot"], snapshot)
+        self.assertIs(self.state["prediction_batch"], batch)
+        self.assertEqual(self.state["selected_prediction_row_id"], "row-1")
+        self.assertIs(self.state["local_explanation_evidence"], evidence)
+
+    def test_new_prediction_batch_clears_row_and_evidence(self) -> None:
+        self.state.update(selected_prediction_row_id="row-1", local_explanation_evidence=object())
+
+        set_prediction_batch(self.state, object(), object())
+
+        self.assertIsNone(self.state["selected_prediction_row_id"])
+        self.assertIsNone(self.state["local_explanation_evidence"])
+
+    def test_changed_row_clears_evidence_but_same_row_preserves_it(self) -> None:
+        evidence = object()
+        self.state.update(selected_prediction_row_id="row-1", local_explanation_evidence=evidence)
+
+        set_selected_prediction_row_id(self.state, "row-1")
+        self.assertIs(self.state["local_explanation_evidence"], evidence)
+        set_selected_prediction_row_id(self.state, "row-2")
+
+        self.assertIsNone(self.state["local_explanation_evidence"])
+
+    def test_new_experiment_artifact_clears_model_version_and_downstream_state(self) -> None:
+        self.state.update(
+            active_model_version_id="model-1", loaded_model_version=object(), inference_snapshot=object(),
+            prediction_batch=object(), selected_prediction_row_id="row-1", local_explanation_evidence=object(),
+        )
+
+        save_artifact(self.state, SimpleNamespace(artifact_id="new-experiment"), comparison=None)
+
+        self.assertIsNone(self.state["active_model_version_id"])
+        self.assertIsNone(self.state["loaded_model_version"])
+        self.assertIsNone(self.state["prediction_batch"])
+        self.assertIsNone(self.state["selected_prediction_row_id"])
+        self.assertIsNone(self.state["local_explanation_evidence"])
 
     def test_return_to_experiment_keeps_the_successful_reference_and_clears_current_result(self) -> None:
         artifact = SimpleNamespace(artifact_id="saved-artifact")
