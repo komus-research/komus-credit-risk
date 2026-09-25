@@ -15,16 +15,22 @@ class FakeInterpreter:
         self.output = output
         self.received_instruction: str | None = None
         self.received_payload: dict | None = None
+        self.interpreter_id_read = False
+        self.interpreter_model_read = False
+        self.interpret_called = False
 
     @property
     def interpreter_id(self) -> str:
+        self.interpreter_id_read = True
         return "fake-interpreter"
 
     @property
     def interpreter_model(self) -> str:
+        self.interpreter_model_read = True
         return "fake-model-v1"
 
     def interpret(self, *, system_instruction: str, payload: dict) -> str:
+        self.interpret_called = True
         self.received_instruction = system_instruction
         self.received_payload = payload
         if isinstance(self.output, Exception):
@@ -110,6 +116,23 @@ class ResultInterpreterTests(unittest.TestCase):
         first = self.service.build_request(evidence=self.evidence, descriptions_by_feature_id=descriptions)
         second = self.service.build_request(evidence=self.evidence, descriptions_by_feature_id=descriptions)
         self.assertEqual(first.request_hash, second.request_hash)
+
+    def test_tampered_request_hash_fails_before_any_client_access(self) -> None:
+        request = self.service.build_request(evidence=self.evidence)
+        tampered_feature = replace(request.features[0], shap_value=request.features[0].shap_value + 0.01)
+        cases = (
+            replace(request, probability=request.probability + 0.01),
+            replace(request, features=(tampered_feature, *request.features[1:])),
+            replace(request, features=(replace(request.features[0], description_ru="Подменённое описание"), *request.features[1:])),
+        )
+        for tampered in cases:
+            with self.subTest(tampered=tampered):
+                client = FakeInterpreter()
+                with self.assertRaisesRegex(ValueError, "hash integrity"):
+                    self.service.interpret_request(request=tampered, client=client)
+                self.assertFalse(client.interpreter_id_read)
+                self.assertFalse(client.interpreter_model_read)
+                self.assertFalse(client.interpret_called)
 
     def test_response_hash_is_stable_without_created_at(self) -> None:
         request = self.service.build_request(evidence=self.evidence)

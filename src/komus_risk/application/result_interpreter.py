@@ -70,6 +70,36 @@ class ResultInterpreterResponse:
     response_hash: str
 
 
+def _semantic_request_payload(
+    *,
+    request_version: str,
+    evidence_hash: str,
+    model_version_id: str,
+    row_id: str,
+    identifier_column: str,
+    identifier_value: Any,
+    probability: float,
+    shap_output_space: str,
+    raw_model_output: float,
+    base_value: float,
+    features: tuple[InterpreterFeatureFact, ...],
+) -> dict[str, Any]:
+    """Return the complete canonical semantic representation of a request."""
+    return {
+        "request_version": request_version,
+        "evidence_hash": evidence_hash,
+        "model_version_id": model_version_id,
+        "row_id": row_id,
+        "identifier_column": identifier_column,
+        "identifier_value": identifier_value,
+        "probability": probability,
+        "shap_output_space": shap_output_space,
+        "raw_model_output": raw_model_output,
+        "base_value": base_value,
+        "features": features,
+    }
+
+
 class ResultInterpreterService:
     """Creates deterministic requests and delegates text generation to an injected client."""
 
@@ -83,19 +113,19 @@ class ResultInterpreterService:
             raise ValueError("Result interpreter requires LocalExplanationEvidence.")
         descriptions = self._descriptions(descriptions_by_feature_id)
         features = self._top_features(evidence, descriptions)
-        payload = {
-            "request_version": REQUEST_VERSION,
-            "evidence_hash": evidence.evidence_hash,
-            "model_version_id": evidence.model_version_id,
-            "row_id": evidence.row_id,
-            "identifier_column": evidence.identifier_column,
-            "identifier_value": evidence.identifier_value,
-            "probability": evidence.probability,
-            "shap_output_space": evidence.shap_output_space,
-            "raw_model_output": evidence.raw_model_output,
-            "base_value": evidence.base_value,
-            "features": features,
-        }
+        payload = _semantic_request_payload(
+            request_version=REQUEST_VERSION,
+            evidence_hash=evidence.evidence_hash,
+            model_version_id=evidence.model_version_id,
+            row_id=evidence.row_id,
+            identifier_column=evidence.identifier_column,
+            identifier_value=evidence.identifier_value,
+            probability=evidence.probability,
+            shap_output_space=evidence.shap_output_space,
+            raw_model_output=evidence.raw_model_output,
+            base_value=evidence.base_value,
+            features=features,
+        )
         self._require_json_compatible(payload, "Result interpreter request")
         return ResultInterpreterRequest(**payload, request_hash=stable_hash(payload))
 
@@ -119,6 +149,22 @@ class ResultInterpreterService:
     ) -> ResultInterpreterResponse:
         if not isinstance(request, ResultInterpreterRequest):
             raise ValueError("Result interpreter requires a ResultInterpreterRequest.")
+        semantic_request = _semantic_request_payload(
+            request_version=request.request_version,
+            evidence_hash=request.evidence_hash,
+            model_version_id=request.model_version_id,
+            row_id=request.row_id,
+            identifier_column=request.identifier_column,
+            identifier_value=request.identifier_value,
+            probability=request.probability,
+            shap_output_space=request.shap_output_space,
+            raw_model_output=request.raw_model_output,
+            base_value=request.base_value,
+            features=request.features,
+        )
+        self._require_json_compatible(semantic_request, "Result interpreter request")
+        if stable_hash(semantic_request) != request.request_hash:
+            raise ValueError("Result interpreter request hash integrity check failed.")
         payload = self._client_payload(request)
         try:
             interpreter_id = client.interpreter_id
