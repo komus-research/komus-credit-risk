@@ -25,6 +25,9 @@ from app.session_state import (
     set_result_interpretation_error,
     set_result_interpretation_success,
     set_result_interpreter_request,
+    set_role_result_interpretation_error,
+    set_role_result_interpretation_success,
+    set_role_result_interpreter_request,
     set_selected_feature_ids,
     set_selected_model_id,
     synchronize_feature_widgets,
@@ -502,6 +505,65 @@ class SessionStateTests(unittest.TestCase):
         self.assertFalse(hasattr(self.state["result_interpreter_response"], "interpreter_model"))
         self.assertIs(self.state["result_interpreter_dispatch_receipt"], receipt)
         self.assertIsNone(self.state["result_interpreter_error_code"])
+
+    def test_role_interpretation_state_is_independent_per_role(self) -> None:
+        lawyer_request, controller_request = object(), object()
+        lawyer_receipt = object()
+        set_role_result_interpreter_request(self.state, "lawyer", lawyer_request)
+        set_role_result_interpreter_request(self.state, "credit_controller", controller_request)
+        set_role_result_interpretation_success(
+            self.state,
+            "lawyer",
+            SimpleNamespace(
+                response=SimpleNamespace(text="Юридическое объяснение"),
+                dispatch_receipt=lawyer_receipt,
+            ),
+        )
+        set_role_result_interpretation_error(
+            self.state,
+            "credit_controller",
+            "RESULT_INTERPRETER_CALL_FAILED",
+        )
+
+        self.assertIs(self.state["result_interpreter_requests_by_role"]["lawyer"], lawyer_request)
+        self.assertIs(self.state["result_interpreter_requests_by_role"]["credit_controller"], controller_request)
+        self.assertEqual(
+            self.state["result_interpreter_responses_by_role"]["lawyer"].text,
+            "Юридическое объяснение",
+        )
+        self.assertIs(self.state["result_interpreter_receipts_by_role"]["lawyer"], lawyer_receipt)
+        self.assertNotIn("lawyer", self.state["result_interpreter_errors_by_role"])
+        self.assertEqual(
+            self.state["result_interpreter_errors_by_role"]["credit_controller"],
+            "RESULT_INTERPRETER_CALL_FAILED",
+        )
+        self.assertNotIn("credit_controller", self.state["result_interpreter_responses_by_role"])
+
+    def test_row_change_clears_all_role_interpretation_state(self) -> None:
+        self.state["selected_prediction_row_id"] = "row-1"
+        self.state["local_explanation_evidence"] = object()
+        set_role_result_interpreter_request(self.state, "lawyer", object())
+        set_role_result_interpretation_success(
+            self.state,
+            "lawyer",
+            SimpleNamespace(response=SimpleNamespace(text="text"), dispatch_receipt=object()),
+        )
+        set_role_result_interpreter_request(self.state, "sales_manager", object())
+        set_role_result_interpretation_error(
+            self.state,
+            "sales_manager",
+            "RESULT_INTERPRETER_CALL_FAILED",
+        )
+
+        set_selected_prediction_row_id(self.state, "row-2")
+
+        for key in (
+            "result_interpreter_requests_by_role",
+            "result_interpreter_responses_by_role",
+            "result_interpreter_receipts_by_role",
+            "result_interpreter_errors_by_role",
+        ):
+            self.assertEqual(self.state[key], {})
 
     def test_changed_inference_source_clears_stale_batch_but_preserves_model(self) -> None:
         model = SimpleNamespace(summary=SimpleNamespace(model_version_id="model-1"))
