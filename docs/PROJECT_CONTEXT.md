@@ -345,22 +345,43 @@ Explainability также обязательна. SHAP/permutation importance о
 
 Текущее решение: LLM не является кредитным predictor.
 
-LLM используется как post-processing Result Interpreter для уже рассчитанных:
+LLM используется как post-processing Result Interpreter для уже рассчитанных ML facts. В принятом Integration V1 selected-row path источником является structured `LocalExplanationEvidence`: готовая probability, SHAP facts, row/identifier provenance и optional trusted feature descriptions.
 
-- метрик;
-- сравнений;
-- explainability;
-- threshold/business scenarios;
-- ограничений исследования.
+LLM:
 
-LLM не меняет рассчитанные метрики и не заменяет SHAP.
+- не пересчитывает probability;
+- не пересчитывает SHAP;
+- не выбирает threshold;
+- не принимает решение «одобрить/отказать»;
+- не трактует SHAP как причинность;
+- не придумывает business meaning feature без trusted description.
+
+Result Interpreter model-independent; provider подключается через `ResultInterpreterClient`. OpenAI является одной сменной реализацией, а не частью ML-core. Текущий OpenAI adapter использует configurable model и `store=False`; это не Zero Data Retention.
+
+Ошибка или отсутствие LLM provider не должны делать prediction и Local SHAP недоступными.
+
+### Product/Application Integration V1 — current accepted backend state
+
+Принята цепочка:
+
+`ExperimentArtifact → explicit final fit → ModelVersion → targetless inference → PredictionBatch → selected-row LocalExplanationEvidence → ResultInterpreterRequest → ResultInterpreterClient → ResultInterpreterResponse`.
+
+Accepted:
+
+- Stage I — Fitted Model Lifecycle;
+- Stage II-A — Generic Model Inference V1;
+- Stage II-B — CatBoost Local SHAP V1 как capability;
+- Stage III-A — model-independent Result Interpreter Core V1;
+- Stage III-B — modular OpenAI adapter с `store=False`.
+
+Следующий defense-critical вопрос — как минимально встроить эту цепочку в существующий Streamlit UI без hardcode конкретной модели/provider и без переноса ML logic во frontend. До реализации этого шага нужен Architect design.
 
 ---
 
 ## 12. Текущие открытые вопросы
 
 1. Утверждённое отношение/стоимость FN и FP.
-2. Допустимые локальные LLM и разрешение/запрет внешнего LLM API для обезличенных результатов.
+2. Допустимые локальные LLM и отдельное разрешение/data-sharing/redaction policy для передачи реальных client identifiers/feature values во внешний LLM API.
 3. В сообщении заказчика упоминаются «7 внешних признаков 100% дефолта», но подтверждено только 6 внешних факторов; седьмой не додумывать.
 4. Temporal validation для текущего `Data_final` невозможна без дополнительной исторической структуры.
 5. Формальная связь ошибок/threshold-сценариев с целью ПДЗ `15% → 10%`.

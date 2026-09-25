@@ -6,7 +6,7 @@
 
 Перед крупным изменением проверяются branch/HEAD/status, данные и affected artifacts. Исследовательский Stage закрывается только после review результата и сохранения evidence package по правилам `docs/RESEARCH_RECORD.md`.
 
-Дата актуализации: **2026-09-04**.
+Дата актуализации: **2026-09-25**.
 
 ---
 
@@ -473,40 +473,51 @@ Streamlit integration получила итоговый Reviewer `ACCEPT`.
 
 Ручная продуктовая приёмка UX не пройдена.
 
-## NEXT — Generic Dataset Onboarding UX
+## Product/Application Integration V1 — BACKEND CHAIN ACCEPTED
 
-Следующий product/application workstream:
+Приняты и закрыты:
 
-`Файл → Цель → Идентификатор → Признаки → Оценка → Проверка`.
+- **Stage I / Fitted Model Lifecycle** — explicit final fit и immutable `ModelVersion`;
+- **Stage II-A / Generic Model Inference V1** — targetless inference через сохранённый contract без hardcoded identifier/feature names;
+- **Stage II-B / Local SHAP V1** — same-model/same-row evidence, CatBoost local SHAP как V1 capability;
+- **Stage III-A / Result Interpreter Core V1** — model-independent structured interpretation boundary с request hash integrity;
+- **Stage III-B / OpenAI Result Interpreter Adapter V1** — сменный provider adapter, configurable model, `store=False`.
 
-Цели:
+Backend chain:
 
-- один активный смысловой этап вместо вертикальной простыни;
-- пользователь начинает с загрузки файла;
-- historical compatibility profile скрыт как внутренняя деталь;
-- русскоязычный human-readable UI;
-- агрегированные warnings;
-- компактная работа с 50–200 колонками;
-- Analyzer остаётся proposal-механизмом;
-- semantic target явно подтверждает человек;
-- accepted backend/scientific contracts не меняются.
+`ExperimentArtifact → ModelVersion → PredictionBatch → LocalExplanationEvidence → ResultInterpreterRequest → ResultInterpreterClient → ResultInterpreterResponse`.
 
 Новый ML research stage этим не открывается.
 
-## NEXT AFTER UX — Dataset History / Persistence V1
+## NEXT — Integration V1 / Stage III-C UI DESIGN + DEFENSE FLOW
 
-Отдельный design workstream должен определить минимальное долговременное хранение исследовательского состояния.
+Следующий defense-critical product/application workstream — соединить уже принятые backend-компоненты в существующий Streamlit Prototype без переноса ML/business logic во frontend.
 
-V1:
+Целевой пользовательский flow:
 
-- exact dataset recognition по content identity;
-- восстановление совместимой confirmed preparation;
-- отсутствие ненужного повторного inspection;
-- история experiments;
-- comparison table;
-- compatibility guard для сравнения;
-- сохранение historical evidence при изменении analysis rules.
+`Результат эксперимента → сохранить ModelVersion → новый файл → probability → выбрать строку → Local SHAP → понятное LLM-объяснение`.
 
-Similarity matching разных dataset и перенос настроек — не V1.
+Перед реализацией Architect должен зафиксировать:
 
-Persistence backend определяется отдельным архитектурным решением. Production DB заранее не вводится.
+- минимальные UI/application boundaries;
+- session-state contract;
+- capability handling для моделей без local SHAP;
+- provider/model configuration без hardcode;
+- поведение при unavailable LLM;
+- правила external data sharing/redaction для реальных identifiers/feature values;
+- acceptance criteria и минимальное разбиение реализации.
+
+Кандидатное разбиение `III-C1 / III-C2` пока не является принятым архитектурным решением до ответа Architect.
+
+## AFTER DEFENSE-CRITICAL INTEGRATION
+
+Отдельными workstreams остаются:
+
+- Dataset History / Persistence V1;
+- дополнительный UX-polish onboarding/feature selection;
+- local explainers для новых моделей;
+- semantic feature descriptions;
+- threshold/business policy UI;
+- production auth/DB/deployment.
+
+Эти задачи не должны размывать текущую defense-critical integration без отдельной причины.

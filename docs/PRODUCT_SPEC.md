@@ -239,6 +239,30 @@ LLM не должна:
 
 Конкретный провайдер LLM не является частью контракта ML-core.
 
+### Integration V1 — требования к интерпретации результата
+
+Для selected-row сценария LLM получает только structured facts, производные от принятого `LocalExplanationEvidence`:
+
+- identifier/row provenance;
+- готовую probability;
+- `shap_output_space`, raw model output и base value;
+- top feature contributions с raw value / SHAP / rank;
+- optional trusted feature descriptions.
+
+LLM не должна:
+
+- пересчитывать или менять probability;
+- пересчитывать SHAP;
+- утверждать причинность;
+- придумывать бизнес-смысл признака без trusted description;
+- выбирать threshold;
+- выдавать решение «одобрить/отказать»;
+- превращать отсутствие provider в отказ prediction/SHAP path.
+
+Provider подключается через общий `ResultInterpreterClient`. Конкретная model/provider configuration не хардкодится в core/UI.
+
+Для OpenAI adapter обязателен `store=False`; это не означает Zero Data Retention. Перед использованием внешнего provider на реальных клиентских identifiers/feature values должна быть отдельно подтверждена допустимая data-sharing/redaction policy.
+
 ## 14. Backend
 
 Backend должен быть тонким слоем над тем же research/ML-core, который используется в notebooks.
@@ -284,6 +308,12 @@ Backend не содержит собственной копии алгоритм
 - Объяснимость;
 - LLM-сводка;
 - Артефакты и воспроизводимость.
+
+Ближайший defense-ready flow должен использовать уже принятые application boundaries:
+
+`Результат эксперимента → сохранить ModelVersion → новый файл → probability → выбрать строку → Local SHAP → LLM-объяснение`.
+
+Frontend не должен знать внутренности CatBoost/OpenAI и не должен содержать hardcoded `INN`, `DefMark`, feature names, provider model или threshold. Недоступная capability (например local SHAP для неподдерживаемой модели или внешний LLM) отображается как недоступная функция и не ломает предыдущие этапы flow.
 
 Красивый frontend не строится раньше устойчивого `ExperimentRunner`.
 

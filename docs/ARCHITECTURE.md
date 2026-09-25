@@ -331,23 +331,65 @@ ExplanationResult
 
 LLM не пересчитывает SHAP и не создаёт «важность» из текста.
 
+## 12.1. Integration V1 — ModelVersion, inference и local explanation
+
+Принятая application-chain отделяет исследовательский результат от deployable model artifact:
+
+```text
+ExperimentArtifact
+      ↓ explicit final fit
+ModelVersion
+      ↓ load + verify
+LoadedModelVersion + TabularSnapshot
+      ↓
+PredictionBatch
+      ↓ selected row
+LocalExplanationEvidence
+```
+
+Инварианты:
+
+- `ExperimentArtifact != ModelVersion`;
+- `ModelVersion` создаётся отдельным explicit action и фиксирует trusted model/feature/dataset/code identity;
+- generic inference не содержит hardcoded `INN`, `DefMark` или конкретных feature names;
+- identifier берётся из сохранённого `DatasetContract`;
+- duplicate identifier values допустимы; строка различается через row identity/source position;
+- canonical inference output — probability, threshold decision является отдельной policy;
+- local explanation использует ту же загруженную модель и те же validated feature values, что и prediction;
+- local explanation является capability. В V1 CatBoost поддерживает native Local SHAP; отсутствие explainer для другой модели не блокирует inference;
+- CatBoost SHAP фиксируется в `raw_margin` и проверяется additivity.
+
+Новая модель подключается через adapter/capability boundary, а не через hardcoded ветвления во frontend или application core.
+
 ## 13. LLM boundary
 
 ```text
-ExperimentResult
-BusinessRules snapshot
-ExplanationResult
+LocalExplanationEvidence
         ↓
-ResultInterpreter
+ResultInterpreterService
         ↓
-InterpretationReport
+ResultInterpreterRequest
+        ↓
+ResultInterpreterClient
+        ↓
+provider adapter
+        ↓
+ResultInterpreterResponse
 ```
 
-Провайдер — заменяемая реализация.
+Инварианты:
 
-ML-core не импортирует OpenAI/Yandex/Qwen-specific код.
+- Result Interpreter model-independent и не знает конкретный model/explainer;
+- probability и SHAP поступают как готовые факты и не пересчитываются;
+- SHAP не трактуется как причинность;
+- отсутствие trusted description не разрешает выдумывать бизнес-смысл feature;
+- request semantic contents защищены deterministic `request_hash`;
+- failure LLM/provider не инвалидирует prediction или `LocalExplanationEvidence`;
+- provider — заменяемая реализация; ML/application core не содержит OpenAI/Yandex/Qwen-specific кода.
 
-При внешнем API идентификаторы/сырые данные не отправляются без отдельного разрешения.
+Текущий OpenAI adapter является одной реализацией `ResultInterpreterClient`: model name задаётся конфигурацией, вызов Responses API выполняется с `store=False`. Это не означает Zero Data Retention.
+
+При внешнем API реальные client identifiers/feature values не отправляются без отдельного подтверждённого data-sharing/redaction policy.
 
 ## 14. Артефакты
 

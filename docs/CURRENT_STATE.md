@@ -1,6 +1,6 @@
 # KOMUS — CURRENT STATE
 
-Дата фиксации: **2026-09-14**
+Дата фиксации: **2026-09-25**
 
 Этот файл содержит только актуальное подтверждённое состояние проекта.
 Он обновляется после принятого исследовательского этапа или существенного изменения требований.
@@ -10,7 +10,7 @@
 ## Source of truth и рабочая среда
 
 - Рабочий репозиторий: `komus-research/komus-credit-risk`.
-- Рабочая ветка: `main`.
+- Активная рабочая ветка определяется фактическим Git state перед изменением; статическая ветка в этом документе не является source of truth.
 - Локальная рабочая папка: `D:\Projects\komus-work`.
 - Точный `HEAD` и `git status` проверяются непосредственно перед изменением; они не фиксируются в этом документе.
 
@@ -649,6 +649,24 @@ Stage 20 закрыт. Новые API-вызовы не нужны. Следую
 
 Архитектурный invariant: ML-core не знает о Streamlit/SPARK. Frontend не знает о конкретных моделях и конкретном списке 47 признаков.
 
+### Integration V1 — принятая backend-цепочка
+
+Принята следующая модульная цепочка:
+
+`ExperimentArtifact → explicit final fit → immutable ModelVersion → targetless inference → PredictionBatch → selected-row LocalExplanationEvidence → ResultInterpreterRequest → ResultInterpreterClient → ResultInterpreterResponse`.
+
+Принятые этапы:
+
+- **Stage I / Fitted Model Lifecycle — ACCEPT.** `ExperimentArtifact` не является `ModelVersion`; сохранённая модель создаётся отдельным explicit final-fit действием и связывается с dataset/feature/config/code identity.
+- **Stage II-A / Generic Model Inference V1 — ACCEPT.** Новый targetless tabular source проверяется по сохранённому model contract; required features приводятся к точному порядку модели; identifier берётся из `DatasetContract`, а не из hardcoded `INN`; duplicate identifiers допустимы и различаются через row identity/source position; canonical output — probability.
+- **Stage II-B / Local SHAP V1 — ACCEPT.** Local explanation строится для той же сохранённой модели и тех же validated feature values. В V1 local SHAP поддержан только для CatBoost как capability; другие модели могут выполнять inference, а local explanation для них должен явно возвращать unsupported. Для CatBoost проверяется additivity в `raw_margin`.
+- **Stage III-A / Result Interpreter Core V1 — ACCEPT.** Interpreter model-independent, получает только структурированный `LocalExplanationEvidence`, не пересчитывает probability/SHAP, не принимает кредитное решение и защищает semantic request через deterministic hash integrity.
+- **Stage III-B / OpenAI Result Interpreter Adapter V1 — ACCEPT.** OpenAI реализован как сменный provider adapter к `ResultInterpreterClient`; model name задаётся конфигурацией, не hardcoded; Responses API вызывается с `store=False`. Это не трактуется как Zero Data Retention.
+
+Внешний LLM provider не является обязательным для prediction/SHAP path. Ошибка или отсутствие LLM не должны делать prediction и LocalExplanationEvidence недоступными.
+
+Для реальных клиентских identifiers/feature values использование внешнего LLM API требует отдельного подтверждения допустимого data-sharing/redaction policy. Наличие `store=False` само по себе такого разрешения не создаёт.
+
 ### Streamlit Prototype V1
 
 Пользовательский flow:
@@ -754,10 +772,12 @@ Execution evidence Codex: 69 targeted tests PASS, `compileall app` PASS, `git di
 - Analyzer может предложить неверный semantic target, поэтому proposal нельзя выдавать за решение системы;
 - основной UI должен быть русскоязычным и объяснять смысл действий.
 
-**NEXT PRODUCT STEP:**
+**CURRENT PRODUCT PRIORITY: Integration V1 / Stage III-C**
 
-`Файл → Цель → Идентификатор → Признаки → Оценка → Проверка`.
+Перед защитой нужно собрать уже принятые backend-компоненты в один defense-ready пользовательский flow:
 
-После этого отдельный workstream:
+`Результат эксперимента → сохранить ModelVersion → новый файл → probability → выбрать строку → Local SHAP → Result Interpreter`.
 
-**Dataset History / Persistence V1** — узнавание exact dataset, продолжение сохранённой работы, история экспериментов и корректное сравнение результатов.
+Перед реализацией Architect должен зафиксировать минимальные UI/application boundaries, session-state contract и capability handling без hardcode конкретной модели или LLM provider.
+
+Dataset History / Persistence V1, дополнительный UX-polish и расширение local explainers остаются следующими отдельными workstreams и не должны размывать defense-critical integration.

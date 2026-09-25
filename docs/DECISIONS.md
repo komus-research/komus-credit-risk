@@ -718,3 +718,43 @@ Similarity разных dataset не является exact identity.
 Будущий перенос настроек между похожими dataset допускается только как `PROPOSAL / DRAFT`, а не как `CONFIRMED`.
 
 Persistence backend пока не зафиксирован. Решение не требует production DB.
+
+## 2026-09-25 — Integration V1
+
+### D-072 — ExperimentArtifact и ModelVersion являются разными сущностями
+
+Успешный experiment не считается сохранённой deployable моделью. ModelVersion создаётся отдельным explicit final-fit действием и фиксирует trusted model spec, feature order, dataset/config/code identity и native model artifact.
+
+Причина: selection evidence и fitted runtime model имеют разный жизненный цикл и не должны смешиваться.
+
+### D-073 — Generic inference не содержит hardcoded identifier/target semantics
+
+Inference нового targetless файла использует contract сохранённого ModelVersion. Identifier берётся из DatasetContract, required features проверяются и упорядочиваются по model metadata, duplicate identifier values допустимы и различаются через row identity/source position. Canonical output — probability.
+
+Причина: один inference path должен работать для arbitrary confirmed dataset, а не только для historical INN/DefMark profile.
+
+### D-074 — Local explanation подключается как capability, а не как условие inference
+
+Local SHAP V1 принят для CatBoost через ту же loaded model и те же validated feature values, что использовались для prediction. Additivity проверяется в raw margin. Для моделей без принятого local explainer inference остаётся доступным, а explanation возвращает explicit unsupported.
+
+Причина: новая модель должна подключаться отдельным explainer adapter/capability без переписывания inference/UI core.
+
+### D-075 — Result Interpreter является model-independent post-processing boundary
+
+Result Interpreter получает только structured LocalExplanationEvidence, не пересчитывает probability/SHAP, не выбирает threshold и не принимает кредитное решение. Semantic request защищён deterministic request_hash, который проверяется до любого доступа к provider client.
+
+Причина: LLM должна объяснять уже рассчитанный результат, а не становиться частью predictor path.
+
+### D-076 — OpenAI является сменным provider adapter
+
+OpenAI adapter реализует общий ResultInterpreterClient; model name задаётся конфигурацией, API key не хранится в repository, Responses API вызывается с store=False. store=False не трактуется как Zero Data Retention.
+
+Реальные client identifiers/feature values не отправляются во внешний LLM API без отдельного подтверждённого data-sharing/redaction policy.
+
+### D-077 — Расширение системы выполняется через contracts/adapters/capabilities, без hardcode
+
+Новые модели, explainers, interpreter providers и dataset semantics подключаются локально через общие интерфейсы, registry/config/metadata и capability checks. Frontend/application core не должны разрастаться ветвлениями по конкретным model_id, provider, INN, DefMark, feature names, paths или threshold.
+
+Исключение допустимо только как явно зафиксированное временное V1 capability limitation, не как архитектурное правило.
+
+Причина: система должна позволять добавлять или заменять компоненты без переписывания уже принятой цепочки.
