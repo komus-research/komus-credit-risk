@@ -852,4 +852,28 @@ Stage III-C2b получил Reviewer `ACCEPT` после corrective fix.
 
 Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
 
-Следующий defense-critical шаг — manual Stage III-C2 E2E с реальным provider на synthetic/non-client input при явной runtime-настройке `REDACTED_V1`.
+### D-085 — Manual III-C2 E2E подтвердил runtime boundary и открыл Stage III-C2c
+
+Manual E2E 2026-09-25 подтвердил реальный путь:
+
+`probability → Local SHAP → REDACTED_V1 → OpenAI → Russian explanation`.
+
+Техническая boundary Stage III-C2b считается подтверждённой вручную: disabled mode безопасен, ready `REDACTED_V1` вызывает provider, upstream prediction/SHAP не зависят от LLM.
+
+При этом найден отдельный product gap: текущий generic interpreter не использует принятый Stage 20 role-based contract и не получает trusted feature descriptions из сохранённой ModelVersion.
+
+Открыт **Stage III-C2c / Role-Based Result Interpretation Integration**.
+
+Принятый scope C2c:
+
+- ровно четыре роли Stage 20: `sales_manager`, `credit_controller`, `lawyer`, `information_security`;
+- один immutable ML-result объясняется отдельно для каждой роли;
+- LLM не пересчитывает probability/SHAP и не принимает credit/business decision;
+- trusted `display_name_ru / description_ru` берутся из saved ModelVersion metadata;
+- `REDACTED_V1` остаётся positive allowlist и не передаёт identifier, row identity или raw feature values;
+- threshold/approve-deny semantics из synthetic Stage 20 prototype в product runtime не переносятся;
+- общий redesign кнопок не входит в C2c и выполняется отдельным UX-pass.
+
+Architect Lock: `docs/workstreams/llm_interpreter/02_STAGE_III_C2C_ARCHITECT_LOCK.md`.
+
+Stage III-C2b ACCEPT не отменяется: C2c является следующей product capability поверх принятой runtime/security boundary.
