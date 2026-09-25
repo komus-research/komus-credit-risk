@@ -879,3 +879,14 @@ Architect lock:
 - visual/button UX polish не входит в C2c и идёт отдельным проходом после functional ACCEPT.
 
 Stage III-C2b ACCEPT не отменяется: найденный gap относится к следующей продуктовой capability поверх уже принятой runtime/security boundary.
+
+Implementation C2c выполнен в ветке `feature/role-based-result-interpreter-v1`:
+- role включён в immutable request/hash semantics;
+- четыре Stage 20 роли имеют отдельные prompt rules и независимое session/retry state;
+- Streamlit берёт trusted `display_name_ru` / `description_ru` из сохранённой ModelVersion metadata через application facade;
+- REDACTED_V1 не расширен identifier/raw values/row identity; наружу добавлен только trusted `display_name_ru` рядом с уже разрешённым `description_ru`;
+- один UI action запускает четыре независимых role calls и показывает результаты по ролям.
+
+Локальная verification: 68 focused tests PASS; full suite **253 tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
+
+Статус C2c: **IMPLEMENTED / READY FOR REVIEW + MANUAL E2E**. ACCEPT до отдельной проверки не объявляется.
