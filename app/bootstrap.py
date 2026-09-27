@@ -40,6 +40,7 @@ from komus_risk.preparation import (
     DatasetPreparationError,
     DatasetPreparationManifest,
     KomusDatasetPreparationService,
+    PreparedDatasetContextAuthority,
     PopulationPolicyV1,
 )
 from komus_risk.preparation.context import PreparedDatasetContext
@@ -105,6 +106,7 @@ class PrototypeRuntime:
     model_factories: Mapping[str, ModelAdapterFactory]
     supported_protocol: "SupportedProtocol"
     integration_workflow_service: IntegrationWorkflowService
+    prepared_context_authority: PreparedDatasetContextAuthority
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +206,11 @@ class HistoricalDatasetProvider:
 
     context_id = "historical_data_final_v1"
     display_name = "Исторический Data_final — рабочая популяция"
+    def __init__(
+        self, context_authority: PreparedDatasetContextAuthority | None = None
+    ) -> None:
+        self._context_authority = context_authority
+
     def prepare(
         self,
         source: ResolvedDatasetSource,
@@ -232,7 +239,7 @@ class HistoricalDatasetProvider:
         _notify_data_progress(progress_listener, "validating_target_split")
         self._validate_loaded_dataset(loaded, working_split)
         _notify_data_progress(progress_listener, "preparing_context")
-        return PreparedDatasetContext(
+        context = PreparedDatasetContext(
             self.context_id,
             self.display_name,
             loaded,
@@ -244,6 +251,9 @@ class HistoricalDatasetProvider:
                 "working",
             ),
         )
+        if self._context_authority is not None:
+            return self._context_authority.register(context)
+        return context
 
     @staticmethod
     def _validate_source_identity(source_path: Path) -> None:
@@ -320,6 +330,7 @@ def prepare_resolved_source(
     source: ResolvedDatasetSource,
     *,
     historical_provider: HistoricalDatasetProvider | None = None,
+    context_authority: PreparedDatasetContextAuthority | None = None,
     progress_listener: Callable[[str], None] | None = None,
 ) -> DatasetSourcePreparation:
     """Check a source, preserving historical semantics or creating only a proposal."""
@@ -338,11 +349,14 @@ def prepare_resolved_source(
             source, "context_not_prepared", None,
             snapshot=snapshot, inspection_report=report, proposal=proposal,
         )
-    provider = historical_provider or HistoricalDatasetProvider()
+    provider = historical_provider or HistoricalDatasetProvider(context_authority)
+    context = provider.prepare(source, progress_listener=progress_listener)
+    if context_authority is not None:
+        context = context_authority.register(context)
     return DatasetSourcePreparation(
         source,
         "historical_context_prepared",
-        provider.prepare(source, progress_listener=progress_listener),
+        context,
     )
 
 
@@ -392,6 +406,7 @@ def confirm_dataset_preparation(
     draft: Mapping[str, Any],
     *,
     progress_listener: Callable[[str], None] | None = None,
+    context_authority: PreparedDatasetContextAuthority | None = None,
 ) -> DatasetSourcePreparation:
     """Materialize an immutable backend confirmation from the explicit UI draft."""
     snapshot, report, proposal = preparation.snapshot, preparation.inspection_report, preparation.proposal
@@ -425,7 +440,9 @@ def confirm_dataset_preparation(
         PopulationPolicyV1(draft.get("population_policy")),
     )
     _notify_data_progress(progress_listener, "materializing_dataset")
-    context, manifest = KomusDatasetPreparationService().prepare(snapshot, report, proposal, confirmation)
+    context, manifest = KomusDatasetPreparationService(
+        context_authority=context_authority
+    ).prepare(snapshot, report, proposal, confirmation)
     _notify_data_progress(progress_listener, "prepared_context_ready")
     return DatasetSourcePreparation(
         preparation.source, "confirmed_context_prepared", context,
@@ -456,6 +473,7 @@ def create_runtime(
     for spec in (CATBOOST_MODEL_SPEC, XGBOOST_MODEL_SPEC, LIGHTGBM_MODEL_SPEC, GBDT_MEAN_MODEL_SPEC):
         registry.register(spec)
     plugin_registry = build_builtin_model_plugin_registry()
+    context_authority = PreparedDatasetContextAuthority()
     store_root = Path(artifact_root) if artifact_root is not None else _repository_root() / ".streamlit-artifacts"
     code_version = "streamlit-prototype-v1"
     artifact_store = ExperimentArtifactStore(store_root)
@@ -495,11 +513,13 @@ def create_runtime(
             comparison_service=ExperimentComparisonService(),
             code_version=code_version,
             model_plugin_registry=plugin_registry,
+            prepared_context_authority=context_authority,
         ),
         registry,
         factories,
         SUPPORTED_PROTOCOL,
         integration_workflow_service,
+        context_authority,
     )
 
 

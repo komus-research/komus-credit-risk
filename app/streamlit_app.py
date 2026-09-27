@@ -124,7 +124,7 @@ def main() -> None:
     _render_step_navigation()
 
     if step == 0:
-        _render_data_step()
+        _render_data_step(runtime)
     elif step == 1:
         _render_features_step(runtime)
     elif step == 2:
@@ -213,7 +213,7 @@ def _prediction_file_error_message(error: Exception) -> str:
     return "Не удалось получить прогноз. Проверьте файл и соответствие его столбцов сохранённой модели."
 
 
-def _render_data_step() -> None:
+def _render_data_step(runtime: Any | None = None) -> None:
     st.header("Подготовка набора данных")
     st.caption("Данные → Признаки → Алгоритм → Проверка качества → Результат")
     preparation = st.session_state.dataset_source_preparation
@@ -228,7 +228,16 @@ def _render_data_step() -> None:
         explicit_local_path = _render_local_source_controls()
         draft_locator = _source_control_locator(source_kind, explicit_local_path)
         _synchronize_source_selection(st.session_state, draft_locator)
-        _render_source_check_action(source_kind, explicit_local_path, draft_locator)
+        context_authority = getattr(runtime, "prepared_context_authority", None)
+        if context_authority is None:
+            _render_source_check_action(source_kind, explicit_local_path, draft_locator)
+        else:
+            _render_source_check_action(
+                source_kind,
+                explicit_local_path,
+                draft_locator,
+                context_authority=context_authority,
+            )
         preparation = st.session_state.dataset_source_preparation
     else:
         source_kind = "explicit_local"
@@ -237,7 +246,11 @@ def _render_data_step() -> None:
     if preparation is None or (preparation.is_prepared and not is_display_ready):
         _render_unchecked_source(source_kind, explicit_local_path)
     elif not preparation.is_prepared and getattr(preparation, "snapshot", None) is not None:
-        _render_dataset_onboarding(preparation)
+        context_authority = getattr(runtime, "prepared_context_authority", None)
+        if context_authority is None:
+            _render_dataset_onboarding(preparation)
+        else:
+            _render_dataset_onboarding(preparation, context_authority=context_authority)
         # The generic onboarding owns its navigation.  Rendering the legacy
         # footer below would create its "continue" button a second time.
         return
@@ -335,6 +348,8 @@ def _clear_local_file_selection() -> None:
 
 def _render_source_check_action(
     source_kind: str, explicit_local_path: str, draft_locator: tuple[str, str],
+    *,
+    context_authority: Any | None = None,
 ) -> None:
     """Confirm a draft source before it can replace the active dataset state."""
     preparation = st.session_state.dataset_source_preparation
@@ -360,7 +375,13 @@ def _render_source_check_action(
         )
         preparation = _run_with_progress(
             _DATA_PROGRESS_LABELS,
-            lambda listener: prepare_resolved_source(source, progress_listener=listener),
+            lambda listener: prepare_resolved_source(
+                source,
+                **({"progress_listener": listener} if context_authority is None else {
+                    "context_authority": context_authority,
+                    "progress_listener": listener,
+                }),
+            ),
             initial_label="Проверяем файл…",
             completion_label="Проверка файла завершена",
         )
@@ -457,7 +478,9 @@ def _render_prepared_source(preparation: Any) -> None:
         })
 
 
-def _render_dataset_onboarding(preparation: Any) -> None:
+def _render_dataset_onboarding(
+    preparation: Any, *, context_authority: Any | None = None
+) -> None:
     """Render one explicit confirmation decision at a time for a checked source."""
     snapshot = preparation.snapshot
     report = preparation.inspection_report
@@ -472,7 +495,9 @@ def _render_dataset_onboarding(preparation: Any) -> None:
     elif step == 1:
         _render_preparation_onboarding_step(preparation, draft, report)
     else:
-        _render_review_onboarding_step(preparation, draft)
+        _render_review_onboarding_step(
+            preparation, draft, context_authority=context_authority
+        )
 
 
 def _onboarding_draft(preparation: Any) -> dict[str, Any]:
@@ -590,7 +615,12 @@ _ADVANCED_STATUS_LABELS = {
 }
 
 
-def _render_review_onboarding_step(preparation: Any, draft: MutableMapping[str, Any]) -> None:
+def _render_review_onboarding_step(
+    preparation: Any,
+    draft: MutableMapping[str, Any],
+    *,
+    context_authority: Any | None = None,
+) -> None:
     st.subheader("Подтверждение данных")
     st.info(
         "Здесь модель ещё не обучается. Мы только подтверждаем, как использовать колонки этого файла "
@@ -626,7 +656,9 @@ def _render_review_onboarding_step(preparation: Any, draft: MutableMapping[str, 
         st.warning("Укажите причину для каждого заблокированного признака.")
     if st.button("Подтвердить и продолжить", type="primary", disabled=not acknowledged or confirmation_blocked):
         draft["population_policy_acknowledged"] = acknowledged
-        _confirm_dataset_onboarding(preparation, draft)
+        _confirm_dataset_onboarding(
+            preparation, draft, context_authority=context_authority
+        )
 
 
 def _target_values(report: Any, target: str) -> list[Any]:
@@ -762,7 +794,12 @@ def _onboarding_go_to(step: int) -> None:
     st.rerun()
 
 
-def _confirm_dataset_onboarding(preparation: Any, draft: Mapping[str, Any]) -> None:
+def _confirm_dataset_onboarding(
+    preparation: Any,
+    draft: Mapping[str, Any],
+    *,
+    context_authority: Any | None = None,
+) -> None:
     state = st.session_state
     explicit_draft = dict(draft)
     explicit_draft["snapshot_fingerprint"] = preparation.snapshot.fingerprint
@@ -771,7 +808,14 @@ def _confirm_dataset_onboarding(preparation: Any, draft: Mapping[str, Any]) -> N
     try:
         confirmed = _run_with_progress(
             _DATA_PROGRESS_LABELS,
-            lambda listener: confirm_dataset_preparation(preparation, explicit_draft, progress_listener=listener),
+            lambda listener: confirm_dataset_preparation(
+                preparation,
+                explicit_draft,
+                **({"progress_listener": listener} if context_authority is None else {
+                    "context_authority": context_authority,
+                    "progress_listener": listener,
+                }),
+            ),
             initial_label="Подтверждаем подготовку…", completion_label="Подготовка набора данных завершена",
         )
     except DatasetPreparationError as error:
@@ -1215,6 +1259,7 @@ def _render_experiment_step(runtime) -> None:
                     feature_registry=context.feature_registry,
                     population=context.population,
                     request=run_request_from_snapshot(snapshot),
+                    prepared_context_id=context.context_id,
                     progress_listener=listener,
                 ),
                 initial_label="Обучаем и проверяем качество",

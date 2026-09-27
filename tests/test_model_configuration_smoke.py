@@ -34,7 +34,11 @@ from komus_risk.model_platform import (
     build_builtin_model_plugin_registry,
 )
 from komus_risk.models import BinaryClassifierAdapter, ModelAdapterFactory
-from komus_risk.preparation import PreparedDatasetContext
+from komus_risk.preparation import (
+    PreparedDatasetContext,
+    PreparedDatasetContextAuthority,
+    PreparedDatasetContextAuthorityError,
+)
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 
@@ -51,7 +55,11 @@ class _Factory(ModelAdapterFactory):
     model_version = "2.0"
     adapter_version = "gbdt-adapter-v1"
 
+    def __init__(self):
+        self.create_calls = 0
+
     def create(self, parameters, seed):
+        self.create_calls += 1
         return _Adapter()
 
 
@@ -164,6 +172,11 @@ def _context(dataset, features, population):
     )
 
 
+def _register_context(service, dataset, features, population):
+    context = _context(dataset, features, population)
+    return service.prepared_context_authority.register(context)
+
+
 def test_configuration_record_is_deterministic_and_deep_immutable():
     registry = build_builtin_model_plugin_registry()
     resolved = ModelConfigurationService(registry).resolve(
@@ -185,7 +198,7 @@ def test_smoke_gate_and_v2_provenance_round_trip():
     with TemporaryDirectory() as root:
         service = _service(root)
         dataset, features, population = _dataset()
-        context = _context(dataset, features, population)
+        context = _register_context(service, dataset, features, population)
         request = _request()
         try:
             service.run_experiment(
@@ -244,7 +257,7 @@ def test_locked_population_row_identity_and_authoritative_context_are_required()
     with TemporaryDirectory() as root:
         service = _service(root)
         dataset, features, population_a = _dataset()
-        context = _context(dataset, features, population_a)
+        context = _register_context(service, dataset, features, population_a)
         request = _request()
         smoke = service.run_configuration_smoke(
             loaded_dataset=dataset,
@@ -333,3 +346,93 @@ def test_no_registry_full_run_is_rejected_and_smoke_capabilities_are_truthful():
             .support
             is CapabilitySupport.SUPPORTED
         )
+
+
+def test_context_authority_rejects_forged_locked_context_before_smoke_or_artifact():
+    with TemporaryDirectory() as root:
+        service = _service(root)
+        dataset, features, _population = _dataset()
+        authoritative_population = EvaluationPopulation(
+            tuple(range(10)), "working", "working-fp", "working"
+        )
+        trusted = _register_context(
+            service, dataset, features, authoritative_population
+        )
+        request = _request()
+        service.run_configuration_smoke(
+            loaded_dataset=dataset,
+            feature_registry=features,
+            population=authoritative_population,
+            request=request,
+            prepared_context_id=trusted.context_id,
+        )
+        calls_after_trusted_smoke = service.model_factories["catboost"].create_calls
+        forged_population = EvaluationPopulation(
+            tuple(range(10, 20)), "working", "working-fp", "working"
+        )
+        forged = PreparedDatasetContext(
+            "forged-authoritative-context", "Dataset", dataset, features, forged_population
+        )
+        for action in (service.run_configuration_smoke, service.run_experiment):
+            try:
+                action(
+                    loaded_dataset=dataset,
+                    feature_registry=features,
+                    population=forged_population,
+                    request=request,
+                    prepared_context=forged,
+                )
+            except SmokeGateError as error:
+                assert error.code == "TRUSTED_CONTEXT_NOT_FOUND"
+            else:
+                raise AssertionError("unregistered forged context must fail closed")
+        assert service.model_factories["catboost"].create_calls == calls_after_trusted_smoke
+        assert not list(Path(root).glob("*.json"))
+
+
+def test_context_authority_rejects_reused_id_changed_rows_unknown_ids_and_conflicts():
+    with TemporaryDirectory() as root:
+        service = _service(root)
+        dataset, features, population = _dataset()
+        trusted = _register_context(service, dataset, features, population)
+        forged_population = EvaluationPopulation(
+            tuple(reversed(population.row_positions)),
+            population.population_id,
+            population.population_fingerprint,
+            population.partition_role,
+        )
+        forged = PreparedDatasetContext(
+            trusted.context_id, "Dataset", dataset, features, forged_population
+        )
+        try:
+            service.run_configuration_smoke(
+                loaded_dataset=dataset,
+                feature_registry=features,
+                population=forged_population,
+                request=_request(),
+                prepared_context=forged,
+            )
+        except SmokeGateError as error:
+            assert error.code == "PREPARED_CONTEXT_MISMATCH"
+        else:
+            raise AssertionError("reused context id must not replace trusted rows")
+        try:
+            service.run_configuration_smoke(
+                loaded_dataset=dataset,
+                feature_registry=features,
+                population=population,
+                request=_request(),
+                prepared_context_id="unknown-context",
+            )
+        except SmokeGateError as error:
+            assert error.code == "TRUSTED_CONTEXT_NOT_FOUND"
+        else:
+            raise AssertionError("unknown reference must fail closed")
+        authority = PreparedDatasetContextAuthority()
+        authority.register(trusted)
+        try:
+            authority.register(forged)
+        except PreparedDatasetContextAuthorityError as error:
+            assert error.code == "CONFLICTING_CONTEXT_REGISTRATION"
+        else:
+            raise AssertionError("conflicting authority registration must fail")

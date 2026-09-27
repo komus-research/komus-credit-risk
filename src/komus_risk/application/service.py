@@ -25,7 +25,12 @@ from komus_risk.model_platform import (
 )
 from komus_risk.models import ModelAdapterFactory
 from komus_risk.planning.contracts import PlanningRequestMetadata
-from komus_risk.preparation import PreparedDatasetContext
+from komus_risk.preparation import (
+    PreparedDatasetContext,
+    PreparedDatasetContextAuthority,
+    PreparedDatasetContextAuthorityError,
+    prepared_context_semantic_hash,
+)
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 from .contracts import RunExperimentRequest
@@ -73,6 +78,7 @@ class ExperimentApplicationService:
         comparison_service: ExperimentComparisonService,
         code_version: str,
         model_plugin_registry: ModelPluginRegistry | None = None,
+        prepared_context_authority: PreparedDatasetContextAuthority | None = None,
     ) -> None:
         if not isinstance(code_version, str) or not code_version.strip():
             raise ValueError("code_version must be a non-empty string.")
@@ -87,6 +93,9 @@ class ExperimentApplicationService:
             else None
         )
         self._model_plugin_registry = model_plugin_registry
+        self.prepared_context_authority = (
+            prepared_context_authority or PreparedDatasetContextAuthority()
+        )
         self._smoke_service = ModelConfigurationSmokeTestService()
         self._smoke_evidence: dict[str, SmokeEvidence] = {}
         for key, factory in self.model_factories.items():
@@ -111,6 +120,7 @@ class ExperimentApplicationService:
         population: EvaluationPopulation,
         request: RunExperimentRequest,
         prepared_context: PreparedDatasetContext | None = None,
+        prepared_context_id: str | None = None,
         progress_listener: Callable[[ExperimentProgressEvent], None] | None = None,
     ) -> LoadedExperimentArtifact:
         if not isinstance(request, RunExperimentRequest):
@@ -121,7 +131,11 @@ class ExperimentApplicationService:
         ):
             raise SmokeGateError("MODEL_PLATFORM_REQUIRED")
         context = self._resolve_prepared_context(
-            loaded_dataset, feature_registry, population, prepared_context
+            loaded_dataset,
+            feature_registry,
+            population,
+            prepared_context,
+            prepared_context_id,
         )
         loaded_dataset = context.loaded_dataset
         feature_registry = context.feature_registry
@@ -245,6 +259,7 @@ class ExperimentApplicationService:
         population: EvaluationPopulation,
         request: RunExperimentRequest,
         prepared_context: PreparedDatasetContext | None = None,
+        prepared_context_id: str | None = None,
     ) -> SmokeEvidence:
         """Run and retain backend-owned technical evidence for one exact request."""
         if (
@@ -253,7 +268,11 @@ class ExperimentApplicationService:
         ):
             raise SmokeGateError("SMOKE_UNAVAILABLE")
         context = self._resolve_prepared_context(
-            loaded_dataset, feature_registry, population, prepared_context
+            loaded_dataset,
+            feature_registry,
+            population,
+            prepared_context,
+            prepared_context_id,
         )
         loaded_dataset = context.loaded_dataset
         feature_registry = context.feature_registry
@@ -276,43 +295,62 @@ class ExperimentApplicationService:
         self._smoke_evidence[evidence.smoke_identity] = evidence
         return evidence
 
-    @staticmethod
     def _resolve_prepared_context(
+        self,
         loaded_dataset: LoadedDataset,
         feature_registry: FeatureRegistry,
         population: EvaluationPopulation,
         prepared_context: PreparedDatasetContext | None,
+        prepared_context_id: str | None,
     ) -> PreparedDatasetContext:
+        reference = prepared_context_id
         if prepared_context is not None:
-            ExperimentApplicationService._validate_prepared_context(
-                loaded_dataset, feature_registry, population, prepared_context
+            if reference is not None and reference != prepared_context.context_id:
+                raise SmokeGateError("PREPARED_CONTEXT_MISMATCH")
+            reference = prepared_context.context_id
+        if reference is None:
+            if loaded_dataset.contract.final_test_locked:
+                raise SmokeGateError("AUTHORITATIVE_CONTEXT_REQUIRED")
+            reference = stable_hash(
+                {
+                    "dataset_id": loaded_dataset.contract.dataset_id,
+                    "dataset_fingerprint": loaded_dataset.contract.dataset_fingerprint,
+                    "feature_registry_id": feature_registry.registry_id,
+                    "feature_registry_hash": feature_registry.registry_hash,
+                    "population_id": population.population_id,
+                    "population_fingerprint": population.population_fingerprint,
+                    "population_row_positions_hash": stable_hash(
+                        {"row_positions": list(population.row_positions)}
+                    ),
+                }
             )
-            return prepared_context
-        if loaded_dataset.contract.final_test_locked:
-            raise SmokeGateError("AUTHORITATIVE_CONTEXT_REQUIRED")
-        context_id = stable_hash(
-            {
-                "dataset_id": loaded_dataset.contract.dataset_id,
-                "dataset_fingerprint": loaded_dataset.contract.dataset_fingerprint,
-                "feature_registry_id": feature_registry.registry_id,
-                "feature_registry_hash": feature_registry.registry_hash,
-                "population_id": population.population_id,
-                "population_fingerprint": population.population_fingerprint,
-                "population_row_positions_hash": stable_hash(
-                    {"row_positions": list(population.row_positions)}
-                ),
-            }
+            generated = PreparedDatasetContext(
+                reference,
+                loaded_dataset.contract.dataset_name,
+                loaded_dataset,
+                feature_registry,
+                population,
+            )
+            try:
+                self.prepared_context_authority.register(generated)
+            except PreparedDatasetContextAuthorityError as error:
+                raise SmokeGateError(error.code) from error
+        try:
+            trusted = self.prepared_context_authority.resolve(reference)
+        except PreparedDatasetContextAuthorityError as error:
+            raise SmokeGateError(error.code) from error
+        if prepared_context is not None and (
+            prepared_context_semantic_hash(prepared_context)
+            != prepared_context_semantic_hash(trusted)
+        ):
+            raise SmokeGateError("PREPARED_CONTEXT_MISMATCH")
+        self._validate_prepared_context(
+            loaded_dataset, feature_registry, population, trusted
         )
-        return PreparedDatasetContext(
-            context_id,
-            loaded_dataset.contract.dataset_name,
-            loaded_dataset,
-            feature_registry,
-            population,
-        )
+        return trusted
 
-    @staticmethod
     def _validate_prepared_context(
+        self,
         loaded_dataset: LoadedDataset,
         feature_registry: FeatureRegistry,
         population: EvaluationPopulation,

@@ -12,6 +12,7 @@ import numpy as np
 from komus_risk.data import DatasetInspector, TabularReader
 from komus_risk.preparation import (
     ConfirmedColumnDecision, ConfirmedDatasetPreparation, KomusDatasetPreparationService,
+    PreparedDatasetContextAuthority,
     PopulationPolicyV1,
 )
 from komus_risk.preparation.contracts import ConfirmedColumnStatus, DatasetPreparationError
@@ -55,6 +56,13 @@ class DatasetPreparationMaterializationTests(unittest.TestCase):
         self.assertEqual("target", context.loaded_dataset.contract.target_column)
         self.assertEqual(manifest.context_id, context.context_id)
         self.assertEqual("MODEL_ALLOWED", manifest.confirmed_preparation.column_decisions[2].status)
+
+    def test_accepted_materialization_publishes_its_exact_context_to_authority(self) -> None:
+        authority = PreparedDatasetContextAuthority()
+        context, _manifest = KomusDatasetPreparationService(
+            context_authority=authority
+        ).prepare(*self._parts())
+        self.assertIs(authority.resolve(context.context_id), context)
 
     def test_identity_decimal_normalizes_trailing_zeroes(self) -> None:
         self.assertEqual(identity_hash(Decimal("1.0")), identity_hash(Decimal("1.00")))

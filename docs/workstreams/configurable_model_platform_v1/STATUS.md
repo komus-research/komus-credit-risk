@@ -59,6 +59,12 @@ Corrective review fixes bind smoke matching to the exact ordered population rows
 require an authoritative prepared context for locked final-test data, remove the
 unconfigured application full-run fallback, and declare smoke support truthfully.
 
+The final corrective review fix establishes backend-owned authority for prepared
+dataset contexts. Trusted historical and confirmed generic preparation publish the
+exact context to the runtime authority; smoke and full runs resolve by that trusted
+reference and reject caller-forged or conflicting contexts before fitting or
+persisting an artifact.
+
 Accepted MP-A head: `078adc4d009068cd4eb3b3886ec20b2e9aa46017`.
 
 MP-A final verification included 276 passed, 108 subtests plus static checks.
