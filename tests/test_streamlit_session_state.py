@@ -164,7 +164,7 @@ class SessionStateTests(unittest.TestCase):
         self.assertIs(self.state["dataset_context"], context)
         self.assertTrue(self.state["dataset_source_preparation"].is_prepared)
 
-    def test_return_to_data_restores_exact_local_data_final_instead_of_defaulting_source_kind(self) -> None:
+    def test_return_to_data_never_restores_a_host_path_into_browser_upload_controls(self) -> None:
         context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))
         preparation = SimpleNamespace(
             source=SimpleNamespace(source_kind="explicit_local", local_runtime_path=r"C:\data\Data_final.xlsb"),
@@ -181,16 +181,10 @@ class SessionStateTests(unittest.TestCase):
 
         navigate_to_step(self.state, 0)
         self.state.pop("prototype_source_kind", None)
-        self.state["prototype_selected_local_file_path"] = r"C:\data\stale-picker-value.xlsb"
         _restore_source_controls(self.state)
-        restored_locator = _source_control_locator(
-            self.state["prototype_source_kind"],
-            self.state["prototype_selected_local_file_path"],
-        )
-        _synchronize_source_selection(self.state, restored_locator)
 
-        self.assertEqual(restored_locator, locator)
-        self.assertEqual(self.state["prototype_selected_local_file_path"], locator[1])
+        self.assertEqual(self.state["prototype_source_kind"], "explicit_local")
+        self.assertNotIn("prototype_staged_dataset_upload", self.state)
         self.assertIs(self.state["dataset_source_preparation"], preparation)
         self.assertIs(self.state["dataset_context"], context)
 

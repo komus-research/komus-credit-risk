@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import ModuleType, SimpleNamespace
-import sys
+from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
@@ -155,11 +154,12 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertFalse(result.is_prepared)
         self.assertIsNone(result.context)
 
-    def test_streamlit_module_uses_explicit_local_path_without_browser_upload(self) -> None:
+    def test_streamlit_module_stages_browser_upload_before_explicit_local_resolution(self) -> None:
         import app.streamlit_app as prototype
 
         source = Path(prototype.__file__).read_text(encoding="utf-8")
-        self.assertNotIn("st.file_uploader", source)
+        self.assertIn("st.file_uploader", source)
+        self.assertIn("stage_browser_upload", source)
         self.assertIn("resolve_explicit_local_path", source)
         self.assertIn("preparation.is_prepared", source)
 
@@ -172,9 +172,8 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertIn('"Выберите файл с данными для обучения и проверки качества модели."', source)
         self.assertNotIn('"Какие данные использовать?"', source)
         self.assertNotIn('"Исторический набор данных"', source)
-        self.assertIn('"Выбрать файл…"', source)
-        self.assertIn('"Указать расположение файла вручную"', source)
-        self.assertIn('choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)', source)
+        self.assertIn('st.file_uploader(', source)
+        self.assertIn('_STAGED_DATASET_UPLOAD_KEY', source)
         self.assertIn('st.expander("Технические сведения", expanded=False)', source)
         self.assertIn('"Данные подготовлены"', source)
         self.assertIn('"Продолжить к признакам →"', source)
@@ -191,7 +190,7 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertIn('Защищённая финальная тестовая выборка не задана.', source)
         self.assertNotIn('def _render_prepared_source(preparation: Any, source_kind: str)', source)
         self.assertNotIn("st.subheader(source.display_name)", source)
-        self.assertNotIn("st.file_uploader", source)
+        self.assertIn("st.file_uploader", source)
 
     def test_wizard_navigation_uses_non_destructive_transitions(self) -> None:
         import app.streamlit_app as prototype
@@ -298,8 +297,6 @@ class StreamlitBootstrapTests(unittest.TestCase):
             "dataset_context": context,
             "prototype_source_control_locator": ("accepted_historical", ""),
             "prototype_source_kind": "accepted_historical",
-            "prototype_selected_local_file_path": "",
-            "prototype_manual_local_file_path": "",
             "selected_feature_ids": ("Q_A1_norm",),
             "selected_model_id": "lightgbm_v1",
             "experiment_inputs": {"folds": 5},
@@ -485,25 +482,6 @@ class StreamlitBootstrapTests(unittest.TestCase):
 
         self.assertEqual(streamlit.buttons, [("Проверить файл повторно", {"type": "secondary", "disabled": False})])
         prepare.assert_called_once_with(source, progress_listener=unittest.mock.ANY)
-
-    def test_native_picker_returns_the_host_selected_path_without_browser_upload(self) -> None:
-        from app.local_file_picker import choose_local_file
-
-        selected_path = r"C:\data\client_dataset.xlsx"
-        fake_root = Mock()
-        fake_dialog = ModuleType("tkinter.filedialog")
-        fake_dialog.askopenfilename = Mock(return_value=selected_path)
-        fake_tk = ModuleType("tkinter")
-        fake_tk.Tk = Mock(return_value=fake_root)
-        fake_tk.filedialog = fake_dialog
-
-        with patch.dict(sys.modules, {"tkinter": fake_tk, "tkinter.filedialog": fake_dialog}):
-            result = choose_local_file((".xlsx", ".xlsb"))
-
-        self.assertEqual(result, selected_path)
-        fake_dialog.askopenfilename.assert_called_once()
-        fake_root.withdraw.assert_called_once()
-        fake_root.destroy.assert_called_once()
 
     def test_supported_protocol_is_defined_once_in_composition(self) -> None:
         protocol = bootstrap.SUPPORTED_PROTOCOL

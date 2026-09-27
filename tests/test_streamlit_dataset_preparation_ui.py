@@ -725,7 +725,6 @@ class DatasetPreparationUiTests(unittest.TestCase):
         state.update(
             prototype_source_control_locator=source_locator,
             prototype_source_kind="explicit_local",
-            prototype_selected_local_file_path=str(preparation.source.local_runtime_path),
             selected_feature_ids=("score",),
             selected_model_id="model",
             experiment_inputs={"folds": 3},
@@ -746,7 +745,6 @@ class DatasetPreparationUiTests(unittest.TestCase):
         self.assertIsNone(state["loaded_artifact"])
         self.assertIsNone(state["comparison_result"])
         self.assertEqual(state["prototype_source_control_locator"], source_locator)
-        self.assertEqual(state["prototype_selected_local_file_path"], str(preparation.source.local_runtime_path))
 
     def test_historical_prepared_change_file_clears_active_preparation_and_returns_to_file_step(self) -> None:
         import app.streamlit_app as prototype
@@ -777,8 +775,6 @@ class DatasetPreparationUiTests(unittest.TestCase):
             dataset_preparation_step=5,
             prototype_source_control_locator=("accepted_historical", ""),
             prototype_source_kind="accepted_historical",
-            prototype_selected_local_file_path="Data_final.xlsb",
-            prototype_manual_local_file_path="Data_final.xlsb",
         )
         streamlit = Streamlit(state)
 
@@ -789,7 +785,6 @@ class DatasetPreparationUiTests(unittest.TestCase):
         self.assertIsNone(state["dataset_context"])
         self.assertEqual(state["dataset_preparation_step"], 0)
         self.assertNotIn("prototype_source_control_locator", state)
-        self.assertNotIn("prototype_selected_local_file_path", state)
         self.assertEqual(streamlit.reruns, 1)
 
     def test_generic_renderer_uses_context_contract_for_arbitrary_and_historical_contexts(self) -> None:

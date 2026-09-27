@@ -19,7 +19,6 @@ from app.bootstrap import (
     validate_supported_protocol,
 )
 from app.feature_display import group_feature_ids_by_family
-from app.local_file_picker import NativeFilePickerUnavailable, choose_local_file
 from app.session_state import (
     apply_feature_widget_selection,
     apply_group_widget_selection,
@@ -42,6 +41,14 @@ from app.session_state import (
     set_selected_model_id,
     synchronize_feature_widgets,
     return_to_experiment,
+)
+from app.upload_staging import (
+    EmptyUploadError,
+    StagedUpload,
+    UnsupportedUploadExtension,
+    UploadReadError,
+    cleanup_staged_upload,
+    stage_browser_upload,
 )
 from komus_risk.application import RESULT_INTERPRETER_ROLES
 from komus_risk.planning import PlanningRequestMetadata
@@ -83,8 +90,8 @@ _RESULT_INTERPRETER_ROLE_LABELS = {
 }
 _SOURCE_CONTROL_LOCATOR_KEY = "prototype_source_control_locator"
 _SOURCE_KIND_WIDGET_KEY = "prototype_source_kind"
-_SELECTED_LOCAL_FILE_PATH_KEY = "prototype_selected_local_file_path"
-_MANUAL_LOCAL_FILE_PATH_KEY = "prototype_manual_local_file_path"
+_STAGED_DATASET_UPLOAD_KEY = "prototype_staged_dataset_upload"
+_BROWSER_DATASET_UPLOAD_WIDGET_KEY = "prototype_browser_dataset_upload"
 _SOURCE_ERROR_KEY = "prototype_source_error"
 _SOURCE_RECHECK_INVALID_KEY = "prototype_source_recheck_invalid"
 _PREPARATION_DRAFT_KEY = "dataset_preparation_draft"
@@ -99,8 +106,8 @@ _SUPPORTED_SOURCE_EXTENSIONS = tuple(LocalDatasetSourceResolver._FORMATS)
 _DATASET_ONBOARDING_STEPS = ("Файл", "Роли колонок", "Подтверждение")
 _STEP_NAVIGATION_LABELS = ("Данные", "Признаки", "Алгоритм", "Проверка качества", "Результат")
 _STEP_NAVIGATION_CONTAINER_KEY = "step-navigator"
-_INFERENCE_SELECTED_LOCAL_FILE_PATH_KEY = "prototype_inference_selected_local_file_path"
-_INFERENCE_MANUAL_LOCAL_FILE_PATH_KEY = "prototype_inference_manual_local_file_path"
+_STAGED_INFERENCE_UPLOAD_KEY = "prototype_staged_inference_upload"
+_BROWSER_INFERENCE_UPLOAD_WIDGET_KEY = "prototype_browser_inference_upload"
 
 
 @st.cache_resource
@@ -266,30 +273,43 @@ def _render_data_step() -> None:
 
 
 def _render_local_source_controls() -> str:
-    """Render local-source selection without showing a host filesystem path."""
+    """Bridge a browser upload to the existing local-path source contract."""
     st.subheader("1. Файл")
     st.write("Выберите файл с данными для обучения и проверки качества модели.")
     st.caption("Сначала система проверит структуру файла и предложит роли колонок. Обучение начнётся только после вашего подтверждения.")
-    if st.button("Выбрать файл…", type="primary"):
+    uploaded = st.file_uploader(
+        "Выберите файл",
+        type=[extension.removeprefix(".") for extension in sorted(_SUPPORTED_SOURCE_EXTENSIONS)],
+        key=_BROWSER_DATASET_UPLOAD_WIDGET_KEY,
+        help="Поддерживаются CSV, XLSX, XLSB и Parquet. Файл передаётся из браузера.",
+    )
+    staged = st.session_state.get(_STAGED_DATASET_UPLOAD_KEY)
+    if uploaded is not None:
         try:
-            selected = choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)
-        except NativeFilePickerUnavailable:
-            st.warning("Не удалось открыть окно выбора файла. Укажите путь вручную ниже.")
+            staged = stage_browser_upload(
+                uploaded,
+                previous=staged if isinstance(staged, StagedUpload) else None,
+            )
+        except UnsupportedUploadExtension:
+            st.session_state[_SOURCE_ERROR_KEY] = (
+                "Формат файла не поддерживается",
+                f"Выберите файл поддерживаемого формата: {', '.join(_SUPPORTED_SOURCE_EXTENSIONS)}.",
+            )
+        except EmptyUploadError:
+            st.session_state[_SOURCE_ERROR_KEY] = (
+                "Файл пустой",
+                "Выберите файл, содержащий данные.",
+            )
+        except UploadReadError:
+            st.session_state[_SOURCE_ERROR_KEY] = (
+                "Не удалось загрузить файл",
+                "Не удалось получить или временно сохранить содержимое файла. Повторите загрузку.",
+            )
         else:
-            if selected:
-                st.session_state[_SELECTED_LOCAL_FILE_PATH_KEY] = selected
-                st.session_state[_MANUAL_LOCAL_FILE_PATH_KEY] = ""
-                st.session_state.pop(_SOURCE_ERROR_KEY, None)
+            st.session_state[_STAGED_DATASET_UPLOAD_KEY] = staged
+            st.session_state.pop(_SOURCE_ERROR_KEY, None)
 
-    selected_path = st.session_state.get(_SELECTED_LOCAL_FILE_PATH_KEY, "")
-    manual_path = ""
-    with st.expander("Указать расположение файла вручную", expanded=False):
-        manual_path = st.text_input(
-            "Путь к файлу",
-            key=_MANUAL_LOCAL_FILE_PATH_KEY,
-            placeholder="Выберите файл или укажите его расположение",
-        )
-    effective_path = manual_path.strip() or selected_path
+    effective_path = str(staged.local_path) if isinstance(staged, StagedUpload) else ""
     preparation = st.session_state.dataset_source_preparation
     selected_is_checked = bool(
         preparation
@@ -299,16 +319,18 @@ def _render_local_source_controls() -> str:
     )
     if effective_path and not selected_is_checked:
         st.subheader("Выбран файл")
-        st.write(Path(effective_path).name)
+        st.write(staged.display_name)
         st.write("**Статус:** файл выбран, но ещё не проверен")
         st.button("Выбрать другой файл", on_click=_clear_local_file_selection)
     return effective_path
 
 
 def _clear_local_file_selection() -> None:
-    """Reset local-file controls before Streamlit instantiates their widgets."""
-    st.session_state.pop(_SELECTED_LOCAL_FILE_PATH_KEY, None)
-    st.session_state[_MANUAL_LOCAL_FILE_PATH_KEY] = ""
+    """Release the current browser-upload staging directory before replacement."""
+    staged = st.session_state.pop(_STAGED_DATASET_UPLOAD_KEY, None)
+    if isinstance(staged, StagedUpload):
+        cleanup_staged_upload(staged)
+    st.session_state.pop(_BROWSER_DATASET_UPLOAD_WIDGET_KEY, None)
 
 
 def _render_source_check_action(
@@ -346,8 +368,13 @@ def _render_source_check_action(
         st.session_state[_SOURCE_RECHECK_INVALID_KEY] = False
     except FileNotFoundError:
         st.session_state[_SOURCE_ERROR_KEY] = (
-            "Файл не найден",
-            "Возможно, файл был перемещён или удалён. Выберите его заново или укажите другой файл.",
+            "Временная копия файла недоступна",
+            "Выберите файл заново и повторите проверку.",
+        )
+    except TabularReadError:
+        st.session_state[_SOURCE_ERROR_KEY] = (
+            "Файл пустой или имеет недопустимое содержимое",
+            "Не удалось прочитать таблицу. Проверьте, что файл не пустой и соответствует выбранному формату.",
         )
     except ValueError as error:
         if "Неподдерживаемое расширение" in str(error):
@@ -357,8 +384,8 @@ def _render_source_check_action(
             )
         else:
             st.session_state[_SOURCE_ERROR_KEY] = (
-                "Не удалось проверить файл",
-                "Проверьте выбранный файл и повторите попытку.",
+                "Проверка данных не пройдена",
+                "Структура или значения файла не соответствуют требованиям подготовки данных.",
             )
     except OSError:
         st.session_state[_SOURCE_ERROR_KEY] = (
@@ -855,10 +882,13 @@ def _restore_source_controls(state: MutableMapping[str, Any]) -> None:
     restoring_after_navigation = _SOURCE_KIND_WIDGET_KEY not in state
     if restoring_after_navigation:
         state[_SOURCE_KIND_WIDGET_KEY] = source_kind
-    if source_kind == "explicit_local" and local_path and (
-        restoring_after_navigation or _MANUAL_LOCAL_FILE_PATH_KEY not in state
-    ):
-        state[_SELECTED_LOCAL_FILE_PATH_KEY] = local_path
+    if source_kind == "explicit_local" and local_path:
+        staged = state.get(_STAGED_DATASET_UPLOAD_KEY)
+        if not isinstance(staged, StagedUpload) or str(staged.local_path) != local_path:
+            # The path is intentionally not restored into an input: browser
+            # uploads are session-scoped and must be selected again if their
+            # controlled runtime copy has already been cleaned up.
+            state.pop(_STAGED_DATASET_UPLOAD_KEY, None)
 
 
 def _synchronize_source_selection(state: MutableMapping[str, Any], locator: tuple[str, str]) -> None:
@@ -1368,24 +1398,36 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
         "Целевая колонка не нужна. Сохранённая модель ожидает тот же набор признаков, на котором была обучена; "
         "дополнительные колонки допустимы."
     )
-    if st.button("Выбрать файл…", key="choose-inference-local-file", type="secondary"):
+    uploaded = st.file_uploader(
+        "Выберите файл для прогноза",
+        type=[extension.removeprefix(".") for extension in sorted(_SUPPORTED_SOURCE_EXTENSIONS)],
+        key=_BROWSER_INFERENCE_UPLOAD_WIDGET_KEY,
+        help="Поддерживаются CSV, XLSX, XLSB и Parquet. Файл передаётся из браузера.",
+    )
+    staged = st.session_state.get(_STAGED_INFERENCE_UPLOAD_KEY)
+    if uploaded is not None:
         try:
-            selected = choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)
-        except NativeFilePickerUnavailable:
-            st.warning("Не удалось открыть окно выбора файла. Укажите путь вручную ниже.")
+            staged = stage_browser_upload(
+                uploaded,
+                previous=staged if isinstance(staged, StagedUpload) else None,
+            )
+        except UnsupportedUploadExtension:
+            st.error("Формат файла не поддерживается")
+            st.write(f"Выберите файл поддерживаемого формата: {', '.join(_SUPPORTED_SOURCE_EXTENSIONS)}.")
+        except EmptyUploadError:
+            st.error("Файл пустой")
+            st.write("Выберите файл, содержащий данные.")
+        except UploadReadError:
+            st.error("Не удалось загрузить файл")
+            st.write("Не удалось получить или временно сохранить содержимое файла. Повторите загрузку.")
         else:
-            if selected:
-                st.session_state[_INFERENCE_SELECTED_LOCAL_FILE_PATH_KEY] = selected
-                st.session_state[_INFERENCE_MANUAL_LOCAL_FILE_PATH_KEY] = ""
-                set_inference_source_path(st.session_state, selected)
-    with st.expander("Указать расположение файла вручную", expanded=False):
-        manual_path = st.text_input(
-            "Путь к файлу для прогноза",
-            key=_INFERENCE_MANUAL_LOCAL_FILE_PATH_KEY,
-            placeholder="Выберите файл или укажите его расположение",
-        )
-    source_path = manual_path.strip() or st.session_state.get(_INFERENCE_SELECTED_LOCAL_FILE_PATH_KEY, "")
-    set_inference_source_path(st.session_state, source_path)
+            st.session_state[_STAGED_INFERENCE_UPLOAD_KEY] = staged
+            set_inference_source_path(st.session_state, str(staged.local_path))
+
+    source_path = str(staged.local_path) if isinstance(staged, StagedUpload) else ""
+    if isinstance(staged, StagedUpload):
+        st.write(f"Файл: {staged.display_name}")
+        st.caption("Файл выбран. Нажмите «Получить прогноз», чтобы проверить его и применить модель.")
     if st.button(
         "Получить прогноз",
         key="run-targetless-inference",
@@ -1395,7 +1437,7 @@ def _render_local_model_use_flow(runtime, artifact: Any) -> None:
         status = st.status("Проверяем файл и рассчитываем прогноз", expanded=True)
         status.write("Читаем файл, проверяем обязательные столбцы и применяем сохранённую модель.")
         try:
-            snapshot = TabularReader().read(Path(source_path))
+            snapshot = TabularReader().read(staged.local_path)
             batch = workflow.predict(loaded_model_version=loaded_model_version, snapshot=snapshot)
         except (KeyError, TypeError, ValueError, RuntimeError, OSError) as error:
             status.update(label="Прогноз не рассчитан", state="error", expanded=True)
