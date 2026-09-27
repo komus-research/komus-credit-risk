@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
 from enum import Enum
 from hashlib import sha256
-import json
 from typing import Any
 
 
@@ -16,7 +17,7 @@ def _json_value(value: Any) -> Any:
         return _json_value(asdict(value))
     if isinstance(value, Enum):
         return _json_value(value.value)
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {str(key): _json_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]

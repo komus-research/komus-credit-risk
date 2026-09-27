@@ -1,6 +1,6 @@
 # Configurable Model Platform V1 — STATUS
 
-Phase: **READY_FOR_IMPLEMENTATION**
+Phase: **MP-A IMPLEMENTATION COMPLETE / READY FOR REVIEW**
 
 Architecture: **ACCEPTED**
 
@@ -27,7 +27,19 @@ The open work is the product model layer:
 - model catalog DTO;
 - backward-compatible migration of the current four GBDT models.
 
-No implementation commit for MP-A…MP-E has been started by this documentation update.
+MP-A is implemented and ready for review. It adds immutable declarative parameter,
+recommended-profile, capability, input-contract and trusted-plugin contracts plus a
+fail-closed `ModelPluginRegistry`. CatBoost, XGBoost, LightGBM and GBDT Mean are
+registered in frozen-compatible mode with payloads exactly equal to their existing
+accepted profiles. The existing `ModelRegistry`, runner, persistence, inference,
+Local SHAP and UI are intentionally untouched.
+
+MP-B (override resolution/configurable adapters), MP-C (configuration provenance and
+smoke), MP-D (provider-based persistence) and MP-E (catalog/runtime integration)
+remain intentionally unimplemented.
+
+Verification evidence: focused MP-A contract tests and existing GBDT/planning
+regression tests are run before review, followed by the full suite and static checks.
 
 ## Next implementation stage
 
