@@ -728,7 +728,7 @@ Source:
 
 ### Order
 
-1. Configurable Model Platform V1: MP-A + MP-B ACCEPTED; реализовать/review MP-C → MP-E.
+1. Configurable Model Platform V1: MP-A + MP-B + MP-C ACCEPTED; реализовать/review MP-D → MP-E.
 2. Architect-lock and implement/review Feature Grouping Propagation V1.
 3. Только после ACCEPT обеих backend-задач вернуться к UX экрана «Алгоритм».
 4. Затем продолжить «Проверка качества → Результат» и финальный product E2E.
