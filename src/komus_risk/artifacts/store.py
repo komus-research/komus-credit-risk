@@ -518,6 +518,8 @@ class ExperimentArtifactStore:
             or smoke.feature_registry_hash != dataset.feature_registry_hash
             or smoke.population_id != population.population_id
             or smoke.population_fingerprint != population.population_fingerprint
+            or smoke.population_row_positions_hash
+            != stable_hash({"row_positions": list(population.row_positions)})
             or smoke.selected_feature_ids != config.feature_ids
             or smoke.seed != config.seed
         ):

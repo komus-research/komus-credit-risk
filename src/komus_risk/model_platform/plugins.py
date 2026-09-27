@@ -291,8 +291,7 @@ def _capabilities(
             ),
             CapabilityDeclaration(
                 CapabilityDomain.SMOKE_TEST,
-                CapabilitySupport.UNSUPPORTED,
-                requirements={"planned_stage": "MP-C"},
+                CapabilitySupport.SUPPORTED,
             ),
         ),
     )

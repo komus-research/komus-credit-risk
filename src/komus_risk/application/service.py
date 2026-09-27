@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from copy import deepcopy
 from uuid import uuid4
 
 from komus_risk.artifacts import ExperimentArtifactStore, LoadedExperimentArtifact
@@ -111,10 +110,22 @@ class ExperimentApplicationService:
         feature_registry: FeatureRegistry,
         population: EvaluationPopulation,
         request: RunExperimentRequest,
+        prepared_context: PreparedDatasetContext | None = None,
         progress_listener: Callable[[ExperimentProgressEvent], None] | None = None,
     ) -> LoadedExperimentArtifact:
         if not isinstance(request, RunExperimentRequest):
             raise TypeError("request must be RunExperimentRequest.")
+        if (
+            self.model_configuration_service is None
+            or self._model_plugin_registry is None
+        ):
+            raise SmokeGateError("MODEL_PLATFORM_REQUIRED")
+        context = self._resolve_prepared_context(
+            loaded_dataset, feature_registry, population, prepared_context
+        )
+        loaded_dataset = context.loaded_dataset
+        feature_registry = context.feature_registry
+        population = context.population
         contract = loaded_dataset.contract
         if (
             contract.feature_registry_id != feature_registry.registry_id
@@ -133,44 +144,34 @@ class ExperimentApplicationService:
         model_spec = self.model_registry.get(request.model_id)
         configuration_record = None
         matching_smoke = None
-        if self.model_configuration_service is None:
-            if request.configuration_mode != "RECOMMENDED" or request.user_overrides:
-                raise ValueError("Model configuration service is not configured.")
-            resolved_parameters = deepcopy(model_spec.default_profile)
-        else:
-            resolved = self.model_configuration_service.resolve(
-                model_id=request.model_id,
-                mode=request.configuration_mode,
-                user_overrides=request.user_overrides,
+        resolved = self.model_configuration_service.resolve(
+            model_id=request.model_id,
+            mode=request.configuration_mode,
+            user_overrides=request.user_overrides,
+        )
+        if (resolved.model_version, resolved.adapter_version) != (
+            model_spec.version,
+            model_spec.adapter_version,
+        ):
+            raise ValueError(
+                "Resolved model configuration is incompatible with ModelSpec."
             )
-            if (resolved.model_version, resolved.adapter_version) != (
-                model_spec.version,
-                model_spec.adapter_version,
-            ):
-                raise ValueError(
-                    "Resolved model configuration is incompatible with ModelSpec."
-                )
-            resolved_parameters = resolved.resolved_parameters_dict()
-            plugin = self._model_plugin_registry.get(request.model_id)
-            configuration_record = ModelConfigurationRecord.from_resolved(
-                resolved, plugin
-            )
-            context = self._prepared_context(
-                loaded_dataset, feature_registry, population
-            )
-            expected_identity = self._smoke_service.expected_identity(
-                context,
-                request.selected_feature_ids,
-                configuration_record,
-                request.seed,
-            )
-            matching_smoke = self._smoke_evidence.get(expected_identity)
-            if matching_smoke is None:
-                raise SmokeGateError("SMOKE_REQUIRED")
-            if matching_smoke.status is SmokeStatus.FAIL:
-                raise SmokeGateError("SMOKE_FAILED")
-            if matching_smoke.status is not SmokeStatus.PASS:
-                raise SmokeGateError("SMOKE_NOT_MATCHING")
+        resolved_parameters = resolved.resolved_parameters_dict()
+        plugin = self._model_plugin_registry.get(request.model_id)
+        configuration_record = ModelConfigurationRecord.from_resolved(resolved, plugin)
+        expected_identity = self._smoke_service.expected_identity(
+            context,
+            request.selected_feature_ids,
+            configuration_record,
+            request.seed,
+        )
+        matching_smoke = self._smoke_evidence.get(expected_identity)
+        if matching_smoke is None:
+            raise SmokeGateError("SMOKE_REQUIRED")
+        if matching_smoke.status is SmokeStatus.FAIL:
+            raise SmokeGateError("SMOKE_FAILED")
+        if matching_smoke.status is not SmokeStatus.PASS:
+            raise SmokeGateError("SMOKE_NOT_MATCHING")
         try:
             factory = self.model_factories[request.model_id]
         except KeyError as error:
@@ -243,6 +244,7 @@ class ExperimentApplicationService:
         feature_registry: FeatureRegistry,
         population: EvaluationPopulation,
         request: RunExperimentRequest,
+        prepared_context: PreparedDatasetContext | None = None,
     ) -> SmokeEvidence:
         """Run and retain backend-owned technical evidence for one exact request."""
         if (
@@ -250,6 +252,12 @@ class ExperimentApplicationService:
             or self._model_plugin_registry is None
         ):
             raise SmokeGateError("SMOKE_UNAVAILABLE")
+        context = self._resolve_prepared_context(
+            loaded_dataset, feature_registry, population, prepared_context
+        )
+        loaded_dataset = context.loaded_dataset
+        feature_registry = context.feature_registry
+        population = context.population
         contract = loaded_dataset.contract
         if (
             contract.feature_registry_id != feature_registry.registry_id
@@ -262,7 +270,6 @@ class ExperimentApplicationService:
             user_overrides=request.user_overrides,
         )
         plugin = self._model_plugin_registry.get(request.model_id)
-        context = self._prepared_context(loaded_dataset, feature_registry, population)
         evidence = self._smoke_service.run(
             context, request.selected_feature_ids, resolved, request.seed, plugin
         )
@@ -270,11 +277,19 @@ class ExperimentApplicationService:
         return evidence
 
     @staticmethod
-    def _prepared_context(
+    def _resolve_prepared_context(
         loaded_dataset: LoadedDataset,
         feature_registry: FeatureRegistry,
         population: EvaluationPopulation,
+        prepared_context: PreparedDatasetContext | None,
     ) -> PreparedDatasetContext:
+        if prepared_context is not None:
+            ExperimentApplicationService._validate_prepared_context(
+                loaded_dataset, feature_registry, population, prepared_context
+            )
+            return prepared_context
+        if loaded_dataset.contract.final_test_locked:
+            raise SmokeGateError("AUTHORITATIVE_CONTEXT_REQUIRED")
         context_id = stable_hash(
             {
                 "dataset_id": loaded_dataset.contract.dataset_id,
@@ -283,6 +298,9 @@ class ExperimentApplicationService:
                 "feature_registry_hash": feature_registry.registry_hash,
                 "population_id": population.population_id,
                 "population_fingerprint": population.population_fingerprint,
+                "population_row_positions_hash": stable_hash(
+                    {"row_positions": list(population.row_positions)}
+                ),
             }
         )
         return PreparedDatasetContext(
@@ -292,6 +310,27 @@ class ExperimentApplicationService:
             feature_registry,
             population,
         )
+
+    @staticmethod
+    def _validate_prepared_context(
+        loaded_dataset: LoadedDataset,
+        feature_registry: FeatureRegistry,
+        population: EvaluationPopulation,
+        context: PreparedDatasetContext,
+    ) -> None:
+        expected_population = context.population
+        if (
+            context.loaded_dataset.contract.to_dict()
+            != loaded_dataset.contract.to_dict()
+            or context.feature_registry.registry_id != feature_registry.registry_id
+            or context.feature_registry.registry_hash != feature_registry.registry_hash
+            or expected_population.row_positions != population.row_positions
+            or expected_population.population_id != population.population_id
+            or expected_population.population_fingerprint
+            != population.population_fingerprint
+            or expected_population.partition_role != population.partition_role
+        ):
+            raise SmokeGateError("PREPARED_CONTEXT_MISMATCH")
 
     @staticmethod
     def _notify_progress(

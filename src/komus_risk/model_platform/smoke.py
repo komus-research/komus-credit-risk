@@ -67,6 +67,7 @@ class SmokeEvidence:
     feature_registry_hash: str
     population_id: str
     population_fingerprint: str
+    population_row_positions_hash: str
     selected_feature_ids: tuple[str, ...]
     selected_feature_set_hash: str
     plugin_contract_hash: str
@@ -99,6 +100,11 @@ class SmokeEvidence:
             {"ordered_feature_ids": list(self.selected_feature_ids)}
         ):
             raise ValueError("Smoke evidence feature hash is invalid.")
+        if (
+            not isinstance(self.population_row_positions_hash, str)
+            or not self.population_row_positions_hash
+        ):
+            raise ValueError("Smoke evidence population identity is invalid.")
         if self.sampled_rows_hash != stable_hash(
             {"row_positions": list(self.sampled_row_positions)}
         ):
@@ -134,6 +140,7 @@ class SmokeEvidence:
             "feature_registry_hash": self.feature_registry_hash,
             "population_id": self.population_id,
             "population_fingerprint": self.population_fingerprint,
+            "population_row_positions_hash": self.population_row_positions_hash,
             "selected_feature_ids": list(self.selected_feature_ids),
             "selected_feature_set_hash": self.selected_feature_set_hash,
             "plugin_contract_hash": self.plugin_contract_hash,
@@ -288,6 +295,9 @@ class ModelConfigurationSmokeTestService:
             "feature_registry_hash": context.feature_registry.registry_hash,
             "population_id": context.population.population_id,
             "population_fingerprint": context.population.population_fingerprint,
+            "population_row_positions_hash": stable_hash(
+                {"row_positions": list(context.population.row_positions)}
+            ),
             "selected_feature_ids": list(selected),
             "selected_feature_set_hash": stable_hash(
                 {"ordered_feature_ids": list(selected)}
