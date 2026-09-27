@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from komus_risk.model_platform.configuration import ResolvedModelConfiguration
+
 from komus_risk.contracts import DatasetContract, FeatureUsageStatus
 
 
@@ -95,10 +97,13 @@ class PlanningRequestMetadata:
     reference_artifact_id: str | None
     changed_dimension: str | None
     changed_elements: tuple[str, ...]
+    configuration_mode: str = "RECOMMENDED"
+    user_overrides: Mapping[str, Any] = MappingProxyType({})
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "selected_feature_ids", tuple(self.selected_feature_ids))
         object.__setattr__(self, "changed_elements", tuple(self.changed_elements))
+        object.__setattr__(self, "user_overrides", freeze_value(dict(self.user_overrides)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,3 +117,4 @@ class ExperimentPlan:
     model: ModelView | None
     is_valid: bool
     validation_errors: tuple[str, ...]
+    resolved_model_configuration: ResolvedModelConfiguration | None = None

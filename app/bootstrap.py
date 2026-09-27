@@ -56,6 +56,7 @@ from komus_risk.models import (
     ModelAdapterFactory,
     XGBoostFactory,
 )
+from komus_risk.model_platform import build_builtin_model_plugin_registry
 from komus_risk.planning import ExperimentPlanningService
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
@@ -454,6 +455,7 @@ def create_runtime(
     registry = ModelRegistry()
     for spec in (CATBOOST_MODEL_SPEC, XGBOOST_MODEL_SPEC, LIGHTGBM_MODEL_SPEC, GBDT_MEAN_MODEL_SPEC):
         registry.register(spec)
+    plugin_registry = build_builtin_model_plugin_registry()
     store_root = Path(artifact_root) if artifact_root is not None else _repository_root() / ".streamlit-artifacts"
     code_version = "streamlit-prototype-v1"
     artifact_store = ExperimentArtifactStore(store_root)
@@ -485,13 +487,14 @@ def create_runtime(
         result_interpreter_runtime=runtime_configuration,
     )
     return PrototypeRuntime(
-        ExperimentPlanningService(),
+        ExperimentPlanningService(model_plugin_registry=plugin_registry),
         ExperimentApplicationService(
             model_registry=registry,
             model_factories=factories,
             artifact_store=artifact_store,
             comparison_service=ExperimentComparisonService(),
             code_version=code_version,
+            model_plugin_registry=plugin_registry,
         ),
         registry,
         factories,

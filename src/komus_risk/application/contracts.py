@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from copy import deepcopy
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +19,8 @@ class RunExperimentRequest:
     reference_artifact_id: str | None
     changed_dimension: str | None
     changed_elements: tuple[str, ...]
+    configuration_mode: str = "RECOMMENDED"
+    user_overrides: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         feature_ids = tuple(self.selected_feature_ids)
@@ -37,5 +41,12 @@ class RunExperimentRequest:
             raise ValueError("Change declaration requires reference_artifact_id.")
         if self.changed_dimension is None and changed_elements:
             raise ValueError("changed_elements requires changed_dimension.")
+        if self.configuration_mode not in {"RECOMMENDED", "ADVANCED"}:
+            raise ValueError("configuration_mode must be RECOMMENDED or ADVANCED.")
+        if not isinstance(self.user_overrides, Mapping) or any(
+            not isinstance(key, str) for key in self.user_overrides
+        ):
+            raise ValueError("user_overrides must be a mapping with string paths.")
         object.__setattr__(self, "selected_feature_ids", feature_ids)
         object.__setattr__(self, "changed_elements", changed_elements)
+        object.__setattr__(self, "user_overrides", deepcopy(dict(self.user_overrides)))

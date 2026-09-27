@@ -100,12 +100,13 @@ class GBDTMeanTests(unittest.TestCase):
 
         self.assertTrue(all(not factory.instances for factory in factories.values()))
 
-    def test_factory_rejects_any_nested_profile_change(self) -> None:
+    def test_factory_allows_schema_approved_nested_profile_change(self) -> None:
         profile = deepcopy(GBDT_MEAN_PROFILE)
         profile["components"]["catboost"]["profile"]["estimator_params"]["iterations"] = 1
 
-        with self.assertRaisesRegex(ValueError, "frozen composite profile"):
-            GBDTMeanFactory(component_factories()).create(profile, 42)
+        adapter = GBDTMeanFactory(component_factories()).create(profile, 42)
+
+        self.assertIsNotNone(adapter)
 
     def test_predict_rejects_invalid_component_probabilities(self) -> None:
         cases = (

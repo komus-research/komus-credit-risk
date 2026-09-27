@@ -18,7 +18,7 @@ from .common import (
     inner_stratified_split,
     prepare_binary_target,
     prepare_numeric_input,
-    validate_locked_profile,
+    validate_configurable_profile,
 )
 
 
@@ -28,6 +28,13 @@ LIGHTGBM_ESTIMATOR_PARAMS = {
     "colsample_bytree": 0.85, "reg_alpha": 0.05, "reg_lambda": 1.0, "n_jobs": -1, "verbosity": -1,
 }
 LIGHTGBM_PROFILE = build_profile(LIGHTGBM_ESTIMATOR_PARAMS)
+LIGHTGBM_EDITABLE_PARAMETERS = {
+    "n_estimators": (int, 1, 10000), "learning_rate": (float, 0.000001, 1.0),
+    "num_leaves": (int, 2, 255), "max_depth": (int, -1, 16),
+    "min_child_samples": (int, 1, 10000), "subsample": (float, 0.000001, 1.0),
+    "subsample_freq": (int, 0, 100), "colsample_bytree": (float, 0.000001, 1.0),
+    "reg_alpha": (float, 0.0, 1000.0), "reg_lambda": (float, 0.0, 1000.0),
+}
 LIGHTGBM_MODEL_SPEC = ModelSpec(
     "lightgbm", "LightGBM", "accepted_stage1_v2", ("binary",),
     "CPU LightGBM по зафиксированному Stage 1 V2 recipe.",
@@ -39,7 +46,7 @@ LIGHTGBM_MODEL_SPEC = ModelSpec(
 
 class LightGBMAdapter(BinaryClassifierAdapter):
     def __init__(self, profile: dict[str, Any], seed: int) -> None:
-        self.profile = validate_locked_profile(profile, LIGHTGBM_PROFILE)
+        self.profile = validate_configurable_profile(profile, LIGHTGBM_PROFILE, LIGHTGBM_EDITABLE_PARAMETERS)
         self.seed = seed
         self.search_estimator: LGBMClassifier | None = None
         self.refit_estimator: LGBMClassifier | None = None
@@ -79,4 +86,4 @@ class LightGBMFactory(ModelAdapterFactory):
 
     def create(self, parameters: dict[str, Any], seed: int) -> BinaryClassifierAdapter:
         ensure_library_version("lightgbm", "4.7.0")
-        return LightGBMAdapter(validate_locked_profile(parameters, LIGHTGBM_PROFILE), seed)
+        return LightGBMAdapter(validate_configurable_profile(parameters, LIGHTGBM_PROFILE, LIGHTGBM_EDITABLE_PARAMETERS), seed)

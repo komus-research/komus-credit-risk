@@ -18,7 +18,7 @@ from .common import (
     inner_stratified_split,
     prepare_binary_target,
     prepare_numeric_input,
-    validate_locked_profile,
+    validate_configurable_profile,
 )
 
 
@@ -28,6 +28,12 @@ XGBOOST_ESTIMATOR_PARAMS = {
     "objective": "binary:logistic", "eval_metric": "logloss", "n_jobs": -1, "tree_method": "hist",
 }
 XGBOOST_PROFILE = build_profile(XGBOOST_ESTIMATOR_PARAMS)
+XGBOOST_EDITABLE_PARAMETERS = {
+    "n_estimators": (int, 1, 10000), "learning_rate": (float, 0.000001, 1.0),
+    "max_depth": (int, 0, 16), "min_child_weight": (float, 0.0, 1000.0),
+    "subsample": (float, 0.000001, 1.0), "colsample_bytree": (float, 0.000001, 1.0),
+    "reg_alpha": (float, 0.0, 1000.0), "reg_lambda": (float, 0.0, 1000.0),
+}
 XGBOOST_MODEL_SPEC = ModelSpec(
     "xgboost", "XGBoost", "accepted_stage1_v2", ("binary",),
     "CPU XGBoost по зафиксированному Stage 1 V2 recipe.",
@@ -39,7 +45,7 @@ XGBOOST_MODEL_SPEC = ModelSpec(
 
 class XGBoostAdapter(BinaryClassifierAdapter):
     def __init__(self, profile: dict[str, Any], seed: int) -> None:
-        self.profile = validate_locked_profile(profile, XGBOOST_PROFILE)
+        self.profile = validate_configurable_profile(profile, XGBOOST_PROFILE, XGBOOST_EDITABLE_PARAMETERS)
         self.seed = seed
         self.search_estimator: XGBClassifier | None = None
         self.refit_estimator: XGBClassifier | None = None
@@ -79,4 +85,4 @@ class XGBoostFactory(ModelAdapterFactory):
 
     def create(self, parameters: dict[str, Any], seed: int) -> BinaryClassifierAdapter:
         ensure_library_version("xgboost", "3.4.1")
-        return XGBoostAdapter(validate_locked_profile(parameters, XGBOOST_PROFILE), seed)
+        return XGBoostAdapter(validate_configurable_profile(parameters, XGBOOST_PROFILE, XGBOOST_EDITABLE_PARAMETERS), seed)

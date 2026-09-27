@@ -9,9 +9,11 @@ from .contracts import (
     PlanningRequestMetadata,
     PopulationSummary,
 )
+from komus_risk.model_platform import ResolvedModelConfiguration
 from .service import ExperimentPlanningService
 
 __all__ = [
     "DatasetPassport", "ExperimentPlan", "ExperimentPlanningService", "FeatureGroupView", "FeatureView",
     "ModelView", "PlanningRequestMetadata", "PopulationSummary",
+    "ResolvedModelConfiguration",
 ]

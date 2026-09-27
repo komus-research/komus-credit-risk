@@ -8,12 +8,15 @@ from typing import Any
 from komus_risk.models.gbdt import (
     CATBOOST_MODEL_SPEC,
     CATBOOST_PROFILE,
+    CATBOOST_EDITABLE_PARAMETERS,
     GBDT_MEAN_MODEL_SPEC,
     GBDT_MEAN_PROFILE,
     LIGHTGBM_MODEL_SPEC,
     LIGHTGBM_PROFILE,
+    LIGHTGBM_EDITABLE_PARAMETERS,
     XGBOOST_MODEL_SPEC,
     XGBOOST_PROFILE,
+    XGBOOST_EDITABLE_PARAMETERS,
     CatBoostFactory,
     GBDTMeanFactory,
     LightGBMFactory,
@@ -64,17 +67,23 @@ def _value_type(value: Any) -> ParameterValueType:
     raise TypeError(f"Unsupported parameter value in trusted schema: {value!r}")
 
 
-def _parameter(path: str, name: str, value: Any, order: int) -> ModelParameter:
+def _parameter(
+    path: str, name: str, value: Any, order: int,
+    constraints: dict[str, tuple[type, int | float | None, int | float | None]],
+) -> ModelParameter:
+    _, minimum, maximum = constraints[name]
     return ModelParameter(
         parameter_path=path,
         display_name_ru=name,
         description_ru=f"Зафиксированное значение параметра {name}.",
-        value_type=_value_type(value),
+        value_type=(ParameterValueType.FLOAT if constraints[name][0] is float else _value_type(value)),
         required=True,
         nullable=False,
         editable=True,
         default_value=value,
         recommended_value=value,
+        minimum=minimum,
+        maximum=maximum,
         ui_level=ParameterUiLevel.ADVANCED,
         group_id="estimator",
         display_order=order,
@@ -102,7 +111,8 @@ def _locked_enum(
 
 
 def _schema(
-    spec: ModelSpec, profile: dict[str, Any], names: tuple[str, ...]
+    spec: ModelSpec, profile: dict[str, Any], names: tuple[str, ...],
+    constraints: dict[str, tuple[type, int | float | None, int | float | None]],
 ) -> ModelParameterSchema:
     return ModelParameterSchema(
         schema_id=f"{spec.model_id}_initial_estimator",
@@ -116,6 +126,7 @@ def _schema(
                 name,
                 profile["estimator_params"][name],
                 order,
+                constraints,
             )
             for order, name in enumerate(names)
         ),
@@ -132,7 +143,7 @@ def _mean_schema() -> ModelParameterSchema:
         ),
     ]
     models = (
-        ("catboost", CATBOOST_PROFILE, ("iterations", "learning_rate", "depth")),
+        ("catboost", CATBOOST_PROFILE, ("iterations", "learning_rate", "depth"), CATBOOST_EDITABLE_PARAMETERS),
         (
             "xgboost",
             XGBOOST_PROFILE,
@@ -145,7 +156,7 @@ def _mean_schema() -> ModelParameterSchema:
                 "colsample_bytree",
                 "reg_alpha",
                 "reg_lambda",
-            ),
+            ), XGBOOST_EDITABLE_PARAMETERS,
         ),
         (
             "lightgbm",
@@ -161,11 +172,11 @@ def _mean_schema() -> ModelParameterSchema:
                 "colsample_bytree",
                 "reg_alpha",
                 "reg_lambda",
-            ),
+            ), LIGHTGBM_EDITABLE_PARAMETERS,
         ),
     )
     order = 1
-    for model_id, profile, names in models:
+    for model_id, profile, names, constraints in models:
         component = GBDT_MEAN_PROFILE["components"][model_id]
         parameters.extend(
             (
@@ -191,12 +202,14 @@ def _mean_schema() -> ModelParameterSchema:
                     parameter_path=f"/components/{model_id}/profile/estimator_params/{name}",
                     display_name_ru=f"{model_id}: {name}",
                     description_ru=f"Параметр component {model_id}: {name}.",
-                    value_type=_value_type(value),
+                    value_type=(ParameterValueType.FLOAT if constraints[name][0] is float else _value_type(value)),
                     required=True,
                     nullable=False,
                     editable=True,
                     default_value=value,
                     recommended_value=value,
+                    minimum=constraints[name][1],
+                    maximum=constraints[name][2],
                     ui_level=ParameterUiLevel.ADVANCED,
                     group_id=f"component_{model_id}",
                     display_order=order,
@@ -254,9 +267,7 @@ def _capabilities(
                 CapabilityDomain.TRAINING, CapabilitySupport.SUPPORTED
             ),
             CapabilityDeclaration(
-                CapabilityDomain.CONFIGURATION,
-                CapabilitySupport.UNSUPPORTED,
-                requirements={"planned_stage": "MP-B"},
+                CapabilityDomain.CONFIGURATION, CapabilitySupport.SUPPORTED,
             ),
             CapabilityDeclaration(
                 CapabilityDomain.PERSISTENCE,
@@ -295,6 +306,7 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
             CATBOOST_MODEL_SPEC,
             CATBOOST_PROFILE,
             ("iterations", "learning_rate", "depth"),
+            CATBOOST_EDITABLE_PARAMETERS,
         ),
         _profile(CATBOOST_MODEL_SPEC, CATBOOST_PROFILE),
         CatBoostFactory(),
@@ -318,6 +330,7 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
                 "reg_alpha",
                 "reg_lambda",
             ),
+            XGBOOST_EDITABLE_PARAMETERS,
         ),
         _profile(XGBOOST_MODEL_SPEC, XGBOOST_PROFILE),
         XGBoostFactory(),
@@ -342,6 +355,7 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
                 "reg_alpha",
                 "reg_lambda",
             ),
+            LIGHTGBM_EDITABLE_PARAMETERS,
         ),
         _profile(LIGHTGBM_MODEL_SPEC, LIGHTGBM_PROFILE),
         LightGBMFactory(),

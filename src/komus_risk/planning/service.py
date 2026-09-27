@@ -9,6 +9,7 @@ from komus_risk.contracts import FeatureUsageStatus
 from komus_risk.data import LoadedDataset
 from komus_risk.experiments import EvaluationPopulation
 from komus_risk.models import ModelAdapterFactory
+from komus_risk.model_platform import ModelConfigurationError, ModelConfigurationService, ModelPluginRegistry
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 from .contracts import (
@@ -26,6 +27,13 @@ from .contracts import (
 class ExperimentPlanningService:
     """Produces immutable planning DTOs from trusted contracts and metadata."""
 
+    def __init__(self, *, model_plugin_registry: ModelPluginRegistry | None = None) -> None:
+        self._model_configuration_service = (
+            ModelConfigurationService(model_plugin_registry)
+            if model_plugin_registry is not None
+            else None
+        )
+
     def describe_dataset(self, loaded_dataset: LoadedDataset) -> DatasetPassport:
         return DatasetPassport.from_contract(loaded_dataset.contract)
 
@@ -34,7 +42,6 @@ class ExperimentPlanningService:
             self._feature_view(spec)
             for spec in sorted(feature_registry._features.values(), key=lambda item: (item.display_order, item.feature_id))
         )
-
     def list_feature_groups(self, feature_registry: FeatureRegistry) -> tuple[FeatureGroupView, ...]:
         """Expose group presentation metadata without leaking registry internals to callers."""
         return tuple(
@@ -89,6 +96,20 @@ class ExperimentPlanningService:
             model = self._model_view(model_spec, factories.get(model_spec.model_id))
             if not model.runnable:
                 errors.append(f"non_runnable_model:{request.model_id}")
+        resolved_configuration = None
+        if model is not None:
+            if self._model_configuration_service is None:
+                if request.configuration_mode != "RECOMMENDED" or request.user_overrides:
+                    errors.append("model_configuration:PLUGIN_CONFIGURATION_INVALID")
+            else:
+                try:
+                    resolved_configuration = self._model_configuration_service.resolve(
+                        model_id=request.model_id,
+                        mode=request.configuration_mode,
+                        user_overrides=request.user_overrides,
+                    )
+                except ModelConfigurationError as error:
+                    errors.append(f"model_configuration:{error.code}")
         selected_features = tuple(self._feature_view(spec) for spec in selected_specs)
         return ExperimentPlan(
             request=request,
@@ -98,6 +119,7 @@ class ExperimentPlanningService:
             selected_features=selected_features,
             feature_groups=tuple(sorted({spec.group_id for spec in selected_specs})),
             model=model,
+            resolved_model_configuration=resolved_configuration,
             is_valid=not errors,
             validation_errors=tuple(errors),
         )

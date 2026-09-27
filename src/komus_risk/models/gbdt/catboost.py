@@ -18,7 +18,7 @@ from .common import (
     inner_stratified_split,
     prepare_binary_target,
     prepare_numeric_input,
-    validate_locked_profile,
+    validate_configurable_profile,
 )
 
 
@@ -28,6 +28,11 @@ CATBOOST_ESTIMATOR_PARAMS = {
     "verbose": False, "allow_writing_files": False,
 }
 CATBOOST_PROFILE = build_profile(CATBOOST_ESTIMATOR_PARAMS)
+CATBOOST_EDITABLE_PARAMETERS = {
+    "iterations": (int, 1, 10000),
+    "learning_rate": (float, 0.000001, 1.0),
+    "depth": (int, 1, 16),
+}
 CATBOOST_MODEL_SPEC = ModelSpec(
     "catboost", "CatBoost", "accepted_stage1_v2", ("binary",),
     "CPU CatBoost по зафиксированному Stage 1 V2 recipe.",
@@ -41,7 +46,7 @@ class CatBoostAdapter(BinaryClassifierAdapter):
     """Search на inner split и refit на 100% outer-train."""
 
     def __init__(self, profile: dict[str, Any], seed: int) -> None:
-        self.profile = validate_locked_profile(profile, CATBOOST_PROFILE)
+        self.profile = validate_configurable_profile(profile, CATBOOST_PROFILE, CATBOOST_EDITABLE_PARAMETERS)
         self.seed = seed
         self.search_estimator: CatBoostClassifier | None = None
         self.refit_estimator: CatBoostClassifier | None = None
@@ -81,4 +86,4 @@ class CatBoostFactory(ModelAdapterFactory):
 
     def create(self, parameters: dict[str, Any], seed: int) -> BinaryClassifierAdapter:
         ensure_library_version("catboost", "1.2.10")
-        return CatBoostAdapter(validate_locked_profile(parameters, CATBOOST_PROFILE), seed)
+        return CatBoostAdapter(validate_configurable_profile(parameters, CATBOOST_PROFILE, CATBOOST_EDITABLE_PARAMETERS), seed)

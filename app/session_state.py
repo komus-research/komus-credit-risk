@@ -269,6 +269,8 @@ def run_request_from_snapshot(snapshot: PlanningRequestMetadata) -> RunExperimen
         reference_artifact_id=snapshot.reference_artifact_id,
         changed_dimension=snapshot.changed_dimension,
         changed_elements=snapshot.changed_elements,
+        configuration_mode=snapshot.configuration_mode,
+        user_overrides=snapshot.user_overrides,
     )
 
 

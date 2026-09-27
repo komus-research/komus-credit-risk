@@ -13,6 +13,7 @@ from komus_risk.contracts import ExperimentConfig, FeatureUsageStatus
 from komus_risk.data import LoadedDataset
 from komus_risk.experiments import EvaluationPopulation, ExperimentProgressEvent, ExperimentRunner
 from komus_risk.models import ModelAdapterFactory
+from komus_risk.model_platform import ModelConfigurationService, ModelPluginRegistry
 from komus_risk.planning.contracts import PlanningRequestMetadata
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
@@ -34,6 +35,8 @@ def to_planning_request_metadata(request: RunExperimentRequest) -> PlanningReque
         reference_artifact_id=request.reference_artifact_id,
         changed_dimension=request.changed_dimension,
         changed_elements=request.changed_elements,
+        configuration_mode=request.configuration_mode,
+        user_overrides=request.user_overrides,
     )
 
 
@@ -48,6 +51,7 @@ class ExperimentApplicationService:
         artifact_store: ExperimentArtifactStore,
         comparison_service: ExperimentComparisonService,
         code_version: str,
+        model_plugin_registry: ModelPluginRegistry | None = None,
     ) -> None:
         if not isinstance(code_version, str) or not code_version.strip():
             raise ValueError("code_version must be a non-empty string.")
@@ -56,6 +60,11 @@ class ExperimentApplicationService:
         self.artifact_store = artifact_store
         self.comparison_service = comparison_service
         self.code_version = code_version
+        self.model_configuration_service = (
+            ModelConfigurationService(model_plugin_registry)
+            if model_plugin_registry is not None
+            else None
+        )
         for key, factory in self.model_factories.items():
             if key != getattr(factory, "model_id", None):
                 raise ValueError("Model factory mapping key must match factory.model_id.")
@@ -82,6 +91,22 @@ class ExperimentApplicationService:
             raise ValueError("Every selected feature must be MODEL_ALLOWED.")
         feature_groups = tuple(sorted({spec.group_id for spec in feature_specs}))
         model_spec = self.model_registry.get(request.model_id)
+        if self.model_configuration_service is None:
+            if request.configuration_mode != "RECOMMENDED" or request.user_overrides:
+                raise ValueError("Model configuration service is not configured.")
+            resolved_parameters = deepcopy(model_spec.default_profile)
+        else:
+            resolved = self.model_configuration_service.resolve(
+                model_id=request.model_id,
+                mode=request.configuration_mode,
+                user_overrides=request.user_overrides,
+            )
+            if (resolved.model_version, resolved.adapter_version) != (
+                model_spec.version,
+                model_spec.adapter_version,
+            ):
+                raise ValueError("Resolved model configuration is incompatible with ModelSpec.")
+            resolved_parameters = resolved.resolved_parameters_dict()
         try:
             factory = self.model_factories[request.model_id]
         except KeyError as error:
@@ -105,7 +130,7 @@ class ExperimentApplicationService:
             feature_groups=feature_groups,
             model_id=model_spec.model_id,
             model_version=model_spec.version,
-            model_parameters=deepcopy(model_spec.default_profile),
+            model_parameters=resolved_parameters,
             protocol_id=request.protocol_id,
             protocol_version=request.protocol_version,
             seed=request.seed,

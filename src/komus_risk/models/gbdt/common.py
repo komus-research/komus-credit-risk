@@ -36,10 +36,43 @@ def build_profile(estimator_params: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def validate_locked_profile(profile: dict[str, Any], expected_profile: dict[str, Any]) -> dict[str, Any]:
-    """Отклоняет неполный или изменённый preset до создания estimator."""
-    if not isinstance(profile, dict) or profile != expected_profile:
-        raise ValueError("Для GBDT требуется полная неизменённая frozen Stage 1 profile.")
+def validate_configurable_profile(
+    profile: dict[str, Any],
+    expected_profile: dict[str, Any],
+    editable_parameters: dict[str, tuple[type, int | float | None, int | float | None]],
+) -> dict[str, Any]:
+    """Admit only complete profiles with explicitly approved estimator deltas.
+
+    This is deliberately a second guard behind ModelConfigurationService: callers
+    cannot smuggle new keys or alter the fit, input, or runtime recipe directly
+    into an adapter factory.
+    """
+    if not isinstance(profile, dict) or set(profile) != set(expected_profile):
+        raise ValueError("GBDT factory requires a complete trusted resolved profile.")
+    for section in ("fit_recipe", "input_policy", "runtime_policy"):
+        if profile.get(section) != expected_profile[section]:
+            raise ValueError("GBDT factory rejects changes outside editable estimator parameters.")
+    candidate = profile.get("estimator_params")
+    expected = expected_profile["estimator_params"]
+    if not isinstance(candidate, dict) or set(candidate) != set(expected):
+        raise ValueError("GBDT factory requires the exact trusted estimator parameter set.")
+    for name, value in candidate.items():
+        if name not in editable_parameters:
+            if value != expected[name]:
+                raise ValueError("GBDT factory rejects changes to locked estimator parameters.")
+            continue
+        expected_type, minimum, maximum = editable_parameters[name]
+        valid_type = (
+            isinstance(value, (int, float)) and not isinstance(value, bool)
+            if expected_type is float
+            else isinstance(value, expected_type) and not isinstance(value, bool)
+        )
+        if not valid_type:
+            raise ValueError("GBDT factory received an invalid editable parameter type.")
+        if minimum is not None and value < minimum:
+            raise ValueError("GBDT factory received an editable parameter below its allowed range.")
+        if maximum is not None and value > maximum:
+            raise ValueError("GBDT factory received an editable parameter above its allowed range.")
     return deepcopy(profile)
 
 

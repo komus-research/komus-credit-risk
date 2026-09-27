@@ -1,6 +1,6 @@
 # Configurable Model Platform V1 — STATUS
 
-Phase: **MP-A ACCEPTED / MP-B READY_FOR_IMPLEMENTATION**
+Phase: **MP-A ACCEPTED / MP-B IMPLEMENTATION COMPLETE / READY FOR REVIEW**
 
 Architecture: **ACCEPTED**
 
@@ -34,9 +34,14 @@ registered in frozen-compatible mode with payloads exactly equal to their existi
 accepted profiles. The existing `ModelRegistry`, runner, persistence, inference,
 Local SHAP and UI are intentionally untouched.
 
-MP-B (override resolution/configurable adapters), MP-C (configuration provenance and
-smoke), MP-D (provider-based persistence) and MP-E (catalog/runtime integration)
-remain intentionally unimplemented.
+MP-B is implemented and ready for review. It resolves `model_id` + mode + sparse
+overrides through the trusted plugin registry into an immutable resolved configuration,
+passes its exact full profile into `ExperimentConfig.model_parameters`, and permits only
+the accepted GBDT estimator parameters (including nested GBDT Mean components). The
+Recommended no-override path remains payload-identical to the accepted profiles.
+
+MP-C (configuration provenance and smoke), MP-D (provider-based persistence) and MP-E
+(catalog/runtime integration) remain intentionally unimplemented.
 
 Final Reviewer verdict after corrective review: **ACCEPT**.
 
@@ -57,8 +62,6 @@ configuration-validator identity. No later stage was implemented inside MP-A.
 
 ## Next implementation stage
 
-**MP-B — Configuration Resolver + Configurable GBDT**
+**MP-C — Provenance + Smoke**
 
-MP-B may now build on the accepted plugin/schema foundation. It must preserve the
-accepted scientific/runtime boundaries and must not pull MP-C smoke, MP-D persistence
-refactor or MP-E frontend catalog work forward without an explicit stage decision.
+MP-C remains the next stage. It must not be pulled forward into MP-B.

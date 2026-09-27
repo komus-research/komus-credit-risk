@@ -110,8 +110,18 @@ class GBDTMeanFactory(ModelAdapterFactory):
         return GBDT_MEAN_MODEL_SPEC
 
     def create(self, parameters: dict[str, Any], seed: int) -> BinaryClassifierAdapter:
-        if not isinstance(parameters, dict) or parameters != GBDT_MEAN_PROFILE:
-            raise ValueError("Для GBDT mean требуется полная неизменённая frozen composite profile.")
+        if not isinstance(parameters, dict) or set(parameters) != set(GBDT_MEAN_PROFILE):
+            raise ValueError("GBDT mean requires a complete trusted resolved composite profile.")
+        if parameters["aggregation"] != GBDT_MEAN_PROFILE["aggregation"] or parameters["seed_policy"] != GBDT_MEAN_PROFILE["seed_policy"]:
+            raise ValueError("GBDT mean aggregation and seed policy are locked.")
+        if not isinstance(parameters.get("components"), dict) or set(parameters["components"]) != set(_COMPONENT_IDENTITIES):
+            raise ValueError("GBDT mean component identities are invalid.")
+        for model_id, identity in _COMPONENT_IDENTITIES.items():
+            component = parameters["components"][model_id]
+            if not isinstance(component, dict) or (
+                component.get("model_version"), component.get("adapter_version")
+            ) != identity[1:]:
+                raise ValueError("GBDT mean component identities are locked.")
         adapters: dict[str, BinaryClassifierAdapter] = {}
         for model_id in sorted(self._component_factories):
             profile = deepcopy(parameters["components"][model_id]["profile"])
