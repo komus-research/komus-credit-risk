@@ -674,8 +674,8 @@ trusted ModelPlugin
 Implementation stages:
 
 1. **MP-A — Contracts + Plugin Registry — ACCEPTED**
-2. **MP-B — Configuration Resolver + Configurable GBDT — NEXT**
-3. **MP-C — Provenance + mandatory Smoke**
+2. **MP-B — Configuration Resolver + Configurable GBDT — ACCEPTED**
+3. **MP-C — Provenance + mandatory Smoke — NEXT**
 4. **MP-D — Persistence Provider Boundary**
 5. **MP-E — Catalog DTO + Integration Regression**
 
@@ -728,7 +728,7 @@ Source:
 
 ### Order
 
-1. Configurable Model Platform V1: MP-A ACCEPTED; реализовать/review MP-B → MP-E.
+1. Configurable Model Platform V1: MP-A + MP-B ACCEPTED; реализовать/review MP-C → MP-E.
 2. Architect-lock and implement/review Feature Grouping Propagation V1.
 3. Только после ACCEPT обеих backend-задач вернуться к UX экрана «Алгоритм».
 4. Затем продолжить «Проверка качества → Результат» и финальный product E2E.

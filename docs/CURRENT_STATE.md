@@ -742,7 +742,7 @@ Accepted main после corrective fix: `93823becde40d70a5e6dc189a3a12714112872
 
 Инвариант остаётся прежним: downstream UI читает только `FeatureRegistry → FeatureGroup`; Proposal/Analyzer state не становится frontend dependency, а grouping не меняет `FeatureUsageStatus` или `selected_feature_ids`.
 
-**Configurable Model Platform V1 — architecture accepted; MP-A accepted; MP-B next.**
+**Configurable Model Platform V1 — architecture accepted; MP-A and MP-B accepted; MP-C next.**
 
 Принят target design:
 
@@ -762,7 +762,10 @@ Accepted MP-A head: `078adc4d009068cd4eb3b3886ec20b2e9aa46017`.
 
 MP-A зафиксировал immutable model-platform contracts, fail-closed `ModelPluginRegistry`,
 frozen-compatible registrations текущих четырёх моделей и deterministic declarative identities.
-Runner, persistence runtime, inference, SHAP и UI не менялись.
+
+MP-B — Configuration Resolver + Configurable GBDT — реализован, прошёл corrective review и получил **Reviewer ACCEPT**.
+Accepted MP-B head: `340b362179714d92dcd5afafb8e2d14155e35d52`.
+Recommended/Advanced resolution теперь backend-authoritative; разрешённые GBDT overrides доходят до `ExperimentConfig.model_parameters`, а scientific/runtime boundaries остаются locked.
 
 Подробный lock:
 
@@ -770,13 +773,13 @@ Runner, persistence runtime, inference, SHAP и UI не менялись.
 
 **Текущий порядок product backend work:**
 
-1. Configurable Model Platform V1 — **MP-A ACCEPTED**, следующий stage MP-B; затем MP-C → MP-E.
+1. Configurable Model Platform V1 — **MP-A + MP-B ACCEPTED**, следующий stage MP-C; затем MP-D → MP-E.
 2. Feature Grouping Propagation V1 — отдельный narrow Architect Lock → Developer → Reviewer.
 3. После ACCEPT обеих backend-задач — продолжение UX с экраном «Алгоритм».
 
 ### Future / not implemented
 
-- Configurable Model Platform V1 stages MP-B → MP-E;
+- Configurable Model Platform V1 stages MP-C → MP-E;
 - end-to-end Feature Grouping Propagation V1;
 - production React/Next.js + thin FastAPI frontend/backend boundary;
 - Dataset History / Persistence V1 как пользовательская история проектов/экспериментов;

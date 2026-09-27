@@ -1,6 +1,6 @@
 # Configurable Model Platform V1 — STATUS
 
-Phase: **MP-A ACCEPTED / MP-B IMPLEMENTATION COMPLETE / READY FOR REVIEW**
+Phase: **MP-A ACCEPTED / MP-B ACCEPTED / MP-C READY_FOR_IMPLEMENTATION**
 
 Architecture: **ACCEPTED**
 
@@ -34,7 +34,7 @@ registered in frozen-compatible mode with payloads exactly equal to their existi
 accepted profiles. The existing `ModelRegistry`, runner, persistence, inference,
 Local SHAP and UI are intentionally untouched.
 
-MP-B is implemented and ready for review. It resolves `model_id` + mode + sparse
+MP-B is implemented and **ACCEPTED**. It resolves `model_id` + mode + sparse
 overrides through the trusted plugin registry into an immutable resolved configuration,
 passes its exact full profile into `ExperimentConfig.model_parameters`, and permits only
 the accepted GBDT estimator parameters (including nested GBDT Mean components). The
@@ -44,25 +44,30 @@ Corrective review fixes applied: non-finite numeric Advanced values now fail thr
 stable configuration error before hashing, factories independently reject non-finite
 editable values, and GBDT Mean component envelopes require their exact canonical keys.
 
+Final MP-B Reviewer verdict after corrective review: **ACCEPT**.
+
+Accepted MP-B head: `340b362179714d92dcd5afafb8e2d14155e35d52`.
+
 MP-C (configuration provenance and smoke), MP-D (provider-based persistence) and MP-E
 (catalog/runtime integration) remain intentionally unimplemented.
 
-Final Reviewer verdict after corrective review: **ACCEPT**.
-
 Accepted MP-A head: `078adc4d009068cd4eb3b3886ec20b2e9aa46017`.
 
-Verification evidence after correction:
-
-- focused MP-A: 14 passed;
-- existing GBDT/planning/runner: 30 passed, 22 subtests;
-- full suite: 276 passed, 108 subtests;
-- Ruff/format: PASS;
-- `compileall src app tests`: PASS;
-- `git diff --check`: PASS.
-
-Corrective fixes closed contract deep immutability, bidirectional
+MP-A final verification included 276 passed, 108 subtests plus static checks.
+Its corrective review closed contract deep immutability, bidirectional
 provider/capability consistency, schema/profile recommended-value consistency and
-configuration-validator identity. No later stage was implemented inside MP-A.
+configuration-validator identity.
+
+MP-B final verification after corrective review:
+
+- focused: 79 passed, 53 subtests;
+- full suite: 288 passed, 128 subtests;
+- `compileall src app tests`: PASS;
+- `git diff --check`: PASS;
+- focused new resolver/test Ruff + format: PASS;
+- unrelated historical Ruff findings remained untouched.
+
+No MP-C/MP-D/MP-E behavior was implemented inside MP-B.
 
 ## Next implementation stage
 
