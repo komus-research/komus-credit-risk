@@ -628,23 +628,134 @@ Product gap: подключённый generic interpreter не использу�
 - `git diff --check` PASS;
 - manual external E2E двух разных ролей на synthetic/non-client input PASS.
 
-## NEXT — RESULT UX POLISH + FINAL HANDOFF
+## Browser-native upload — ACCEPTED
 
-Следующий отдельный product-pass:
-- привести визуальную иерархию действий на экране `Результат` к понятному пользовательскому приоритету;
-- выполнить финальный пользовательский E2E;
-- собрать evidence/demo package для защиты;
-- Ярослав отдельно проверяет качество четырёх LLM-объяснений и фактический расход API.
+Training dataset и targetless inference теперь используют browser-native upload через controlled local staging.
 
-## AFTER DEFENSE-CRITICAL INTEGRATION
+Accepted corrective main:
 
-Отдельными workstreams остаются:
+`93823becde40d70a5e6dc189a3a127141128726f`.
+
+Основной product flow больше не требует ручного server path или tkinter file picker.
+
+---
+
+## NEXT — PRODUCT BACKEND COMPLETION BEFORE UX CONTINUATION
+
+UX уже зафиксирован до экрана «Признаки»:
+
+- Главная — UX/VISUAL LOCK V1;
+- Данные / Файл — LOCK;
+- Данные / Роли колонок — LOCK;
+- Данные / Подтверждение — LOCK;
+- Признаки — UX/VISUAL LOCK V1.
+
+Экран «Алгоритм» не фиксируется окончательно до завершения двух backend workstreams.
+
+### A. Configurable Model Platform V1
+
+Architecture lock принят и owner decisions разрешены.
+
+Цель:
+
+```text
+trusted ModelPlugin
+→ ModelPluginRegistry
+→ backend parameter schema + capabilities
+→ Recommended / Advanced resolver
+→ ResolvedModelConfiguration
+→ mandatory technical smoke
+→ existing ExperimentConfig / Runner
+→ provider-based ModelVersion persistence
+```
+
+Текущий ML-core не переписывается.
+
+Implementation stages:
+
+1. **MP-A — Contracts + Plugin Registry**
+2. **MP-B — Configuration Resolver + Configurable GBDT**
+3. **MP-C — Provenance + mandatory Smoke**
+4. **MP-D — Persistence Provider Boundary**
+5. **MP-E — Catalog DTO + Integration Regression**
+
+Owner decisions:
+
+- Advanced способен со временем открыть все безопасно поддержанные model parameters через versioned backend schema; frontend не содержит model-specific ranges/logic;
+- GBDT Mean weights остаются locked `1/3 + 1/3 + 1/3`, component parameters могут быть configurable;
+- matching smoke PASS обязателен перед каждым full experiment, включая Recommended и Advanced;
+- smoke проверяет техническую работоспособность, а не качество.
+
+Source:
+
+`docs/workstreams/configurable_model_platform_v1/ARCHITECT_LOCK.md`.
+
+### B. Feature Grouping Propagation V1
+
+Analyzer уже реализует deterministic cascade:
+
+```text
+structural stem
+→ repeated name token
+→ logical type
+→ fallback
+```
+
+и сохраняет результат в `DatasetPreparationProposal.technical_groups`.
+
+Открытый gap:
+
+```text
+Analyzer technical_groups
+→ materialization
+→ FeatureRegistry / FeatureGroup
+→ group-first Feature Selection UI
+```
+
+Сейчас richer grouping теряется при generic materialization, где FeatureRegistry в основном группируется по usage status.
+
+Нужно сохранить downstream invariant:
+
+- frontend читает только FeatureRegistry;
+- grouping не меняет dataset permissions;
+- grouping не меняет selected_feature_ids;
+- никаких придуманных business groups;
+- no LLM grouping in V1.
+
+Source:
+
+`docs/workstreams/feature_grouping_propagation_v1/SPEC.md`.
+
+### Order
+
+1. Implement/review Configurable Model Platform V1.
+2. Architect-lock and implement/review Feature Grouping Propagation V1.
+3. Только после ACCEPT обеих задач вернуться к UX экрана «Алгоритм».
+4. Затем продолжить «Проверка качества → Результат» и финальный product E2E.
+
+---
+
+## PARALLEL / NON-BLOCKING WORK
+
+Отдельно, не смешивая с двумя backend blockers:
+
+- Ярослав: quality/cost review role-based LLM explanations;
+- XGBoost/LightGBM Local SHAP provider work после отдельного ACCEPT;
+- корректный GBDT Mean local explanation только после математически принятого метода;
+- defense/demo evidence package.
+
+---
+
+## LATER PRODUCT WORKSTREAMS
+
+После текущих backend blockers и Algorithm UX:
 
 - Dataset History / Persistence V1;
-- дополнительный UX-polish onboarding/feature selection;
-- local explainers для новых моделей;
-- semantic feature descriptions;
+- Model Package export/import UX;
+- production React/Next.js + thin FastAPI boundary;
+- semantic business feature descriptions/taxonomy при наличии trusted source;
 - threshold/business policy UI;
 - production auth/DB/deployment.
 
-Эти задачи не должны размывать текущую defense-critical integration без отдельной причины.
+Ни один из этих later workstreams не должен менять принятые Dataset Preparation / OOF / LLM privacy invariants без отдельного architecture decision.
+
