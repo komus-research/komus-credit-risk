@@ -41,6 +41,11 @@ remain intentionally unimplemented.
 Verification evidence: focused MP-A contract tests and existing GBDT/planning
 regression tests are run before review, followed by the full suite and static checks.
 
+Corrective review fixes are applied for contract deep immutability, bidirectional
+provider/capability consistency, schema/profile recommended-value consistency and
+configuration-validator identity. MP-A remains **READY FOR REVIEW**; no later stage
+is started by these corrections.
+
 ## Next implementation stage
 
 **MP-A — Contracts + Plugin Registry**

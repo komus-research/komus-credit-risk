@@ -17,6 +17,7 @@ from komus_risk.model_platform import (
     ModelPluginRegistry,
     ParameterUiLevel,
     ParameterValueType,
+    ProviderDescriptor,
     RecommendedModelProfile,
     build_builtin_model_plugin_registry,
     builtin_model_plugins,
@@ -188,6 +189,63 @@ class ParameterSchemaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ModelParameter("/x", **{**common, "value_type": ParameterValueType.ENUM})
 
+    def test_recommended_values_match_profile_paths(self) -> None:
+        plugin = _dummy_plugin()
+        registry = ModelPluginRegistry()
+        self.assertIs(registry.register(plugin), plugin)
+
+        mismatching_parameter = replace(
+            plugin.parameter_schema.parameters[0], recommended_value=2
+        )
+        mismatching_schema = replace(
+            plugin.parameter_schema, parameters=(mismatching_parameter,)
+        )
+        with self.assertRaisesRegex(ValueError, "does not match schema"):
+            ModelPluginRegistry().register(
+                replace(plugin, parameter_schema=mismatching_schema)
+            )
+
+        missing_parameter = replace(
+            plugin.parameter_schema.parameters[0],
+            parameter_path="/estimator_params/missing",
+        )
+        missing_schema = replace(
+            plugin.parameter_schema, parameters=(missing_parameter,)
+        )
+        with self.assertRaisesRegex(ValueError, "misses parameter"):
+            ModelPluginRegistry().register(
+                replace(plugin, parameter_schema=missing_schema)
+            )
+
+    def test_nested_recommended_value_path_passes_for_composite_plugin(self) -> None:
+        mean_plugin = next(
+            plugin
+            for plugin in builtin_model_plugins()
+            if plugin.spec.model_id == "gbdt_mean"
+        )
+        self.assertIs(ModelPluginRegistry().register(mean_plugin), mean_plugin)
+
+
+class ContractImmutabilityTests(unittest.TestCase):
+    def test_nested_mutable_set_is_rejected(self) -> None:
+        with self.assertRaisesRegex(TypeError, "JSON-shaped"):
+            RecommendedModelProfile(
+                "profile", "1", "model", "1", "1", {"nested": {"bad": {1, 2}}}
+            )
+
+    def test_nested_mapping_list_tuple_is_frozen_and_source_mutation_cannot_change_hash(
+        self,
+    ) -> None:
+        source = {"nested": [{"value": ("accepted", 2)}]}
+        profile = RecommendedModelProfile("profile", "1", "model", "1", "1", source)
+        profile_hash = profile.profile_hash
+        source["nested"][0]["value"] = ("mutated", 3)
+
+        self.assertEqual(profile.profile_hash, profile_hash)
+        self.assertEqual(profile.payload["nested"][0]["value"], ("accepted", 2))
+        with self.assertRaises(TypeError):
+            profile.payload["nested"][0]["value"] = "mutated"  # type: ignore[index]
+
 
 class PluginRegistryTests(unittest.TestCase):
     def test_builtin_profiles_are_exact_frozen_profiles(self) -> None:
@@ -265,6 +323,36 @@ class PluginRegistryTests(unittest.TestCase):
                 ),
             )
 
+    def test_provider_capability_links_are_bidirectional_and_exact(self) -> None:
+        plugin = _dummy_plugin()
+        provider = ProviderDescriptor("local-provider", "1", "local_explanation")
+        with self.assertRaisesRegex(ValueError, "unsupported local explanation"):
+            ModelPluginRegistry().register(
+                replace(plugin, local_explanation_provider=provider)
+            )
+
+        supported_without_id = _replace_capability(
+            plugin,
+            CapabilityDomain.LOCAL_EXPLANATION,
+            support=CapabilitySupport.SUPPORTED,
+            provider_id=None,
+        )
+        with self.assertRaisesRegex(ValueError, "invalid provider identity"):
+            ModelPluginRegistry().register(
+                replace(supported_without_id, local_explanation_provider=provider)
+            )
+
+        supported_wrong_id = _replace_capability(
+            plugin,
+            CapabilityDomain.LOCAL_EXPLANATION,
+            support=CapabilitySupport.CONDITIONAL,
+            provider_id="another-provider",
+        )
+        with self.assertRaisesRegex(ValueError, "invalid provider identity"):
+            ModelPluginRegistry().register(
+                replace(supported_wrong_id, local_explanation_provider=provider)
+            )
+
     def test_profile_invalid_against_schema_is_rejected(self) -> None:
         plugin = _dummy_plugin()
         invalid_spec = ModelSpec(
@@ -291,8 +379,51 @@ class PluginRegistryTests(unittest.TestCase):
         self.assertIs(registry.register(plugin), plugin)
         self.assertIs(registry.get("dummy"), plugin)
 
+    def test_configuration_validator_identity_has_only_two_valid_states(self) -> None:
+        plugin = _dummy_plugin()
+
+        def validator(_: object) -> None:
+            return None
+
+        with self.assertRaises(ValueError):
+            replace(plugin, configuration_validator=validator, validator_id=None)
+        with self.assertRaises(ValueError):
+            replace(plugin, configuration_validator=validator, validator_id="")
+        with self.assertRaises(ValueError):
+            replace(plugin, configuration_validator=None, validator_id="validator-v1")
+        with self.assertRaises(TypeError):
+            replace(
+                plugin, configuration_validator=object(), validator_id="validator-v1"
+            )
+
+        valid = replace(
+            plugin, configuration_validator=validator, validator_id="validator-v1"
+        )
+        self.assertIs(ModelPluginRegistry().register(valid), valid)
+
 
 def replace_factory(model_id: str) -> ModelAdapterFactory:
     factory = _DummyFactory()
     factory.model_id = model_id
     return factory
+
+
+def _replace_capability(
+    plugin: ModelPlugin,
+    domain: CapabilityDomain,
+    *,
+    support: CapabilitySupport,
+    provider_id: str | None,
+) -> ModelPlugin:
+    capabilities = tuple(
+        replace(capability, support=support, provider_id=provider_id)
+        if capability.domain is domain
+        else capability
+        for capability in plugin.capability_manifest.capabilities
+    )
+    return replace(
+        plugin,
+        capability_manifest=replace(
+            plugin.capability_manifest, capabilities=capabilities
+        ),
+    )

@@ -105,41 +105,64 @@ class ModelPluginRegistry:
     @staticmethod
     def _validate_provider_claims(plugin: ModelPlugin) -> None:
         manifest = plugin.capability_manifest
-        persistence_required = any(
-            manifest.get(domain).support is not CapabilitySupport.UNSUPPORTED
+        persistence_declarations = tuple(
+            manifest.get(domain)
             for domain in (CapabilityDomain.PERSISTENCE, CapabilityDomain.LOADING)
         )
-        explanation_required = (
-            manifest.get(CapabilityDomain.LOCAL_EXPLANATION).support
-            is not CapabilitySupport.UNSUPPORTED
+        ModelPluginRegistry._validate_shared_provider_claims(
+            declarations=persistence_declarations,
+            descriptor=plugin.persistence_provider,
+            expected_kind="persistence",
+            capability_label="persistence/loading",
         )
-        if persistence_required and plugin.persistence_provider is None:
+        ModelPluginRegistry._validate_single_provider_claim(
+            declaration=manifest.get(CapabilityDomain.LOCAL_EXPLANATION),
+            descriptor=plugin.local_explanation_provider,
+            expected_kind="local_explanation",
+            capability_label="local explanation",
+        )
+
+    @staticmethod
+    def _validate_shared_provider_claims(
+        *, declarations, descriptor, expected_kind: str, capability_label: str
+    ) -> None:
+        active = tuple(
+            declaration
+            for declaration in declarations
+            if declaration.support is not CapabilitySupport.UNSUPPORTED
+        )
+        if active and descriptor is None:
             raise ValueError(
-                "persistence/loading capability requires a persistence provider descriptor."
+                f"{capability_label} capability requires a provider descriptor."
             )
-        if explanation_required and plugin.local_explanation_provider is None:
+        if not active and descriptor is not None:
             raise ValueError(
-                "local explanation capability requires a provider descriptor."
+                f"unsupported {capability_label} capability cannot declare a provider."
             )
-        if (
-            plugin.persistence_provider is not None
-            and plugin.persistence_provider.provider_kind != "persistence"
-        ):
-            raise ValueError("persistence provider has an invalid provider kind.")
-        if (
-            plugin.local_explanation_provider is not None
-            and plugin.local_explanation_provider.provider_kind != "local_explanation"
-        ):
-            raise ValueError("local explanation provider has an invalid provider kind.")
-        for domain, descriptor in (
-            (CapabilityDomain.PERSISTENCE, plugin.persistence_provider),
-            (CapabilityDomain.LOADING, plugin.persistence_provider),
-            (CapabilityDomain.LOCAL_EXPLANATION, plugin.local_explanation_provider),
-        ):
-            declaration = manifest.get(domain)
-            if declaration.provider_id is not None and (
-                descriptor is None or declaration.provider_id != descriptor.provider_id
-            ):
+        if descriptor is None:
+            return
+        if descriptor.provider_kind != expected_kind:
+            raise ValueError(
+                f"{capability_label} provider has an invalid provider kind."
+            )
+        for declaration in declarations:
+            if declaration.support is CapabilitySupport.UNSUPPORTED:
+                if declaration.provider_id is not None:
+                    raise ValueError(
+                        f"unsupported {capability_label} capability cannot declare provider_id."
+                    )
+            elif declaration.provider_id != descriptor.provider_id:
                 raise ValueError(
-                    f"capability {domain.value} references an invalid provider identity."
+                    f"{capability_label} capability references an invalid provider identity."
                 )
+
+    @staticmethod
+    def _validate_single_provider_claim(
+        *, declaration, descriptor, expected_kind: str, capability_label: str
+    ) -> None:
+        ModelPluginRegistry._validate_shared_provider_claims(
+            declarations=(declaration,),
+            descriptor=descriptor,
+            expected_kind=expected_kind,
+            capability_label=capability_label,
+        )

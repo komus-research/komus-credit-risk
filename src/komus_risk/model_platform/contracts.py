@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
 from types import MappingProxyType
 from typing import Any
 
@@ -24,16 +25,20 @@ def _required_text(name: str, value: str) -> None:
 
 
 def _frozen_json(value: Any) -> Any:
-    """Copies only JSON-shaped data into an immutable representation."""
+    """Copies only explicit JSON-shaped data into an immutable representation."""
     if isinstance(value, Mapping):
+        if any(not isinstance(key, str) for key in value):
+            raise TypeError("JSON object keys must be strings.")
         return MappingProxyType(
-            {str(key): _frozen_json(item) for key, item in value.items()}
+            {key: _frozen_json(item) for key, item in value.items()}
         )
     if isinstance(value, (list, tuple)):
         return tuple(_frozen_json(item) for item in value)
-    # stable_hash is also the authoritative rejection for unsupported/NaN data.
-    stable_hash(value)
-    return value
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float) and isfinite(value):
+        return value
+    raise TypeError("contract payload must contain only JSON-shaped values.")
 
 
 def _plain_json(value: Any) -> Any:
@@ -276,14 +281,16 @@ class ModelParameterSchema:
             try:
                 value = _pointer_value(payload, parameter.parameter_path)
             except KeyError:
-                if parameter.required:
-                    raise ValueError(
-                        f"recommended profile misses required parameter {parameter.parameter_path}."
-                    ) from None
-                continue
+                raise ValueError(
+                    f"recommended profile misses parameter {parameter.parameter_path}."
+                ) from None
             parameter.validate_value(
                 value, field_name=f"recommended profile {parameter.parameter_path}"
             )
+            if stable_hash(value) != stable_hash(parameter.recommended_value):
+                raise ValueError(
+                    f"recommended profile value does not match schema at {parameter.parameter_path}."
+                )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -511,13 +518,21 @@ class ModelPlugin:
             self.factory, ModelAdapterFactory
         ):
             raise TypeError("plugin input contract and factory are required.")
-        if self.configuration_validator is not None:
-            if not callable(self.configuration_validator) or self.validator_id is None:
+        if self.configuration_validator is None:
+            if self.validator_id is not None:
                 raise ValueError(
-                    "trusted configuration validator requires a stable validator_id."
+                    "validator_id requires a trusted configuration validator."
                 )
-        elif self.validator_id is not None:
-            _required_text("validator_id", self.validator_id)
+        elif not callable(self.configuration_validator):
+            raise TypeError("configuration_validator must be callable.")
+        elif (
+            not isinstance(self.validator_id, str)
+            or not self.validator_id
+            or self.validator_id != self.validator_id.strip()
+        ):
+            raise ValueError(
+                "trusted configuration validator requires a normalized stable validator_id."
+            )
         if not isinstance(self.smoke_test_metadata, Mapping):
             raise TypeError("smoke_test_metadata must be a mapping.")
         object.__setattr__(
