@@ -7,6 +7,7 @@ from typing import Any
 
 from komus_risk.contracts import DatasetContract, ExperimentConfig
 from komus_risk.experiments import EvaluationPopulation, ExperimentRunOutput
+from komus_risk.model_platform import ModelConfigurationRecord, SmokeEvidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,6 +18,8 @@ class LoadedExperimentArtifact:
     population: EvaluationPopulation
     run_output: ExperimentRunOutput
     manifest: dict[str, Any]
+    configuration_record: ModelConfigurationRecord | None = None
+    smoke_evidence: SmokeEvidence | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "manifest", dict(self.manifest))

@@ -1,6 +1,6 @@
 # Configurable Model Platform V1 — STATUS
 
-Phase: **MP-A ACCEPTED / MP-B ACCEPTED / MP-C READY_FOR_IMPLEMENTATION**
+Phase: **MP-A ACCEPTED / MP-B ACCEPTED / MP-C IMPLEMENTATION COMPLETE / READY FOR REVIEW**
 
 Architecture: **ACCEPTED**
 
@@ -48,8 +48,12 @@ Final MP-B Reviewer verdict after corrective review: **ACCEPT**.
 
 Accepted MP-B head: `340b362179714d92dcd5afafb8e2d14155e35d52`.
 
-MP-C (configuration provenance and smoke), MP-D (provider-based persistence) and MP-E
-(catalog/runtime integration) remain intentionally unimplemented.
+MP-C implementation is complete and ready for review. It adds immutable trusted
+configuration provenance, deterministic bounded stratified technical smoke evidence,
+the matching-PASS gate in `ExperimentApplicationService` for both Recommended and
+Advanced runs, and additive V2 experiment artifacts. V1 artifacts remain readable
+without rewrite or manufactured provenance. MP-D (provider-based persistence) and
+MP-E (catalog/runtime integration) remain intentionally unimplemented.
 
 Accepted MP-A head: `078adc4d009068cd4eb3b3886ec20b2e9aa46017`.
 
@@ -71,6 +75,6 @@ No MP-C/MP-D/MP-E behavior was implemented inside MP-B.
 
 ## Next implementation stage
 
-**MP-C — Provenance + Smoke**
+**MP-D — Provider-based persistence**
 
-MP-C remains the next stage. It must not be pulled forward into MP-B.
+MP-C is not marked accepted here; review remains pending.

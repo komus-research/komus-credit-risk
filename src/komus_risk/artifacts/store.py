@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from hashlib import sha256
 import json
-from pathlib import Path
 import shutil
+from hashlib import sha256
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -14,15 +14,26 @@ import numpy as np
 from komus_risk.contracts import DatasetContract, ExperimentConfig, ExperimentResult
 from komus_risk.experiments import EvaluationPopulation, ExperimentRunOutput
 from komus_risk.hashing import canonical_json, stable_hash
+from komus_risk.model_platform import (
+    ModelConfigurationRecord,
+    SmokeEvidence,
+    SmokeStatus,
+)
 
 from .contracts import LoadedExperimentArtifact
 
-
-_SCHEMA_VERSION = "1"
-_PAYLOAD_FILES = (
-    "config.json", "dataset.json", "population.json", "result.json",
-    "evidence/oof_positive_proba.npy", "evidence/fold_assignments.npy", "evidence/row_positions.npy",
+_SCHEMA_VERSION_V1 = "1"
+_SCHEMA_VERSION_V2 = "2"
+_PAYLOAD_FILES_V1 = (
+    "config.json",
+    "dataset.json",
+    "population.json",
+    "result.json",
+    "evidence/oof_positive_proba.npy",
+    "evidence/fold_assignments.npy",
+    "evidence/row_positions.npy",
 )
+_PAYLOAD_FILES_V2 = _PAYLOAD_FILES_V1 + ("configuration.json", "smoke.json")
 
 
 class ExperimentArtifactStore:
@@ -39,12 +50,39 @@ class ExperimentArtifactStore:
         dataset_contract: DatasetContract,
         population: EvaluationPopulation,
         run_output: ExperimentRunOutput,
+        configuration_record: ModelConfigurationRecord | None = None,
+        smoke_evidence: SmokeEvidence | None = None,
     ) -> LoadedExperimentArtifact:
+        if (configuration_record is None) != (smoke_evidence is None):
+            raise ValueError(
+                "MP-C artifacts require both configuration and smoke provenance."
+            )
+        schema_version = (
+            _SCHEMA_VERSION_V2
+            if configuration_record is not None
+            else _SCHEMA_VERSION_V1
+        )
+        if configuration_record is not None:
+            self._validate_v2_provenance(
+                config,
+                dataset_contract,
+                population,
+                configuration_record,
+                smoke_evidence,
+            )
         arrays = self._canonical_arrays(run_output)
         self._validate_bundle(config, dataset_contract, population, run_output, arrays)
-        payload = self._payload(config, dataset_contract, population, run_output.result, arrays)
+        payload = self._payload(
+            config,
+            dataset_contract,
+            population,
+            run_output.result,
+            arrays,
+            configuration_record,
+            smoke_evidence,
+        )
         content_hashes = self._content_hashes(payload, arrays)
-        artifact_id = self._artifact_id(content_hashes)
+        artifact_id = self._artifact_id(content_hashes, schema_version)
         target = self.experiments / artifact_id
         if target.exists():
             return self.load(artifact_id)
@@ -54,7 +92,16 @@ class ExperimentArtifactStore:
         try:
             (temporary / "evidence").mkdir(parents=True)
             self._write_payload(temporary, payload, arrays)
-            manifest = self._manifest(artifact_id, config, dataset_contract, population, run_output.result, content_hashes, temporary)
+            manifest = self._manifest(
+                artifact_id,
+                config,
+                dataset_contract,
+                population,
+                run_output.result,
+                content_hashes,
+                temporary,
+                schema_version,
+            )
             self._write_json(temporary / "manifest.json", manifest)
             loaded = self._load_directory(temporary, artifact_id, allow_temporary=True)
             if target.exists():
@@ -68,9 +115,13 @@ class ExperimentArtifactStore:
     def load(self, artifact_id: str) -> LoadedExperimentArtifact:
         if not self._is_artifact_id(artifact_id):
             raise ValueError("Invalid experiment artifact identifier.")
-        return self._load_directory(self.experiments / artifact_id, artifact_id, allow_temporary=False)
+        return self._load_directory(
+            self.experiments / artifact_id, artifact_id, allow_temporary=False
+        )
 
-    def _load_directory(self, directory: Path, artifact_id: str, *, allow_temporary: bool) -> LoadedExperimentArtifact:
+    def _load_directory(
+        self, directory: Path, artifact_id: str, *, allow_temporary: bool
+    ) -> LoadedExperimentArtifact:
         if not directory.is_dir():
             raise ValueError("Experiment artifact directory is missing or incomplete.")
         if not allow_temporary and directory.name != artifact_id:
@@ -82,27 +133,62 @@ class ExperimentArtifactStore:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError("Experiment artifact manifest is invalid.") from error
-        self._validate_manifest(manifest, artifact_id)
-        for relative in _PAYLOAD_FILES:
+        schema_version = self._validate_manifest(manifest, artifact_id)
+        payload_files = (
+            _PAYLOAD_FILES_V2
+            if schema_version == _SCHEMA_VERSION_V2
+            else _PAYLOAD_FILES_V1
+        )
+        for relative in payload_files:
             path = directory / relative
             info = manifest["files"].get(relative)
             if not path.is_file() or not isinstance(info, dict):
                 raise ValueError("Experiment artifact mandatory file is missing.")
-            if info.get("size_bytes") != path.stat().st_size or info.get("sha256") != self._raw_hash(path):
+            if info.get("size_bytes") != path.stat().st_size or info.get(
+                "sha256"
+            ) != self._raw_hash(path):
                 raise ValueError("Experiment artifact file integrity check failed.")
         try:
-            config = ExperimentConfig.from_dict(self._read_json(directory / "config.json"))
-            dataset_contract = DatasetContract.from_dict(self._read_json(directory / "dataset.json"))
+            config = ExperimentConfig.from_dict(
+                self._read_json(directory / "config.json")
+            )
+            dataset_contract = DatasetContract.from_dict(
+                self._read_json(directory / "dataset.json")
+            )
             population_data = self._read_json(directory / "population.json")
-            result = ExperimentResult.from_dict(self._read_json(directory / "result.json"))
+            result = ExperimentResult.from_dict(
+                self._read_json(directory / "result.json")
+            )
+            configuration_record = (
+                ModelConfigurationRecord.from_dict(
+                    self._read_json(directory / "configuration.json")
+                )
+                if schema_version == _SCHEMA_VERSION_V2
+                else None
+            )
+            smoke_evidence = (
+                SmokeEvidence.from_dict(self._read_json(directory / "smoke.json"))
+                if schema_version == _SCHEMA_VERSION_V2
+                else None
+            )
             population = EvaluationPopulation(
-                tuple(np.load(directory / "evidence/row_positions.npy", allow_pickle=False).tolist()),
-                population_data["population_id"], population_data["population_fingerprint"], population_data["partition_role"],
+                tuple(
+                    np.load(
+                        directory / "evidence/row_positions.npy", allow_pickle=False
+                    ).tolist()
+                ),
+                population_data["population_id"],
+                population_data["population_fingerprint"],
+                population_data["partition_role"],
             )
             run_output = ExperimentRunOutput(
                 result=result,
-                oof_positive_proba=np.load(directory / "evidence/oof_positive_proba.npy", allow_pickle=False),
-                fold_assignments=np.load(directory / "evidence/fold_assignments.npy", allow_pickle=False),
+                oof_positive_proba=np.load(
+                    directory / "evidence/oof_positive_proba.npy", allow_pickle=False
+                ),
+                fold_assignments=np.load(
+                    directory / "evidence/fold_assignments.npy", allow_pickle=False
+                ),
                 row_positions=population.row_positions,
                 population_id=population.population_id,
                 population_fingerprint=population.population_fingerprint,
@@ -113,27 +199,71 @@ class ExperimentArtifactStore:
             raise ValueError("Experiment artifact population size is invalid.")
         arrays = self._canonical_arrays(run_output)
         self._validate_bundle(config, dataset_contract, population, run_output, arrays)
-        payload = self._payload(config, dataset_contract, population, result, arrays)
+        if schema_version == _SCHEMA_VERSION_V2:
+            self._validate_v2_provenance(
+                config,
+                dataset_contract,
+                population,
+                configuration_record,
+                smoke_evidence,
+            )
+        payload = self._payload(
+            config,
+            dataset_contract,
+            population,
+            result,
+            arrays,
+            configuration_record,
+            smoke_evidence,
+        )
         hashes = self._content_hashes(payload, arrays)
-        if hashes != manifest["content_hashes"] or self._artifact_id(hashes) != artifact_id:
+        if (
+            hashes != manifest["content_hashes"]
+            or self._artifact_id(hashes, schema_version) != artifact_id
+        ):
             raise ValueError("Experiment artifact semantic integrity check failed.")
-        self._validate_identity(manifest["identity"], config, dataset_contract, population, result)
-        return LoadedExperimentArtifact(artifact_id, config, dataset_contract, population, run_output, manifest)
+        self._validate_identity(
+            manifest["identity"], config, dataset_contract, population, result
+        )
+        return LoadedExperimentArtifact(
+            artifact_id,
+            config,
+            dataset_contract,
+            population,
+            run_output,
+            manifest,
+            configuration_record,
+            smoke_evidence,
+        )
 
     @staticmethod
     def _canonical_arrays(run_output: ExperimentRunOutput) -> dict[str, np.ndarray]:
         def integer(values: Any, name: str) -> np.ndarray:
             source = np.asarray(values)
-            if source.ndim != 1 or not np.issubdtype(source.dtype, np.integer) or np.issubdtype(source.dtype, np.bool_):
+            if (
+                source.ndim != 1
+                or not np.issubdtype(source.dtype, np.integer)
+                or np.issubdtype(source.dtype, np.bool_)
+            ):
                 raise ValueError(f"{name} must be a one-dimensional integer array.")
             return np.ascontiguousarray(source.astype("<i8", copy=False))
 
         source_oof = np.asarray(run_output.oof_positive_proba)
-        if source_oof.ndim != 1 or not np.issubdtype(source_oof.dtype, np.number) or np.issubdtype(source_oof.dtype, np.bool_):
-            raise ValueError("OOF probabilities must be a one-dimensional numeric array.")
+        if (
+            source_oof.ndim != 1
+            or not np.issubdtype(source_oof.dtype, np.number)
+            or np.issubdtype(source_oof.dtype, np.bool_)
+        ):
+            raise ValueError(
+                "OOF probabilities must be a one-dimensional numeric array."
+            )
         return {
-            "oof_positive_proba": np.ascontiguousarray(source_oof.astype("<f8", copy=False)),
-            "fold_assignments": integer(run_output.fold_assignments, "Fold assignments"),
+            "oof_positive_proba": np.ascontiguousarray(
+                source_oof.astype("<f8", copy=False)
+            ),
+            "fold_assignments": integer(
+                run_output.fold_assignments, "Fold assignments"
+            ),
             "row_positions": integer(run_output.row_positions, "Row positions"),
         }
 
@@ -147,38 +277,66 @@ class ExperimentArtifactStore:
     ) -> None:
         result = output.result
         pairs = (
-            (result.experiment_config_id, config.experiment_id), (result.config_hash, config.config_hash),
+            (result.experiment_config_id, config.experiment_id),
+            (result.config_hash, config.config_hash),
             (dataset.dataset_id, config.dataset_id),
-            (result.dataset_fingerprint, config.dataset_fingerprint), (dataset.dataset_fingerprint, config.dataset_fingerprint),
-            (result.feature_set_hash, config.feature_set_hash), (result.model_id, config.model_id),
-            (result.model_version, config.model_version), (result.evaluation_level, config.evaluation_level),
-            (dataset.target_column, config.target), (population.population_id, output.population_id),
+            (result.dataset_fingerprint, config.dataset_fingerprint),
+            (dataset.dataset_fingerprint, config.dataset_fingerprint),
+            (result.feature_set_hash, config.feature_set_hash),
+            (result.model_id, config.model_id),
+            (result.model_version, config.model_version),
+            (result.evaluation_level, config.evaluation_level),
+            (dataset.target_column, config.target),
+            (population.population_id, output.population_id),
             (population.population_fingerprint, output.population_fingerprint),
             (population.row_positions, tuple(output.row_positions)),
         )
         if any(left != right for left, right in pairs):
-            raise ValueError("Completed experiment evidence is not mutually consistent.")
+            raise ValueError(
+                "Completed experiment evidence is not mutually consistent."
+            )
         if dataset.final_test_locked and population.partition_role != "working":
             raise ValueError("Locked final test requires a working population.")
-        oof, folds, positions = arrays["oof_positive_proba"], arrays["fold_assignments"], arrays["row_positions"]
-        if len(oof) != len(folds) or len(oof) != len(positions) or len(oof) != len(population.row_positions):
+        oof, folds, positions = (
+            arrays["oof_positive_proba"],
+            arrays["fold_assignments"],
+            arrays["row_positions"],
+        )
+        if (
+            len(oof) != len(folds)
+            or len(oof) != len(positions)
+            or len(oof) != len(population.row_positions)
+        ):
             raise ValueError("Experiment evidence arrays have inconsistent lengths.")
         if not np.isfinite(oof).all() or (oof < 0).any() or (oof > 1).any():
             raise ValueError("OOF probabilities must be finite values in [0, 1].")
         if (folds < 1).any() or (folds > config.folds).any():
-            raise ValueError("Fold assignments must be labels from 1 through config.folds.")
-        if (positions < 0).any() or len(set(positions.tolist())) != len(positions) or (positions >= dataset.row_count).any():
+            raise ValueError(
+                "Fold assignments must be labels from 1 through config.folds."
+            )
+        if (
+            (positions < 0).any()
+            or len(set(positions.tolist())) != len(positions)
+            or (positions >= dataset.row_count).any()
+        ):
             raise ValueError("Row positions are invalid for DatasetContract.")
         if len(result.fold_metrics) != config.folds:
             raise ValueError("Fold metrics count must equal config.folds.")
 
     @staticmethod
     def _payload(
-        config: ExperimentConfig, dataset: DatasetContract, population: EvaluationPopulation,
-        result: ExperimentResult, arrays: dict[str, np.ndarray],
+        config: ExperimentConfig,
+        dataset: DatasetContract,
+        population: EvaluationPopulation,
+        result: ExperimentResult,
+        arrays: dict[str, np.ndarray],
+        configuration_record: ModelConfigurationRecord | None = None,
+        smoke_evidence: SmokeEvidence | None = None,
     ) -> dict[str, Any]:
-        return {
-            "config": config.to_dict(), "dataset": dataset.to_dict(), "result": result.to_dict(),
+        payload = {
+            "config": config.to_dict(),
+            "dataset": dataset.to_dict(),
+            "result": result.to_dict(),
             "population": {
                 "population_id": population.population_id,
                 "population_fingerprint": population.population_fingerprint,
@@ -186,79 +344,211 @@ class ExperimentArtifactStore:
                 "population_size": len(arrays["row_positions"]),
             },
         }
+        if configuration_record is not None:
+            payload["configuration"] = configuration_record.to_dict()
+            payload["smoke"] = smoke_evidence.to_dict()
+        return payload
 
     @staticmethod
-    def _content_hashes(payload: dict[str, Any], arrays: dict[str, np.ndarray]) -> dict[str, str]:
-        return {
-            "config": stable_hash(payload["config"]), "dataset": stable_hash(payload["dataset"]),
-            "population": stable_hash(payload["population"]), "result": stable_hash(payload["result"]),
-            **{name: ExperimentArtifactStore._array_hash(array) for name, array in arrays.items()},
+    def _content_hashes(
+        payload: dict[str, Any], arrays: dict[str, np.ndarray]
+    ) -> dict[str, str]:
+        values = {
+            "config": stable_hash(payload["config"]),
+            "dataset": stable_hash(payload["dataset"]),
+            "population": stable_hash(payload["population"]),
+            "result": stable_hash(payload["result"]),
+            **{
+                name: ExperimentArtifactStore._array_hash(array)
+                for name, array in arrays.items()
+            },
         }
+        if "configuration" in payload:
+            values["configuration"] = stable_hash(payload["configuration"])
+            values["smoke"] = stable_hash(payload["smoke"])
+        return values
 
     @staticmethod
     def _array_hash(array: np.ndarray) -> str:
-        return stable_hash({
-            "dtype": array.dtype.str, "shape": list(array.shape),
-            "sha256": sha256(array.tobytes(order="C")).hexdigest(),
-        })
+        return stable_hash(
+            {
+                "dtype": array.dtype.str,
+                "shape": list(array.shape),
+                "sha256": sha256(array.tobytes(order="C")).hexdigest(),
+            }
+        )
 
     @staticmethod
-    def _artifact_id(content_hashes: dict[str, str]) -> str:
-        return stable_hash({"artifact_schema_version": _SCHEMA_VERSION, "content_hashes": content_hashes})
+    def _artifact_id(content_hashes: dict[str, str], schema_version: str) -> str:
+        return stable_hash(
+            {
+                "artifact_schema_version": schema_version,
+                "content_hashes": content_hashes,
+            }
+        )
 
-    def _write_payload(self, directory: Path, payload: dict[str, Any], arrays: dict[str, np.ndarray]) -> None:
+    def _write_payload(
+        self, directory: Path, payload: dict[str, Any], arrays: dict[str, np.ndarray]
+    ) -> None:
         self._write_json(directory / "config.json", payload["config"])
         self._write_json(directory / "dataset.json", payload["dataset"])
         self._write_json(directory / "population.json", payload["population"])
         self._write_json(directory / "result.json", payload["result"])
+        if "configuration" in payload:
+            self._write_json(directory / "configuration.json", payload["configuration"])
+            self._write_json(directory / "smoke.json", payload["smoke"])
         for name, array in arrays.items():
             np.save(directory / "evidence" / f"{name}.npy", array, allow_pickle=False)
 
     def _manifest(
-        self, artifact_id: str, config: ExperimentConfig, dataset: DatasetContract, population: EvaluationPopulation,
-        result: ExperimentResult, content_hashes: dict[str, str], directory: Path,
+        self,
+        artifact_id: str,
+        config: ExperimentConfig,
+        dataset: DatasetContract,
+        population: EvaluationPopulation,
+        result: ExperimentResult,
+        content_hashes: dict[str, str],
+        directory: Path,
+        schema_version: str,
     ) -> dict[str, Any]:
         return {
-            "artifact_type": "experiment", "artifact_schema_version": _SCHEMA_VERSION, "artifact_id": artifact_id,
+            "artifact_type": "experiment",
+            "artifact_schema_version": schema_version,
+            "artifact_id": artifact_id,
             "identity": {
-                "experiment_id": config.experiment_id, "result_id": result.result_id, "config_hash": config.config_hash,
-                "dataset_id": dataset.dataset_id, "dataset_fingerprint": dataset.dataset_fingerprint,
-                "population_id": population.population_id, "population_fingerprint": population.population_fingerprint,
-                "model_id": config.model_id, "model_version": config.model_version,
+                "experiment_id": config.experiment_id,
+                "result_id": result.result_id,
+                "config_hash": config.config_hash,
+                "dataset_id": dataset.dataset_id,
+                "dataset_fingerprint": dataset.dataset_fingerprint,
+                "population_id": population.population_id,
+                "population_fingerprint": population.population_fingerprint,
+                "model_id": config.model_id,
+                "model_version": config.model_version,
                 "evaluation_level": config.evaluation_level,
             },
             "content_hashes": content_hashes,
-            "files": {relative: {"sha256": self._raw_hash(directory / relative), "size_bytes": (directory / relative).stat().st_size} for relative in _PAYLOAD_FILES},
+            "files": {
+                relative: {
+                    "sha256": self._raw_hash(directory / relative),
+                    "size_bytes": (directory / relative).stat().st_size,
+                }
+                for relative in (
+                    _PAYLOAD_FILES_V2
+                    if schema_version == _SCHEMA_VERSION_V2
+                    else _PAYLOAD_FILES_V1
+                )
+            },
         }
 
     @staticmethod
-    def _validate_manifest(manifest: Any, artifact_id: str) -> None:
-        required = {"artifact_type", "artifact_schema_version", "artifact_id", "identity", "content_hashes", "files"}
+    def _validate_manifest(manifest: Any, artifact_id: str) -> str:
+        required = {
+            "artifact_type",
+            "artifact_schema_version",
+            "artifact_id",
+            "identity",
+            "content_hashes",
+            "files",
+        }
         if not isinstance(manifest, dict) or not required.issubset(manifest):
             raise ValueError("Experiment artifact manifest structure is invalid.")
-        if manifest["artifact_type"] != "experiment" or manifest["artifact_schema_version"] != _SCHEMA_VERSION:
+        schema_version = manifest.get("artifact_schema_version")
+        if manifest["artifact_type"] != "experiment" or schema_version not in {
+            _SCHEMA_VERSION_V1,
+            _SCHEMA_VERSION_V2,
+        }:
             raise ValueError("Unsupported experiment artifact schema.")
-        if manifest["artifact_id"] != artifact_id or not isinstance(manifest["identity"], dict):
+        if manifest["artifact_id"] != artifact_id or not isinstance(
+            manifest["identity"], dict
+        ):
             raise ValueError("Experiment artifact manifest identity is invalid.")
-        expected_hashes = {"config", "dataset", "population", "result", "oof_positive_proba", "fold_assignments", "row_positions"}
+        expected_hashes = {
+            "config",
+            "dataset",
+            "population",
+            "result",
+            "oof_positive_proba",
+            "fold_assignments",
+            "row_positions",
+        }
+        if schema_version == _SCHEMA_VERSION_V2:
+            expected_hashes |= {"configuration", "smoke"}
         if (
             not isinstance(manifest["content_hashes"], dict)
             or set(manifest["content_hashes"]) != expected_hashes
             or not isinstance(manifest["files"], dict)
         ):
             raise ValueError("Experiment artifact manifest hashes are invalid.")
+        return schema_version
 
     @staticmethod
-    def _validate_identity(identity: dict[str, Any], config: ExperimentConfig, dataset: DatasetContract, population: EvaluationPopulation, result: ExperimentResult) -> None:
+    def _validate_v2_provenance(
+        config: ExperimentConfig,
+        dataset: DatasetContract,
+        population: EvaluationPopulation,
+        record: ModelConfigurationRecord | None,
+        smoke: SmokeEvidence | None,
+    ) -> None:
+        if not isinstance(record, ModelConfigurationRecord) or not isinstance(
+            smoke, SmokeEvidence
+        ):
+            raise ValueError("MP-C artifact provenance is invalid.")
+        if (
+            record.model_id != config.model_id
+            or record.model_version != config.model_version
+        ):
+            raise ValueError("MP-C configuration provenance does not match experiment.")
+        if record.resolved_parameters != config.model_parameters:
+            raise ValueError("MP-C resolved parameters do not match experiment.")
+        if (
+            smoke.status is not SmokeStatus.PASS
+            or smoke.configuration_record_id != record.configuration_record_id
+        ):
+            raise ValueError("MP-C smoke provenance does not authorize configuration.")
+        if (
+            smoke.plugin_contract_hash != record.plugin_contract_hash
+            or smoke.resolved_configuration_hash != record.resolved_configuration_hash
+        ):
+            raise ValueError("MP-C smoke provenance identity is inconsistent.")
+        if (
+            smoke.dataset_id != dataset.dataset_id
+            or smoke.dataset_fingerprint != dataset.dataset_fingerprint
+            or smoke.feature_registry_id != dataset.feature_registry_id
+            or smoke.feature_registry_hash != dataset.feature_registry_hash
+            or smoke.population_id != population.population_id
+            or smoke.population_fingerprint != population.population_fingerprint
+            or smoke.selected_feature_ids != config.feature_ids
+            or smoke.seed != config.seed
+        ):
+            raise ValueError(
+                "MP-C smoke provenance does not match experiment identity."
+            )
+
+    @staticmethod
+    def _validate_identity(
+        identity: dict[str, Any],
+        config: ExperimentConfig,
+        dataset: DatasetContract,
+        population: EvaluationPopulation,
+        result: ExperimentResult,
+    ) -> None:
         expected = {
-            "experiment_id": config.experiment_id, "result_id": result.result_id, "config_hash": config.config_hash,
-            "dataset_id": dataset.dataset_id, "dataset_fingerprint": dataset.dataset_fingerprint,
-            "population_id": population.population_id, "population_fingerprint": population.population_fingerprint,
-            "model_id": config.model_id, "model_version": config.model_version,
+            "experiment_id": config.experiment_id,
+            "result_id": result.result_id,
+            "config_hash": config.config_hash,
+            "dataset_id": dataset.dataset_id,
+            "dataset_fingerprint": dataset.dataset_fingerprint,
+            "population_id": population.population_id,
+            "population_fingerprint": population.population_fingerprint,
+            "model_id": config.model_id,
+            "model_version": config.model_version,
             "evaluation_level": config.evaluation_level,
         }
         if identity != expected:
-            raise ValueError("Experiment artifact manifest identity does not match payload.")
+            raise ValueError(
+                "Experiment artifact manifest identity does not match payload."
+            )
 
     @staticmethod
     def _write_json(path: Path, value: Any) -> None:
@@ -280,4 +570,8 @@ class ExperimentArtifactStore:
 
     @staticmethod
     def _is_artifact_id(value: Any) -> bool:
-        return isinstance(value, str) and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
+        return (
+            isinstance(value, str)
+            and len(value) == 64
+            and all(character in "0123456789abcdef" for character in value)
+        )
