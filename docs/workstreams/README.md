@@ -53,16 +53,81 @@
 
 `proposal → human confirmation → materialization → PreparedDatasetContext`.
 
-Техническая интеграция Dataset Preparation UI V1 реализована и получила Reviewer `ACCEPT`.
-
-Ручная продуктовая приёмка текущего UX не пройдена.
-
-Текущая последовательность product workstreams:
-
-1. **Generic Dataset Onboarding UX**
-   `Файл → Цель → Идентификатор → Признаки → Оценка → Проверка`.
-
-2. **Dataset History / Persistence V1**
-   Exact dataset recognition, продолжение сохранённой работы, история экспериментов и compatibility-aware comparison.
+Техническая интеграция Dataset Preparation UI V1 и browser-native file flow приняты.
 
 Historical `Data_final` рассматривается только как frozen compatibility profile, а не как отдельный основной режим продукта.
+
+## Generic Dataset Onboarding / Feature Selection UX
+
+Canonical downstream flow:
+
+`PreparedDatasetContext → Признаки → Алгоритм → Проверка качества → Результат`.
+
+Документы:
+
+- [generic_dataset_onboarding_v1/SPEC.md](generic_dataset_onboarding_v1/SPEC.md)
+- [generic_dataset_onboarding_v1/FEATURE_SELECTION_UX_V1.md](generic_dataset_onboarding_v1/FEATURE_SELECTION_UX_V1.md)
+
+Текущий product status:
+
+- Данные / Файл — UX/VISUAL LOCK;
+- Данные / Роли колонок — UX/VISUAL LOCK;
+- Данные / Подтверждение — UX/VISUAL LOCK;
+- Признаки — UX/VISUAL LOCK.
+
+Экран «Алгоритм» поставлен на паузу до завершения backend blockers.
+
+## Active backend workstreams
+
+### Configurable Model Platform V1
+
+Status:
+
+**ARCHITECTURE ACCEPTED / READY_FOR_IMPLEMENTATION**
+
+Документы:
+
+- [configurable_model_platform_v1/STATUS.md](configurable_model_platform_v1/STATUS.md)
+- [configurable_model_platform_v1/ARCHITECT_LOCK.md](configurable_model_platform_v1/ARCHITECT_LOCK.md)
+
+Цель:
+
+`ModelPlugin → parameter schema/capabilities → ResolvedModelConfiguration → mandatory technical smoke → existing Runner → provider-based persistence`.
+
+Текущий ML-core не переписывается.
+
+### Feature Grouping Propagation V1
+
+Status:
+
+**DESIGN / ARCHITECT LOCK REQUIRED BEFORE CODE**
+
+Документы:
+
+- [feature_grouping_propagation_v1/STATUS.md](feature_grouping_propagation_v1/STATUS.md)
+- [feature_grouping_propagation_v1/SPEC.md](feature_grouping_propagation_v1/SPEC.md)
+
+Текущий Analyzer уже строит technical groups каскадом:
+
+`structural stem → repeated name token → logical type → fallback`.
+
+Открытый gap — перенести эту grouping metadata через generic materialization в downstream `FeatureRegistry → FeatureGroup`, не меняя permissions/selection semantics.
+
+## Current order
+
+1. Configurable Model Platform V1 — MP-A…MP-E через Developer → Reviewer.
+2. Feature Grouping Propagation V1 — narrow Architect Lock → Developer → Reviewer.
+3. После ACCEPT обеих задач — продолжить UX с экраном «Алгоритм».
+4. Затем «Проверка качества → Результат» и финальный product E2E.
+
+## Later
+
+Отдельными последующими направлениями остаются:
+
+- Dataset History / Persistence V1;
+- Model Package UX;
+- production React/Next.js + thin FastAPI boundary;
+- semantic business taxonomy/features при наличии trusted source;
+- threshold/business policy UI;
+- production auth/DB/deployment.
+
