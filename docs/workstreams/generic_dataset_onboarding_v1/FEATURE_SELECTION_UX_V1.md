@@ -1,5 +1,9 @@
 # Feature Selection UX V1 — SPEC
 
+STATUS: **UX/VISUAL LOCK V1**
+
+Current product note (2026-09-27): group-first composition is accepted. Downstream source of truth remains `FeatureRegistry → FeatureGroup`. A separate `Feature Grouping Propagation V1` backend workstream will preserve the already implemented Analyzer technical-group cascade into the materialized registry; the UI must never read Analyzer/Proposal state directly.
+
 ## 1. Назначение и граница
 
 Feature Selection UX V1 описывает только experiment-level выбор признаков. Экран доступен только после создания `PreparedDatasetContext`; он не является шагом Dataset Preparation и не редактирует preparation draft.
@@ -58,7 +62,7 @@ Upstream recommendations Dataset Preparation, включая `REVIEW_REQUIRED`, 
 
 ▶ next_group
 
-[Далее: модель →]
+[Далее: алгоритм →]
 ```
 
 Для первого эксперимента после нового PreparedDatasetContext все разрешённые MODEL_ALLOWED признаки включены по умолчанию. Для последующего эксперимента на тех же данных экран стартует с унаследованным selected_feature_ids предыдущего эксперимента.
@@ -76,6 +80,8 @@ Upstream recommendations Dataset Preparation, включая `REVIEW_REQUIRED`, 
 - compact accordion groups.
 
 Canonical source доступных downstream groups — `FeatureRegistry → FeatureGroup`. Если `FeatureRegistry` предоставляет группы, UI использует `FeatureGroup` как backend grouping boundary. Experiment-level экран не требует `DatasetPreparationProposal`, `DatasetPreparationProposal.technical_groups`, inspection report или Analyzer state.
+
+Current implementation note: `DatasetPreparationAnalyzer` уже формирует `technical_groups` каскадом `structural stem → repeated name token → logical type → fallback`, но generic materializer пока не переносит эту richer grouping metadata в downstream registry. Это отдельный backend gap; его исправление не меняет данный UX contract. После propagation UI по-прежнему видит только `FeatureRegistry → FeatureGroup`.
 
 Дополнительная presentation-only группировка допустима только для уже доступных feature IDs. Она не меняет `FeatureRegistry`, `FeatureUsageStatus` или `selected_feature_ids`, не требует `DatasetPreparationProposal` и не становится scientific/business семантикой. «Без группы» — presentation bucket, а не новая technical group.
 
@@ -106,9 +112,9 @@ Canonical source доступных downstream groups — `FeatureRegistry → F
 
 ---
 
-## 5. Переход к модели и новый эксперимент
+## 5. Переход к алгоритму и новый эксперимент
 
-Внизу находится действие **«Далее: модель →»**. Оно сохраняет текущий `selected_feature_ids` в configuration эксперимента и переводит пользователя на выбор модели. Оно не вызывает `confirm_dataset_preparation`, не materialize-ит датасет и не создаёт новый `PreparedDatasetContext`.
+Внизу находится действие **«Далее: алгоритм →»**. Оно сохраняет текущий `selected_feature_ids` в configuration эксперимента и переводит пользователя на выбор алгоритма. Оно не вызывает `confirm_dataset_preparation`, не materialize-ит датасет и не создаёт новый `PreparedDatasetContext`.
 
 После результата действие **«Новый эксперимент на этих данных»** сохраняет тот же `PreparedDatasetContext`, `DatasetContract`, `FeatureRegistry` и `EvaluationPopulation`; повторная загрузка файла и Dataset Preparation не нужны. Сбрасывается только run-specific state: plan, result, comparison result и иное состояние завершённого запуска.
 
