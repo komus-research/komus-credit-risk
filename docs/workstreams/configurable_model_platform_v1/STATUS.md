@@ -1,6 +1,6 @@
 # Configurable Model Platform V1 — STATUS
 
-Phase: **MP-A ACCEPTED / MP-B ACCEPTED / MP-C IMPLEMENTATION COMPLETE / READY FOR REVIEW**
+Phase: **MP-A ACCEPTED / MP-B ACCEPTED / MP-C ACCEPTED / MP-D READY_FOR_IMPLEMENTATION**
 
 Architecture: **ACCEPTED**
 
@@ -48,12 +48,13 @@ Final MP-B Reviewer verdict after corrective review: **ACCEPT**.
 
 Accepted MP-B head: `340b362179714d92dcd5afafb8e2d14155e35d52`.
 
-MP-C implementation is complete and ready for review. It adds immutable trusted
-configuration provenance, deterministic bounded stratified technical smoke evidence,
-the matching-PASS gate in `ExperimentApplicationService` for both Recommended and
-Advanced runs, and additive V2 experiment artifacts. V1 artifacts remain readable
-without rewrite or manufactured provenance. MP-D (provider-based persistence) and
-MP-E (catalog/runtime integration) remain intentionally unimplemented.
+MP-C is implemented and **ACCEPTED**. It adds immutable trusted configuration
+provenance, deterministic bounded stratified technical smoke evidence, the
+matching-PASS gate in `ExperimentApplicationService` for both Recommended and
+Advanced runs, backend-owned prepared-context authority, and additive V2 experiment
+artifacts. V1 artifacts remain readable without rewrite or manufactured provenance.
+MP-D (provider-based persistence) and MP-E (catalog/runtime integration) remain
+intentionally unimplemented.
 
 Corrective review fixes bind smoke matching to the exact ordered population rows,
 require an authoritative prepared context for locked final-test data, remove the
@@ -87,8 +88,18 @@ MP-B final verification after corrective review:
 
 No MP-C/MP-D/MP-E behavior was implemented inside MP-B.
 
+Final MP-C Reviewer verdict after all corrective reviews: **ACCEPT**.
+
+Accepted MP-C head: `a45013ccb037852b1c26bf49dddf73724bc04926`.
+
+Final MP-C verification evidence includes:
+
+- focused: 83 passed, 17 subtests;
+- full suite: 297 passed, 128 subtests;
+- `compileall src app tests`: PASS;
+- `git diff --check`: PASS;
+- focused Ruff/import-order/backend format checks: PASS.
+
 ## Next implementation stage
 
 **MP-D — Provider-based persistence**
-
-MP-C is not marked accepted here; review remains pending.
