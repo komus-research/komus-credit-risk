@@ -1,6 +1,6 @@
 # Configurable Model Platform V1 — STATUS
 
-Phase: **MP-A IMPLEMENTATION COMPLETE / READY FOR REVIEW**
+Phase: **MP-A ACCEPTED / MP-B READY_FOR_IMPLEMENTATION**
 
 Architecture: **ACCEPTED**
 
@@ -27,7 +27,7 @@ The open work is the product model layer:
 - model catalog DTO;
 - backward-compatible migration of the current four GBDT models.
 
-MP-A is implemented and ready for review. It adds immutable declarative parameter,
+MP-A is implemented and **ACCEPTED**. It adds immutable declarative parameter,
 recommended-profile, capability, input-contract and trusted-plugin contracts plus a
 fail-closed `ModelPluginRegistry`. CatBoost, XGBoost, LightGBM and GBDT Mean are
 registered in frozen-compatible mode with payloads exactly equal to their existing
@@ -38,18 +38,27 @@ MP-B (override resolution/configurable adapters), MP-C (configuration provenance
 smoke), MP-D (provider-based persistence) and MP-E (catalog/runtime integration)
 remain intentionally unimplemented.
 
-Verification evidence: focused MP-A contract tests and existing GBDT/planning
-regression tests are run before review, followed by the full suite and static checks.
+Final Reviewer verdict after corrective review: **ACCEPT**.
 
-Corrective review fixes are applied for contract deep immutability, bidirectional
+Accepted MP-A head: `078adc4d009068cd4eb3b3886ec20b2e9aa46017`.
+
+Verification evidence after correction:
+
+- focused MP-A: 14 passed;
+- existing GBDT/planning/runner: 30 passed, 22 subtests;
+- full suite: 276 passed, 108 subtests;
+- Ruff/format: PASS;
+- `compileall src app tests`: PASS;
+- `git diff --check`: PASS.
+
+Corrective fixes closed contract deep immutability, bidirectional
 provider/capability consistency, schema/profile recommended-value consistency and
-configuration-validator identity. MP-A remains **READY FOR REVIEW**; no later stage
-is started by these corrections.
+configuration-validator identity. No later stage was implemented inside MP-A.
 
 ## Next implementation stage
 
-**MP-A — Contracts + Plugin Registry**
+**MP-B — Configuration Resolver + Configurable GBDT**
 
-The implementation must be narrow, regression-safe and preserve exact current behavior for Recommended/no-overrides.
-
-After implementation, use the normal Developer → Reviewer cycle before advancing to MP-B.
+MP-B may now build on the accepted plugin/schema foundation. It must preserve the
+accepted scientific/runtime boundaries and must not pull MP-C smoke, MP-D persistence
+refactor or MP-E frontend catalog work forward without an explicit stage decision.

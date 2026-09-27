@@ -83,7 +83,7 @@ Canonical downstream flow:
 
 Status:
 
-**ARCHITECTURE ACCEPTED / READY_FOR_IMPLEMENTATION**
+**MP-A ACCEPTED / MP-B READY_FOR_IMPLEMENTATION**
 
 Документы:
 
@@ -115,9 +115,9 @@ Status:
 
 ## Current order
 
-1. Configurable Model Platform V1 — MP-A…MP-E через Developer → Reviewer.
+1. Configurable Model Platform V1 — **MP-A ACCEPTED**, далее MP-B → MP-E через Developer → Reviewer.
 2. Feature Grouping Propagation V1 — narrow Architect Lock → Developer → Reviewer.
-3. После ACCEPT обеих задач — продолжить UX с экраном «Алгоритм».
+3. После ACCEPT обеих backend-задач — продолжить UX с экраном «Алгоритм».
 4. Затем «Проверка качества → Результат» и финальный product E2E.
 
 ## Later

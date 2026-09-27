@@ -742,7 +742,7 @@ Accepted main после corrective fix: `93823becde40d70a5e6dc189a3a12714112872
 
 Инвариант остаётся прежним: downstream UI читает только `FeatureRegistry → FeatureGroup`; Proposal/Analyzer state не становится frontend dependency, а grouping не меняет `FeatureUsageStatus` или `selected_feature_ids`.
 
-**Configurable Model Platform V1 — architecture accepted, implementation open.**
+**Configurable Model Platform V1 — architecture accepted; MP-A accepted; MP-B next.**
 
 Принят target design:
 
@@ -756,19 +756,27 @@ Owner decisions:
 - GBDT Mean сохраняет equal weights `1/3 + 1/3 + 1/3`, component parameters могут быть configurable;
 - matching technical smoke PASS обязателен перед **каждым** full experiment, и для Recommended, и для Advanced; smoke не является quality evaluation.
 
+MP-A — Contracts + Plugin Registry — реализован, прошёл corrective review и получил **Reviewer ACCEPT**.
+
+Accepted MP-A head: `078adc4d009068cd4eb3b3886ec20b2e9aa46017`.
+
+MP-A зафиксировал immutable model-platform contracts, fail-closed `ModelPluginRegistry`,
+frozen-compatible registrations текущих четырёх моделей и deterministic declarative identities.
+Runner, persistence runtime, inference, SHAP и UI не менялись.
+
 Подробный lock:
 
 `docs/workstreams/configurable_model_platform_v1/ARCHITECT_LOCK.md`.
 
 **Текущий порядок product backend work:**
 
-1. Configurable Model Platform V1 — MP-A…MP-E через Developer → Reviewer.
+1. Configurable Model Platform V1 — **MP-A ACCEPTED**, следующий stage MP-B; затем MP-C → MP-E.
 2. Feature Grouping Propagation V1 — отдельный narrow Architect Lock → Developer → Reviewer.
-3. После ACCEPT обеих задач — продолжение UX с экраном «Алгоритм».
+3. После ACCEPT обеих backend-задач — продолжение UX с экраном «Алгоритм».
 
 ### Future / not implemented
 
-- implementation Configurable Model Platform V1;
+- Configurable Model Platform V1 stages MP-B → MP-E;
 - end-to-end Feature Grouping Propagation V1;
 - production React/Next.js + thin FastAPI frontend/backend boundary;
 - Dataset History / Persistence V1 как пользовательская история проектов/экспериментов;
