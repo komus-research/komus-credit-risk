@@ -241,21 +241,35 @@ LLM получает business constraints вместе с ML results.
 
 Один и тот же `ExperimentResult` должен можно пересчитывать под разные `BusinessPolicy` без retraining.
 
-## 7. Model registry
+## 7. Model platform / registry
 
-Notebook №06 уже доказал полезность единого registry. Новая реализация должна сохранить идею, но вынести её из Colab-specific state.
+Текущий ML-core и ExperimentRunner сохраняются. Принятая product architecture поднимает над ними trusted plugin layer:
 
-Model registry отвечает за:
+```text
+ModelPlugin
+→ ModelPluginRegistry
+→ backend parameter schema + capabilities
+→ ResolvedModelConfiguration
+→ mandatory technical smoke
+→ ExperimentConfig.model_parameters
+→ existing ExperimentRunner
+```
 
-- доступные модели;
-- безопасные default параметры;
-- поддерживаемые параметры;
-- создание estimator/adaptor;
-- метаданные о возможностях модели.
+`ModelPlugin` является registration unit модели и объединяет identity/presentation metadata, adapter factory, parameter schema, recommended profile, input contract, capability manifest и optional providers для persistence/explainability.
 
-Frontend в будущем получает доступные модели из registry, а не держит свой список вручную.
+Frontend получает модели, capabilities, availability и parameter schema из backend DTO и не содержит model-specific branches/ranges.
 
-## 8. Feature registry и ограничения
+Recommended/no-overrides для текущих моделей обязан воспроизводить accepted Stage 1 V2 recipe. Advanced меняет только параметры, которые trusted schema явно объявляет editable. Target/evaluation/FeatureRegistry/input/runtime invariants не становятся model parameters.
+
+`ResolvedModelConfiguration` фиксирует exact resolved parameters и deterministic configuration identity; exact runtime profile по-прежнему хранится в `ExperimentConfig.model_parameters`.
+
+Перед каждым full experiment требуется matching technical smoke PASS. Smoke выполняет bounded technical fit/predict validation и не является quality evaluation.
+
+Persistence развивается к provider-based contract, чтобы central store не разрастался через `if model_id == ...`.
+
+Подробный lock: `docs/workstreams/configurable_model_platform_v1/ARCHITECT_LOCK.md`.
+
+## 8. Feature registry, ограничения и grouping
 
 Feature set должен быть объектом конфигурации, а не случайным списком в ячейке notebook.
 
@@ -267,6 +281,16 @@ Feature set должен быть объектом конфигурации, а 
 - experimental features.
 
 В frozen historical Data_final profile `Q_B1_norm` и `Q_B2_norm` доступны только в historical/reference-сценариях; generic preparation не применяет name-based restriction.
+
+Для experiment-level Feature Selection authoritative source остаётся `PreparedDatasetContext → FeatureRegistry`. Только `MODEL_ALLOWED` features selectable; checkbox меняет только `selected_feature_ids`.
+
+Generic DatasetPreparationAnalyzer уже формирует technical groups детерминированным каскадом:
+
+`structural stem → repeated name token → logical type → fallback`.
+
+Открытый backend workstream `Feature Grouping Propagation V1` должен сохранить эту presentation metadata в materialized `FeatureRegistry → FeatureGroup`, не создавая direct UI dependency на Proposal/Analyzer state и не меняя permissions/selection semantics.
+
+Business/semantic grouping и LLM grouping не вводятся как скрытая эвристика.
 
 ## 9. Evaluation protocol
 
@@ -627,7 +651,7 @@ Proposal не является fallback для confirmation. Для arbitrary da
 
 Общий путь:
 
-`PreparedDatasetContext → Признаки → Модель → Эксперимент → Результат`.
+`PreparedDatasetContext → Признаки → Алгоритм → Проверка качества → Результат`.
 
 Filename, конкретное имя target, identifier или business-specific feature name не являются основанием для generic downstream behavior.
 
