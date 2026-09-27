@@ -6,9 +6,7 @@ import ast
 from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
-import pandas as pd
 import streamlit as st
 
 from app.bootstrap import (
@@ -21,8 +19,7 @@ from app.bootstrap import (
     validate_supported_protocol,
 )
 from app.feature_display import group_feature_ids_by_family
-from app.local_file_picker import UnsupportedLocalFileExtension, persist_uploaded_file
-from app.shap_evidence import load_stage2_evidence, model_display_name, stage2_matches_current_run
+from app.local_file_picker import NativeFilePickerUnavailable, choose_local_file
 from app.session_state import (
     apply_feature_widget_selection,
     apply_group_widget_selection,
@@ -87,16 +84,7 @@ _RESULT_INTERPRETER_ROLE_LABELS = {
 _SOURCE_CONTROL_LOCATOR_KEY = "prototype_source_control_locator"
 _SOURCE_KIND_WIDGET_KEY = "prototype_source_kind"
 _SELECTED_LOCAL_FILE_PATH_KEY = "prototype_selected_local_file_path"
-_LOCAL_FILE_UPLOADER_REVISION_KEY = "prototype_local_file_uploader_revision"
-_UPLOAD_HISTORY_KEY = "prototype_upload_history"
-_UPLOAD_HISTORY_VISIBLE_KEY = "prototype_upload_history_visible"
-_UPLOAD_HISTORY_TOKEN_KEY = "prototype_upload_history_token"
-_UPLOAD_HISTORY_LOADED_KEY = "prototype_upload_history_loaded"
-_UPLOAD_HISTORY_ERROR_KEY = "prototype_upload_history_error"
-_PREPARATION_CACHE_KEY = "prototype_preparation_cache"
-_SOURCE_COLUMNS_CACHE_KEY = "prototype_source_columns_cache"
-_NEW_DATASET_ANALYSIS_KEY = "prototype_new_dataset_analysis"
-_NEW_DATASET_CONFIRMATION_KEY = "prototype_new_dataset_confirmation"
+_MANUAL_LOCAL_FILE_PATH_KEY = "prototype_manual_local_file_path"
 _SOURCE_ERROR_KEY = "prototype_source_error"
 _SOURCE_RECHECK_INVALID_KEY = "prototype_source_recheck_invalid"
 _PREPARATION_DRAFT_KEY = "dataset_preparation_draft"
@@ -123,27 +111,19 @@ def _runtime():
 def main() -> None:
     st.set_page_config(page_title="KOMUS · Prototype V1", layout="wide")
     initialize(st.session_state)
-    _restore_upload_history(st.session_state)
     runtime = _runtime()
-    if not hasattr(runtime, "model_store") or not hasattr(runtime, "model_training_service"):
-        st.error("Сервер Streamlit использует старый runtime. Перезапустите Streamlit, чтобы открыть версии моделей.")
-        return
     step = st.session_state.current_step
     st.title("KOMUS · Прототип кредитного скоринга")
     _render_step_navigation()
 
     if step == 0:
-        _render_data_step(runtime)
+        _render_data_step()
     elif step == 1:
         _render_features_step(runtime)
     elif step == 2:
         _render_models_step(runtime)
     elif step == 3:
         _render_experiment_step(runtime)
-    elif step == 4:
-        _render_result_step(runtime)
-    elif step == 5:
-        _render_shap_step()
     else:
         _render_result_step(runtime)
 
@@ -258,8 +238,6 @@ def _render_data_step() -> None:
         source = preparation.source
         st.success("Файл успешно проверен")
         st.subheader(source.file_name)
-        _render_source_columns(source)
-        _render_new_dataset_confirmation(source, runtime)
         st.write(
             "Этот набор данных ещё не подготовлен для обучения и проверки качества. "
             "Для продолжения нужно подтвердить роли колонок и доступные признаки."
@@ -284,54 +262,7 @@ def _render_data_step() -> None:
         1,
         primary=True,
         disabled=not ready_to_continue,
-        on_navigate=_reveal_upload_history,
     )
-    _render_saved_model_catalog(runtime)
-
-
-def _render_saved_model_catalog(runtime) -> None:
-    """Show persisted model versions even after Streamlit creates a new session."""
-    st.subheader("Сохранённые версии моделей")
-    try:
-        versions, invalid = runtime.model_store.catalog()
-    except OSError:
-        st.warning("Не удалось прочитать локальный каталог моделей.")
-        return
-    if invalid:
-        st.warning(f"Повреждённых или неполных записей каталога: {len(invalid)}. Они не будут загружены.")
-    if not versions:
-        st.caption("Пока нет итоговых обученных моделей. OOF-эксперимент сам по себе модель не сохраняет.")
-        return
-    selection = st.dataframe(
-        [
-            {
-                "Версия": item.version_id[:12], "Дата": _format_saved_model_date(item.created_at),
-                "Датасет": item.dataset_name, "Алгоритм": item.model_id,
-                "Признаков": item.feature_count, "OOF-результат": item.experiment_artifact_id[:12],
-            }
-            for item in versions
-        ],
-        hide_index=True, use_container_width=True,
-        on_select="rerun", selection_mode="single-row", key="prototype_saved_model_catalog",
-    )
-    st.caption("Нажмите на строку модели, чтобы открыть её признаки и загрузить файл для прогноза.")
-    selected_rows = selection.selection.rows
-    if selected_rows:
-        st.session_state.selected_model_version_id = versions[selected_rows[0]].version_id
-        st.session_state[_PREDICTION_RESULT_KEY] = None
-        navigate_to_step(st.session_state, 6)
-        st.rerun()
-
-
-def _format_saved_model_date(value: str) -> str:
-    """Display UTC model timestamps as a short Moscow-local calendar date."""
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except (AttributeError, ValueError):
-        return "—"
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(ZoneInfo("Europe/Moscow")).strftime("%d.%m.%y")
 
 
 def _render_local_source_controls() -> str:
@@ -374,105 +305,10 @@ def _render_local_source_controls() -> str:
     return effective_path
 
 
-def _on_local_file_uploaded(widget_key: str) -> None:
-    """Persist a browser upload once, when its widget value actually changes."""
-    uploaded_file = st.session_state.get(widget_key)
-    if uploaded_file is None:
-        return
-    try:
-        selected = persist_uploaded_file(
-            uploaded_file.name, uploaded_file.getvalue(), _SUPPORTED_SOURCE_EXTENSIONS,
-        )
-    except UnsupportedLocalFileExtension:
-        st.session_state[_SOURCE_ERROR_KEY] = (
-            "Формат файла не поддерживается", "Выберите файл с расширением .csv, .xlsx или .xlsb.",
-        )
-        return
-    st.session_state[_SELECTED_LOCAL_FILE_PATH_KEY] = selected
-    st.session_state[_UPLOAD_HISTORY_VISIBLE_KEY] = False
-    st.session_state.pop(_SOURCE_ERROR_KEY, None)
-    history = [item for item in st.session_state.get(_UPLOAD_HISTORY_KEY, ()) if item["path"] != selected]
-    recent = [
-        {"name": Path(uploaded_file.name).name, "path": selected, "size": uploaded_file.size},
-        *history,
-    ][:10]
-    st.session_state[_UPLOAD_HISTORY_KEY] = recent
-    token = st.session_state.get(_UPLOAD_HISTORY_TOKEN_KEY)
-    if token:
-        try:
-            save_upload_history(token, recent)
-        except UploadHistoryError as error:
-            st.session_state[_UPLOAD_HISTORY_ERROR_KEY] = str(error)
-        else:
-            st.session_state.pop(_UPLOAD_HISTORY_ERROR_KEY, None)
-    cached = st.session_state.get(_PREPARATION_CACHE_KEY, {})
-    st.session_state[_PREPARATION_CACHE_KEY] = {
-        item["path"]: cached[item["path"]] for item in recent if item["path"] in cached
-    }
-
-
-def _select_uploaded_from_history(path: str) -> None:
-    """Select only a path recorded by this browser session."""
-    if path not in {item["path"] for item in st.session_state.get(_UPLOAD_HISTORY_KEY, ())}:
-        return
-    if not Path(path).is_file():
-        st.session_state[_SOURCE_ERROR_KEY] = ("Файл не найден", "Загрузите этот файл ещё раз.")
-        return
-    st.session_state[_SELECTED_LOCAL_FILE_PATH_KEY] = path
-    st.session_state[_LOCAL_FILE_UPLOADER_REVISION_KEY] = (
-        int(st.session_state.get(_LOCAL_FILE_UPLOADER_REVISION_KEY, 0)) + 1
-    )
-    st.session_state.pop(_SOURCE_ERROR_KEY, None)
-
-
-def _reveal_upload_history() -> None:
-    """Expose history only after the selected upload reaches the next wizard step."""
-    if (
-        st.session_state.get(_SOURCE_KIND_WIDGET_KEY) == "explicit_local"
-        and st.session_state.get(_SELECTED_LOCAL_FILE_PATH_KEY)
-    ):
-        st.session_state[_UPLOAD_HISTORY_VISIBLE_KEY] = True
-
-
-def _restore_upload_history(state: MutableMapping[str, Any]) -> None:
-    """Restore browser-scoped history after a full page reload, not model state."""
-    if state.get(_UPLOAD_HISTORY_LOADED_KEY):
-        return
-    query_params = getattr(st, "query_params", None)
-    if query_params is None:
-        return
-    token = history_token(query_params)
-    state[_UPLOAD_HISTORY_TOKEN_KEY] = token
-    current_history = list(state.get(_UPLOAD_HISTORY_KEY, ()))
-    try:
-        saved_history = load_upload_history(token)
-        if current_history:
-            seen = set()
-            merged = []
-            for item in [*current_history, *saved_history]:
-                path = item.get("path") if isinstance(item, dict) else None
-                if isinstance(path, str) and path not in seen:
-                    merged.append(item)
-                    seen.add(path)
-            save_upload_history(token, merged[:10])
-            history = load_upload_history(token)
-        else:
-            history = saved_history
-    except UploadHistoryError as error:
-        state[_UPLOAD_HISTORY_ERROR_KEY] = str(error)
-        history = current_history
-    state[_UPLOAD_HISTORY_KEY] = history
-    if not current_history:
-        state[_UPLOAD_HISTORY_VISIBLE_KEY] = bool(history)
-    state[_UPLOAD_HISTORY_LOADED_KEY] = True
-
-
 def _clear_local_file_selection() -> None:
     """Reset local-file controls before Streamlit instantiates their widgets."""
     st.session_state.pop(_SELECTED_LOCAL_FILE_PATH_KEY, None)
-    st.session_state[_LOCAL_FILE_UPLOADER_REVISION_KEY] = (
-        int(st.session_state.get(_LOCAL_FILE_UPLOADER_REVISION_KEY, 0)) + 1
-    )
+    st.session_state[_MANUAL_LOCAL_FILE_PATH_KEY] = ""
 
 
 def _render_source_check_action(
@@ -538,219 +374,6 @@ def _commit_source_preparation(
     """Commit only a successfully checked source; draft control changes remain harmless."""
     set_dataset_source_preparation(state, preparation)
     state[_SOURCE_CONTROL_LOCATOR_KEY] = locator
-    source = preparation.source
-    if source.source_kind == "explicit_local" and str(source.local_runtime_path) in {
-        item["path"] for item in state.get(_UPLOAD_HISTORY_KEY, ())
-    }:
-        signature = _source_file_signature(source.local_runtime_path)
-        if signature is not None:
-            cache = dict(state.get(_PREPARATION_CACHE_KEY, {}))
-            cache.pop(str(source.local_runtime_path), None)
-            cache[str(source.local_runtime_path)] = (signature, preparation)
-            state[_PREPARATION_CACHE_KEY] = dict(list(cache.items())[-2:])
-
-
-def _source_file_signature(path: Path) -> tuple[int, int] | None:
-    try:
-        info = path.stat()
-    except OSError:
-        return None
-    return info.st_size, info.st_mtime_ns
-
-
-def _cached_source_preparation(state: Mapping[str, Any], source: Any) -> Any | None:
-    if source.source_kind != "explicit_local":
-        return None
-    cached = state.get(_PREPARATION_CACHE_KEY, {}).get(str(source.local_runtime_path))
-    if cached is None or cached[0] != _source_file_signature(source.local_runtime_path):
-        return None
-    return cached[1]
-
-
-def _render_source_columns(source: Any) -> None:
-    """Show factual headers only; arbitrary sources are not made run-ready."""
-    st.subheader("Найденные столбцы")
-    signature = _source_file_signature(source.local_runtime_path)
-    if signature is None:
-        st.warning("Файл больше недоступен. Загрузите его снова.")
-        return
-    cache_key = (str(source.local_runtime_path), *signature)
-    cached = st.session_state.get(_SOURCE_COLUMNS_CACHE_KEY)
-    if cached is not None and cached[0] == cache_key:
-        columns = cached[1]
-    else:
-        try:
-            columns = TabularReader().preview_columns(source.local_runtime_path)
-        except TabularReadError as error:
-            st.warning(f"Не удалось прочитать заголовки: {error}")
-            return
-        st.session_state[_SOURCE_COLUMNS_CACHE_KEY] = (cache_key, columns)
-    st.caption(f"Найдено столбцов: {len(columns)}. Это только структура файла; роли и признаки ещё не подтверждены.")
-    st.dataframe(
-        [{"№": index, "Название столбца": name} for index, name in enumerate(columns, start=1)],
-        hide_index=True,
-        use_container_width=True,
-    )
-
-
-def _render_new_dataset_confirmation(source: Any, runtime: Any = None) -> None:
-    """Confirm new-file roles without activating the historical experiment path."""
-    signature = _source_file_signature(source.local_runtime_path)
-    if signature is None:
-        return
-    cache_key = (str(source.local_runtime_path), *signature)
-    cached = st.session_state.get(_NEW_DATASET_ANALYSIS_KEY)
-    if cached is None or cached[0] != cache_key:
-        cached = None
-    st.subheader("Подготовка нового набора данных")
-    st.caption("Факты о файле → предложения системы → ваше подтверждение. Анализ прочитает всю таблицу.")
-    if st.button("Изучить данные и предложить роли", type="secondary"):
-        try:
-            snapshot, inspection, proposal = _run_with_progress(
-                {"reading": "Чтение таблицы", "inspecting": "Анализ столбцов", "proposing": "Подготовка предложений"},
-                lambda report: _analyze_new_dataset_with_progress(source, report),
-                initial_label="Изучаем новый набор данных…",
-                completion_label="Анализ данных завершён",
-            )
-        except (TabularReadError, ValueError, OSError) as error:
-            st.error(f"Не удалось изучить файл: {error}")
-            return
-        st.session_state[_NEW_DATASET_ANALYSIS_KEY] = (cache_key, snapshot, inspection, proposal)
-        st.session_state.pop(_NEW_DATASET_CONFIRMATION_KEY, None)
-        cached = st.session_state[_NEW_DATASET_ANALYSIS_KEY]
-    if cached is None:
-        return
-    _, snapshot, inspection, proposal = cached
-    st.write(f"Прочитано строк: {inspection.row_count:,}; столбцов: {inspection.column_count}.")
-    with st.expander("Факты о столбцах", expanded=False):
-        st.dataframe(
-            [{"Столбец": item.column_name, "Тип": item.physical_dtype,
-              "Пропусков": item.missing_count, "Уникальных значений": item.unique_non_null_count}
-             for item in inspection.columns],
-            hide_index=True, use_container_width=True,
-        )
-    st.caption("Предложения системы не подтверждаются автоматически.")
-    suggested_target = proposal.target_candidates[0].column_name if proposal.target_candidates else None
-    suggested_identifier = proposal.identifier_candidates[0].column_name if proposal.identifier_candidates else None
-    if suggested_target:
-        st.write(f"Предложенная цель: {suggested_target}")
-    if suggested_identifier:
-        st.write(f"Предложенный идентификатор: {suggested_identifier}")
-    if proposal.warnings:
-        with st.expander(f"Предупреждения анализа: {len(proposal.warnings)}", expanded=False):
-            for warning in proposal.warnings:
-                st.write(f"{warning.column_name or 'Набор данных'}: {'; '.join(warning.reasons_ru)}")
-
-    names = tuple(item.column_name for item in inspection.columns)
-    target = st.selectbox("Целевая колонка", names, index=names.index(suggested_target) if suggested_target in names else 0)
-    identifier_options = tuple(name for name in names if name != target)
-    identifier = st.selectbox(
-        "Колонка идентификатора (например, ИНН)", identifier_options,
-        index=identifier_options.index(suggested_identifier) if suggested_identifier in identifier_options else 0,
-    ) if identifier_options else None
-    values = tuple(_native_value(value) for value in snapshot.dataframe[target].dropna().unique())
-    if len(values) != 2:
-        st.warning("Выберите бинарную цель: нужны ровно два непустых значения.")
-        return
-    suggested_positive = next((item.value for item in proposal.positive_class_candidates if item.target_column == target), None)
-    if suggested_positive not in values:
-        suggested_positive = 1 if 1 in values else values[-1]
-    positive = st.selectbox(
-        "Какое значение означает дефолт / событие?", values,
-        index=values.index(suggested_positive), format_func=str,
-    )
-    proxy_columns = {
-        warning.column_name for warning in proposal.warnings
-        if warning.code in {"potential_target_proxy", "potential_deterministic_target_proxy"}
-    }
-    eligible = tuple(
-        item.column_name for item in inspection.columns
-        if item.column_name not in {target, identifier}
-        and item.column_name not in proxy_columns
-        and item.inferred_logical_type in {"numeric", "boolean"}
-        and not item.missing_count and not item.is_constant
-    )
-    st.caption("Цель, идентификатор, нечисловые и подозрительные proxy-колонки не предлагаются для модели.")
-    allowed = st.multiselect("Разрешить как признаки", eligible, default=eligible)
-    acknowledged = st.checkbox("Подтверждаю роли столбцов и понимаю, что это ещё не запуск модели")
-    if st.button("Подтвердить подготовку", disabled=not (identifier and allowed and acknowledged)):
-        roles = ConfirmedDatasetRoles(snapshot.fingerprint, target, positive, identifier, tuple(allowed))
-        if _source_file_signature(source.local_runtime_path) != signature:
-            st.error("Файл изменился после анализа. Запустите анализ повторно.")
-            return
-        try:
-            materialized = materialize_confirmed_dataset(snapshot, inspection, proposal, roles)
-        except ValueError as error:
-            st.error(f"Не удалось подтвердить датасет: {error}")
-        else:
-            st.session_state[_NEW_DATASET_CONFIRMATION_KEY] = (cache_key, materialized)
-    confirmed = st.session_state.get(_NEW_DATASET_CONFIRMATION_KEY)
-    if confirmed is not None and confirmed[0] == cache_key:
-        current = ConfirmedDatasetRoles(snapshot.fingerprint, target, positive, identifier, tuple(allowed))
-        if confirmed[1].roles == current:
-            st.success("Роли подтверждены; паспорт, реестр признаков и популяция этого датасета созданы.")
-            if runtime is not None:
-                prepared = confirmed[1]
-                _render_description_upload(
-                    runtime, prepared.loaded_dataset.contract.dataset_fingerprint,
-                    tuple(spec.column_name for spec in prepared.feature_registry.resolve(allowed)),
-                    "new_dataset",
-                )
-            _render_new_dataset_oof_protocol(source, cache_key, confirmed[1])
-
-
-def _render_new_dataset_oof_protocol(source: Any, cache_key: tuple[Any, ...], materialized: Any) -> None:
-    """Activate the existing OOF wizard only after an explicit non-temporal decision."""
-    st.subheader("Протокол оценки нового датасета")
-    temporal = suspected_temporal_columns(materialized)
-    if temporal:
-        st.warning(
-            "Возможная временная структура: " + ", ".join(temporal)
-            + ". Случайная OOF-проверка здесь заблокирована; нужен временной протокол."
-        )
-        return
-    st.info(
-        "Доступна исследовательская стратифицированная OOF-оценка по всем строкам нового файла. "
-        "Независимая финальная выборка не выделена; итоговый Gini нельзя считать проверкой на будущих периодах."
-    )
-    acknowledged = st.checkbox(
-        "Подтверждаю: одна строка соответствует одному ИНН, временной последовательности наблюдений нет",
-        key=f"prototype_non_temporal_{materialized.loaded_dataset.contract.dataset_fingerprint[:16]}",
-    )
-    if not st.button("Разрешить OOF-оценку", disabled=not acknowledged):
-        return
-    if _source_file_signature(source.local_runtime_path) != cache_key[1:]:
-        st.error("Файл изменился после анализа. Проверьте и подтвердите его повторно.")
-        return
-    try:
-        ready = prepare_oof_evaluation(materialized, confirm_no_time_axis=acknowledged)
-    except (OSError, ValueError) as error:
-        st.error(f"Нельзя утвердить протокол: {error}")
-        return
-    context = PreparedDatasetContext(
-        context_id=f"user_oof_{ready.loaded_dataset.contract.dataset_fingerprint[:16]}",
-        display_name=f"{source.file_name} — исследовательская OOF-популяция",
-        loaded_dataset=ready.loaded_dataset,
-        feature_registry=ready.feature_registry,
-        population=ready.population,
-    )
-    preparation = DatasetSourcePreparation(source, "user_oof_context_prepared", context)
-    _commit_source_preparation(st.session_state, ("explicit_local", str(source.local_runtime_path)), preparation)
-    st.rerun()
-
-
-def _analyze_new_dataset_with_progress(source: Any, report: Callable[[str], None]) -> tuple[Any, Any, Any]:
-    report("reading")
-    snapshot = TabularReader().read(source.local_runtime_path)
-    report("inspecting")
-    inspection = DatasetInspector().inspect(snapshot)
-    report("proposing")
-    proposal = DatasetPreparationAnalyzer().analyze(inspection)
-    return snapshot, inspection, proposal
-
-
-def _native_value(value: Any) -> Any:
-    return value.item() if hasattr(value, "item") else value
 
 
 def _render_source_error() -> None:
@@ -1232,7 +855,9 @@ def _restore_source_controls(state: MutableMapping[str, Any]) -> None:
     restoring_after_navigation = _SOURCE_KIND_WIDGET_KEY not in state
     if restoring_after_navigation:
         state[_SOURCE_KIND_WIDGET_KEY] = source_kind
-    if source_kind == "explicit_local" and local_path and restoring_after_navigation:
+    if source_kind == "explicit_local" and local_path and (
+        restoring_after_navigation or _MANUAL_LOCAL_FILE_PATH_KEY not in state
+    ):
         state[_SELECTED_LOCAL_FILE_PATH_KEY] = local_path
 
 
@@ -1245,8 +870,6 @@ def _synchronize_source_selection(state: MutableMapping[str, Any], locator: tupl
     if previous == locator:
         return
     set_dataset_source_preparation(state, None)
-    state.pop(_NEW_DATASET_ANALYSIS_KEY, None)
-    state.pop(_NEW_DATASET_CONFIRMATION_KEY, None)
     state.pop(_SOURCE_ERROR_KEY, None)
     state.pop(_SOURCE_RECHECK_INVALID_KEY, None)
     state[_SOURCE_CONTROL_LOCATOR_KEY] = locator
@@ -1513,11 +1136,6 @@ def _render_experiment_step(runtime) -> None:
         if validation_message:
             st.error(validation_message)
             return
-        if not context.loaded_dataset.contract.final_test_locked:
-            target = context.loaded_dataset.dataframe[context.loaded_dataset.contract.target_column]
-            if int(target.value_counts().min()) < values["folds"]:
-                st.error("Число частей OOF не должно превышать число строк самого редкого класса.")
-                return
         if values["reference_artifact_id"] is not None:
             try:
                 runtime.application_service.load_experiment(values["reference_artifact_id"])
@@ -1587,8 +1205,7 @@ def _render_plan(plan) -> None:
     request = plan.request
     with st.expander("Данные", expanded=True):
         st.write(f"{plan.dataset.dataset_name} · версия {plan.dataset.dataset_version}")
-        population_label = "Рабочая выборка" if plan.dataset.final_test_locked else "Популяция исследовательской оценки"
-        st.write(f"{population_label}: {plan.population.population_size:,} организаций.")
+        st.write(f"Рабочая выборка: {plan.population.population_size:,} организаций.")
         st.write(f"Финальная контрольная выборка закрыта: {'да' if plan.dataset.final_test_locked else 'нет'}.")
     with st.expander("Признаки", expanded=True):
         st.write(f"Выбрано: {len(plan.selected_features)}")
@@ -1620,11 +1237,6 @@ def _render_result_step(runtime) -> None:
         _navigation_button(st, "← Назад", 3)
         return
     st.header("5. Результат")
-    if not artifact.dataset_contract.final_test_locked:
-        st.warning("Это исследовательская OOF-оценка нового датасета без независимой финальной выборки. Она не подтверждает качество на будущих данных.")
-        plan = st.session_state.experiment_plan
-        if plan is not None and plan.dataset.dataset_fingerprint == artifact.dataset_contract.dataset_fingerprint:
-            st.caption(f"ID конфигурации: {_evaluation_configuration_id(plan)}")
     result = artifact.run_output.result
     metrics = result.metrics
     st.success("Обучение и перекрёстная проверка качества завершены.")
@@ -1668,7 +1280,6 @@ def _render_result_step(runtime) -> None:
         hide_index=True,
         use_container_width=True,
     )
-    model_saved = _render_final_model_section(runtime, artifact)
     st.subheader("Ограничения")
     with st.expander("Показать ограничения", expanded=False):
         for limitation in result.limitations:
@@ -1974,17 +1585,14 @@ def _run_role_interpretation(
 
 def _navigation_button(
     container: Any, label: str, target_step: int, *, primary: bool = False, disabled: bool = False,
-    on_navigate: Callable[[], None] | None = None,
 ) -> None:
     """Render a non-destructive wizard transition in the supplied layout slot."""
     if container.button(label, type="primary" if primary else "secondary", disabled=disabled):
-        if on_navigate is not None:
-            on_navigate()
         navigate_to_step(st.session_state, target_step)
         st.rerun()
 
 
-def _available_wizard_steps(state: Mapping[str, Any]) -> tuple[bool, ...]:
+def _available_wizard_steps(state: Mapping[str, Any]) -> tuple[bool, bool, bool, bool, bool]:
     """Keep every reached tab directly accessible until an actual source change resets it."""
     highest_reached = min(max(int(state.get("highest_reached_step", 0)), 0), len(_STEP_NAVIGATION_LABELS) - 1)
     return tuple(step <= highest_reached for step in range(len(_STEP_NAVIGATION_LABELS)))

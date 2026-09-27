@@ -38,24 +38,6 @@ class TabularSnapshot:
 class TabularReader:
     """Reads bytes into a dataframe without assigning dataset semantics."""
 
-    def preview_columns(self, path: str | Path, *, separator: str = ",", encoding: str = "utf-8", sheet_name: str | int = 0) -> tuple[str, ...]:
-        """Read only CSV/XLSX/XLSB headers; this does not validate or prepare a dataset."""
-        source_path = Path(path)
-        if not source_path.is_file():
-            raise TabularReadError("file_not_found", f"Файл не найден: «{source_path}».")
-        try:
-            source_format = _FORMATS[source_path.suffix.lower()]
-        except KeyError as error:
-            raise TabularReadError("unsupported_format", f"Неподдерживаемый формат: «{source_path.suffix}».") from error
-        if source_format not in {"csv", "xlsx", "xlsb"}:
-            raise TabularReadError("unsupported_format", "Просмотр заголовков в интерфейсе доступен для CSV, XLSX и XLSB.")
-        if source_format == "csv" and len(separator) != 1:
-            raise TabularReadError("invalid_read_options", "Разделитель CSV должен состоять из одного символа.")
-        headers = self._validate_headers(source_path, source_format, separator, encoding, sheet_name)
-        if not headers or any(not isinstance(name, str) or not name.strip() for name in headers):
-            raise TabularReadError("invalid_headers", "Заголовки столбцов должны быть непустыми текстовыми именами.")
-        return tuple(headers)
-
     def read(self, path: str | Path, *, separator: str = ",", encoding: str = "utf-8", sheet_name: str | int = 0) -> TabularSnapshot:
         source_path = Path(path)
         if not source_path.exists():

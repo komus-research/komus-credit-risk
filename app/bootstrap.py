@@ -100,8 +100,6 @@ class DatasetSourcePreparation:
 class PrototypeRuntime:
     planning_service: ExperimentPlanningService
     application_service: ExperimentApplicationService
-    model_training_service: FinalModelTrainingService
-    model_store: ModelVersionStore
     model_registry: ModelRegistry
     model_factories: Mapping[str, ModelAdapterFactory]
     supported_protocol: "SupportedProtocol"
@@ -153,7 +151,7 @@ SUPPORTED_PROTOCOL = SupportedProtocol(
 class LocalDatasetSourceResolver:
     """Resolve local physical files without inferring any dataset semantics."""
 
-    _FORMATS = {".csv": "csv", ".xlsx": "xlsx", ".xlsb": "xlsb"}
+    _FORMATS = {".csv": "csv", ".xlsx": "xlsx", ".xlsb": "xlsb", ".parquet": "parquet"}
 
     def __init__(self, repository_data_final_path: Path | None = None) -> None:
         self._repository_data_final_path = (
@@ -495,11 +493,6 @@ def create_runtime(
             comparison_service=ExperimentComparisonService(),
             code_version=code_version,
         ),
-        FinalModelTrainingService(
-            experiment_store=experiment_store, model_store=model_store,
-            model_registry=registry, model_factories=factories, code_version=code_version,
-        ),
-        model_store,
         registry,
         factories,
         SUPPORTED_PROTOCOL,

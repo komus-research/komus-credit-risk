@@ -212,7 +212,6 @@ class DatasetOnboardingTests(unittest.TestCase):
             frame = pd.DataFrame({"a": [1], "b": [2]})
             xlsx = root / "data.xlsx"
             frame.to_excel(xlsx, index=False)
-            self.assertEqual(("a", "b"), TabularReader().preview_columns(xlsx))
             self.assertEqual("xlsx", TabularReader().read(xlsx).source_format)
             with self.assertRaises(TabularReadError) as error:
                 TabularReader().read(xlsx, sheet_name="absent")
