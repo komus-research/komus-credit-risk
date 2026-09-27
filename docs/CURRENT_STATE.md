@@ -1,6 +1,6 @@
 # KOMUS — CURRENT STATE
 
-Дата фиксации: **2026-09-25**
+Дата фиксации: **2026-09-27**
 
 Этот файл содержит только актуальное подтверждённое состояние проекта.
 Он обновляется после принятого исследовательского этапа или существенного изменения требований.
@@ -671,7 +671,7 @@ Stage 20 закрыт. Новые API-вызовы не нужны. Следую
 
 Пользовательский flow:
 
-`Данные → Признаки → Модель → Эксперимент → Результат`
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`
 
 Canonical launch:
 
@@ -704,14 +704,78 @@ UX/runtime remediation имеет Reviewer verdict: `ACCEPT`.
 - final test не используется;
 - ArtifactStore / ComparisonService semantics не изменены.
 
+### Current product status — 2026-09-27
+
+Product UX и backend теперь разделяются явно.
+
+**UX/VISUAL LOCK V1:**
+
+- Главная;
+- Данные / Файл;
+- Данные / Роли колонок;
+- Данные / Подтверждение;
+- Признаки.
+
+Экран «Алгоритм» намеренно не фиксируется окончательно до завершения двух backend workstreams ниже.
+
+**Browser-native upload — ACCEPTED.**
+
+Текущий main поддерживает browser upload и для training dataset, и для targetless inference:
+
+`st.file_uploader → controlled local staging → existing tabular pipeline`.
+
+Ручной ввод server path / tkinter picker больше не является основным пользовательским flow. При смене inference source инвалидируется только downstream inference state, active ModelVersion сохраняется. Staging fail-close оборачивает filesystem/OSError в пользовательскую upload error boundary и очищает заменённые/устаревшие временные файлы.
+
+Accepted main после corrective fix: `93823becde40d70a5e6dc189a3a127141128726f`.
+
+**Feature Selection grouping — UX contract accepted, backend propagation gap open.**
+
+`DatasetPreparationAnalyzer` уже детерминированно строит `DatasetPreparationProposal.technical_groups` каскадом:
+
+`structural stem → repeated name token → logical type → fallback`.
+
+Однако generic materializer сейчас строит downstream `FeatureRegistry → FeatureGroup` в основном по confirmed usage status и не переносит richer Analyzer technical groups. Поэтому group-first UX принят, но end-to-end grouping ещё не завершён.
+
+Открыт workstream:
+
+`Feature Grouping Propagation V1`.
+
+Инвариант остаётся прежним: downstream UI читает только `FeatureRegistry → FeatureGroup`; Proposal/Analyzer state не становится frontend dependency, а grouping не меняет `FeatureUsageStatus` или `selected_feature_ids`.
+
+**Configurable Model Platform V1 — architecture accepted, implementation open.**
+
+Принят target design:
+
+`ModelPlugin → ModelPluginRegistry → parameter schema / capabilities → ResolvedModelConfiguration → existing ExperimentConfig / Runner`.
+
+Текущий ML-core не переписывается. Recommended/no-overrides обязан воспроизводить нынешний accepted Stage 1 V2 recipe. Advanced может менять только параметры, которые trusted backend plugin явно объявил editable. Scientific/evaluation/input/runtime boundaries не становятся model parameters.
+
+Owner decisions:
+
+- архитектура должна позволять schema-version'ами открывать все безопасно поддержанные model parameters без frontend redesign;
+- GBDT Mean сохраняет equal weights `1/3 + 1/3 + 1/3`, component parameters могут быть configurable;
+- matching technical smoke PASS обязателен перед **каждым** full experiment, и для Recommended, и для Advanced; smoke не является quality evaluation.
+
+Подробный lock:
+
+`docs/workstreams/configurable_model_platform_v1/ARCHITECT_LOCK.md`.
+
+**Текущий порядок product backend work:**
+
+1. Configurable Model Platform V1 — MP-A…MP-E через Developer → Reviewer.
+2. Feature Grouping Propagation V1 — отдельный narrow Architect Lock → Developer → Reviewer.
+3. После ACCEPT обеих задач — продолжение UX с экраном «Алгоритм».
+
 ### Future / not implemented
 
-- SPARK Dataset Builder;
-- user model onboarding;
-- semantic taxonomy для всех features;
-- threshold optimization/calibration;
+- implementation Configurable Model Platform V1;
+- end-to-end Feature Grouping Propagation V1;
+- production React/Next.js + thin FastAPI frontend/backend boundary;
+- Dataset History / Persistence V1 как пользовательская история проектов/экспериментов;
+- semantic business taxonomy для features поверх безопасной technical grouping, если появится trusted source;
+- threshold optimization/calibration и business policy UI;
 - production auth/DB/deployment;
-- отдельный production frontend.
+- полноценный Model Package UX/export.
 
 ---
 
