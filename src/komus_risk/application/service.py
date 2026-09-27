@@ -14,7 +14,6 @@ from komus_risk.experiments import (
     ExperimentProgressEvent,
     ExperimentRunner,
 )
-from komus_risk.hashing import stable_hash
 from komus_risk.model_platform import (
     ModelConfigurationRecord,
     ModelConfigurationService,
@@ -93,7 +92,7 @@ class ExperimentApplicationService:
             else None
         )
         self._model_plugin_registry = model_plugin_registry
-        self.prepared_context_authority = (
+        self._prepared_context_authority = (
             prepared_context_authority or PreparedDatasetContextAuthority()
         )
         self._smoke_service = ModelConfigurationSmokeTestService()
@@ -308,35 +307,17 @@ class ExperimentApplicationService:
             if reference is not None and reference != prepared_context.context_id:
                 raise SmokeGateError("PREPARED_CONTEXT_MISMATCH")
             reference = prepared_context.context_id
-        if reference is None:
-            if loaded_dataset.contract.final_test_locked:
-                raise SmokeGateError("AUTHORITATIVE_CONTEXT_REQUIRED")
-            reference = stable_hash(
-                {
-                    "dataset_id": loaded_dataset.contract.dataset_id,
-                    "dataset_fingerprint": loaded_dataset.contract.dataset_fingerprint,
-                    "feature_registry_id": feature_registry.registry_id,
-                    "feature_registry_hash": feature_registry.registry_hash,
-                    "population_id": population.population_id,
-                    "population_fingerprint": population.population_fingerprint,
-                    "population_row_positions_hash": stable_hash(
-                        {"row_positions": list(population.row_positions)}
-                    ),
-                }
-            )
-            generated = PreparedDatasetContext(
-                reference,
-                loaded_dataset.contract.dataset_name,
-                loaded_dataset,
-                feature_registry,
-                population,
-            )
-            try:
-                self.prepared_context_authority.register(generated)
-            except PreparedDatasetContextAuthorityError as error:
-                raise SmokeGateError(error.code) from error
+        if reference is None and loaded_dataset.contract.final_test_locked:
+            raise SmokeGateError("AUTHORITATIVE_CONTEXT_REQUIRED")
         try:
-            trusted = self.prepared_context_authority.resolve(reference)
+            if reference is None:
+                trusted = self._prepared_context_authority.resolve_matching(
+                    loaded_dataset,
+                    feature_registry,
+                    population,
+                )
+            else:
+                trusted = self._prepared_context_authority.resolve(reference)
         except PreparedDatasetContextAuthorityError as error:
             raise SmokeGateError(error.code) from error
         if prepared_context is not None and (

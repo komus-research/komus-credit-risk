@@ -22,7 +22,7 @@ from komus_risk.contracts import (
     FeatureSpec,
     FeatureUsageStatus,
 )
-from komus_risk.data import LoadedDataset
+from komus_risk.data import DatasetInspector, LoadedDataset, TabularReader
 from komus_risk.experiments import EvaluationPopulation
 from komus_risk.model_platform import (
     CapabilityDomain,
@@ -35,10 +35,17 @@ from komus_risk.model_platform import (
 )
 from komus_risk.models import BinaryClassifierAdapter, ModelAdapterFactory
 from komus_risk.preparation import (
+    ConfirmedColumnDecision,
+    ConfirmedColumnStatus,
+    ConfirmedDatasetPreparation,
+    DatasetPreparationAnalyzer,
+    KomusDatasetPreparationService,
+    PopulationPolicyV1,
     PreparedDatasetContext,
     PreparedDatasetContextAuthority,
     PreparedDatasetContextAuthorityError,
 )
+from komus_risk.preparation.materializer import inspection_report_hash, proposal_hash
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 
@@ -174,7 +181,48 @@ def _context(dataset, features, population):
 
 def _register_context(service, dataset, features, population):
     context = _context(dataset, features, population)
-    return service.prepared_context_authority.register(context)
+    return service._prepared_context_authority.register(context)
+
+
+def _prepare_generic_context(service, root):
+    path = Path(root) / "generic.csv"
+    path.write_text(
+        "id,target,a,b\n"
+        "id-0,0,0.1,0.9\n"
+        "id-1,1,0.9,0.1\n"
+        "id-2,0,0.2,0.8\n"
+        "id-3,1,0.8,0.2\n"
+        "id-4,0,0.3,0.7\n"
+        "id-5,1,0.7,0.3\n",
+        encoding="utf-8",
+    )
+    snapshot = TabularReader().read(path)
+    report = DatasetInspector().inspect(snapshot)
+    proposal = DatasetPreparationAnalyzer().analyze(report)
+    report_hash = inspection_report_hash(report)
+    confirmation = ConfirmedDatasetPreparation(
+        "1",
+        snapshot.fingerprint,
+        report_hash,
+        proposal_hash(proposal, report_hash),
+        proposal.policy_id,
+        proposal.policy_version,
+        proposal.policy_hash,
+        "Generic",
+        "target",
+        1,
+        "id",
+        (
+            ConfirmedColumnDecision("id", ConfirmedColumnStatus.IDENTIFIER),
+            ConfirmedColumnDecision("target", ConfirmedColumnStatus.TARGET),
+            ConfirmedColumnDecision("a", ConfirmedColumnStatus.MODEL_ALLOWED),
+            ConfirmedColumnDecision("b", ConfirmedColumnStatus.MODEL_ALLOWED),
+        ),
+        PopulationPolicyV1.FULL_OOF_NO_PROTECTED_FINAL_TEST,
+    )
+    return KomusDatasetPreparationService(
+        context_authority=service._prepared_context_authority
+    ).prepare(snapshot, report, proposal, confirmation)[0]
 
 
 def test_configuration_record_is_deterministic_and_deep_immutable():
@@ -436,3 +484,52 @@ def test_context_authority_rejects_reused_id_changed_rows_unknown_ids_and_confli
             assert error.code == "CONFLICTING_CONTEXT_REGISTRATION"
         else:
             raise AssertionError("conflicting authority registration must fail")
+
+
+def test_application_cannot_publish_unlocked_caller_data():
+    with TemporaryDirectory() as root:
+        service = _service(root)
+        dataset, features, _population = _dataset()
+        unlocked = replace(
+            dataset, contract=replace(dataset.contract, final_test_locked=False)
+        )
+        caller_population = EvaluationPopulation(
+            tuple(range(10, 20)), "caller-pop", "caller-fp", "working"
+        )
+        for action in (service.run_configuration_smoke, service.run_experiment):
+            try:
+                action(
+                    loaded_dataset=unlocked,
+                    feature_registry=features,
+                    population=caller_population,
+                    request=_request(),
+                )
+            except SmokeGateError as error:
+                assert error.code == "TRUSTED_CONTEXT_NOT_FOUND"
+            else:
+                raise AssertionError("application must not issue caller context trust")
+        assert service.model_factories["catboost"].create_calls == 0
+        assert service._smoke_evidence == {}
+        assert not list(Path(root).glob("*.json"))
+
+
+def test_trusted_generic_preparation_allows_smoke_and_full_run():
+    with TemporaryDirectory() as root:
+        service = _service(root)
+        trusted = _prepare_generic_context(service, root)
+        smoke = service.run_configuration_smoke(
+            loaded_dataset=trusted.loaded_dataset,
+            feature_registry=trusted.feature_registry,
+            population=trusted.population,
+            request=_request(),
+            prepared_context_id=trusted.context_id,
+        )
+        assert smoke.status is SmokeStatus.PASS
+        artifact = service.run_experiment(
+            loaded_dataset=trusted.loaded_dataset,
+            feature_registry=trusted.feature_registry,
+            population=trusted.population,
+            request=_request(),
+            prepared_context_id=trusted.context_id,
+        )
+        assert artifact.manifest["artifact_schema_version"] == "2"

@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from komus_risk.hashing import stable_hash
 
 from .context import PreparedDatasetContext
+
+if TYPE_CHECKING:
+    from komus_risk.data import LoadedDataset
+    from komus_risk.experiments import EvaluationPopulation
+    from komus_risk.registries import FeatureRegistry
 
 
 class PreparedDatasetContextAuthorityError(ValueError):
@@ -31,6 +38,36 @@ def prepared_context_semantic_hash(context: PreparedDatasetContext) -> str:
     )
 
 
+def prepared_context_binding_hash(
+    context: PreparedDatasetContext,
+) -> str:
+    """Hash the request facts a trusted context is allowed to bind."""
+    return prepared_context_binding_hash_from_parts(
+        context.loaded_dataset,
+        context.feature_registry,
+        context.population,
+    )
+
+
+def prepared_context_binding_hash_from_parts(
+    loaded_dataset: LoadedDataset,
+    feature_registry: FeatureRegistry,
+    population: EvaluationPopulation,
+) -> str:
+    """Hash request facts without creating a new prepared context."""
+    return stable_hash(
+        {
+            "dataset_contract": loaded_dataset.contract.to_dict(),
+            "feature_registry_id": feature_registry.registry_id,
+            "feature_registry_hash": feature_registry.registry_hash,
+            "population_id": population.population_id,
+            "population_fingerprint": population.population_fingerprint,
+            "partition_role": population.partition_role,
+            "row_positions": list(population.row_positions),
+        }
+    )
+
+
 class PreparedDatasetContextAuthority:
     """In-memory backend registry of contexts accepted by preparation services.
 
@@ -41,6 +78,7 @@ class PreparedDatasetContextAuthority:
     def __init__(self) -> None:
         self._contexts: dict[str, PreparedDatasetContext] = {}
         self._semantic_hashes: dict[str, str] = {}
+        self._contexts_by_binding: dict[str, PreparedDatasetContext] = {}
 
     def register(self, context: PreparedDatasetContext) -> PreparedDatasetContext:
         if not isinstance(context, PreparedDatasetContext):
@@ -53,6 +91,9 @@ class PreparedDatasetContextAuthority:
         if existing is None:
             self._contexts[context_id] = context
             self._semantic_hashes[context_id] = semantic_hash
+            self._contexts_by_binding.setdefault(
+                prepared_context_binding_hash(context), context
+            )
             return context
         if self._semantic_hashes[context_id] != semantic_hash:
             raise PreparedDatasetContextAuthorityError(
@@ -65,6 +106,23 @@ class PreparedDatasetContextAuthority:
             raise PreparedDatasetContextAuthorityError("INVALID_CONTEXT_REFERENCE")
         try:
             return self._contexts[context_id]
+        except KeyError as error:
+            raise PreparedDatasetContextAuthorityError(
+                "TRUSTED_CONTEXT_NOT_FOUND"
+            ) from error
+
+    def resolve_matching(
+        self,
+        loaded_dataset: LoadedDataset,
+        feature_registry: FeatureRegistry,
+        population: EvaluationPopulation,
+    ) -> PreparedDatasetContext:
+        """Resolve a previously published context by its immutable binding facts."""
+        try:
+            binding_hash = prepared_context_binding_hash_from_parts(
+                loaded_dataset, feature_registry, population
+            )
+            return self._contexts_by_binding[binding_hash]
         except KeyError as error:
             raise PreparedDatasetContextAuthorityError(
                 "TRUSTED_CONTEXT_NOT_FOUND"

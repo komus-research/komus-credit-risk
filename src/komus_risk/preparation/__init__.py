@@ -1,23 +1,44 @@
 """Public API for facts-to-proposals Dataset Onboarding V1."""
-from .contracts import *
-from .service import DatasetPreparationAnalyzer
 
-from .context import PreparedDatasetContext
 from .authority import (
     PreparedDatasetContextAuthority,
     PreparedDatasetContextAuthorityError,
+    prepared_context_binding_hash,
+    prepared_context_binding_hash_from_parts,
     prepared_context_semantic_hash,
 )
-from .contracts import ConfirmedColumnDecision, ConfirmedDatasetPreparation, PopulationPolicyV1
+from .context import PreparedDatasetContext
+from .contracts import *
+from .contracts import (
+    ConfirmedColumnDecision,
+    ConfirmedDatasetPreparation,
+    PopulationPolicyV1,
+)
 from .komus_service import KomusDatasetPreparationService
 from .manifest import DatasetPreparationManifest
+from .service import DatasetPreparationAnalyzer
 
 __all__ = [
-    "DatasetPreparationAnalyzer", "DatasetPreparationProposal", "ProposalItem", "PositiveClassCandidate",
-    "ColumnRoleProposal", "ProposedTechnicalGroup", "ProposalWarning", "ConfidenceLevel",
-    "ProposedColumnRole", "PredictorEligibility", "WarningSeverity",
-    "KomusDatasetPreparationService", "ConfirmedDatasetPreparation", "ConfirmedColumnDecision",
-    "PopulationPolicyV1", "PreparedDatasetContext", "DatasetPreparationManifest",
-    "PreparedDatasetContextAuthority", "PreparedDatasetContextAuthorityError",
+    "ColumnRoleProposal",
+    "ConfidenceLevel",
+    "ConfirmedColumnDecision",
+    "ConfirmedDatasetPreparation",
+    "DatasetPreparationAnalyzer",
+    "DatasetPreparationManifest",
+    "DatasetPreparationProposal",
+    "KomusDatasetPreparationService",
+    "PopulationPolicyV1",
+    "PositiveClassCandidate",
+    "PredictorEligibility",
+    "PreparedDatasetContext",
+    "PreparedDatasetContextAuthority",
+    "PreparedDatasetContextAuthorityError",
+    "ProposalItem",
+    "ProposalWarning",
+    "ProposedColumnRole",
+    "ProposedTechnicalGroup",
+    "WarningSeverity",
+    "prepared_context_binding_hash",
+    "prepared_context_binding_hash_from_parts",
     "prepared_context_semantic_hash",
 ]

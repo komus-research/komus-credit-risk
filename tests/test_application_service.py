@@ -37,6 +37,10 @@ from komus_risk.model_platform import (
     RecommendedModelProfile,
 )
 from komus_risk.models import BinaryClassifierAdapter, ModelAdapterFactory
+from komus_risk.preparation import (
+    PreparedDatasetContext,
+    PreparedDatasetContextAuthority,
+)
 from komus_risk.registries import FeatureRegistry, ModelRegistry, ModelSpec
 
 
@@ -84,6 +88,7 @@ class ApplicationServiceTests(unittest.TestCase):
         self.plugin_registry = ModelPluginRegistry()
         self.plugin_registry.register(self._plugin())
         self.store = ExperimentArtifactStore(self.temp.name)
+        self.context_authority = PreparedDatasetContextAuthority()
         self.service = ExperimentApplicationService(
             model_registry=self.registry,
             model_factories={self.factory.model_id: self.factory},
@@ -91,8 +96,18 @@ class ApplicationServiceTests(unittest.TestCase):
             comparison_service=ExperimentComparisonService(),
             code_version="test-code",
             model_plugin_registry=self.plugin_registry,
+            prepared_context_authority=self.context_authority,
         )
         self.dataset, self.features, self.population = self._dataset_and_features()
+        self.context_authority.register(
+            PreparedDatasetContext(
+                "application-service-test-context",
+                "Synthetic",
+                self.dataset,
+                self.features,
+                self.population,
+            )
+        )
 
     def _plugin(self) -> ModelPlugin:
         parameter = ModelParameter(

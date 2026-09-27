@@ -65,6 +65,10 @@ exact context to the runtime authority; smoke and full runs resolve by that trus
 reference and reject caller-forged or conflicting contexts before fitting or
 persisting an artifact.
 
+The application no longer self-registers caller-provided data for unlocked
+datasets. It only resolves contexts already published by trusted preparation, so
+caller-only data cannot create smoke evidence or a V2 artifact.
+
 Accepted MP-A head: `078adc4d009068cd4eb3b3886ec20b2e9aa46017`.
 
 MP-A final verification included 276 passed, 108 subtests plus static checks.
