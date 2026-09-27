@@ -21,7 +21,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
-$SchemaVersion = 4
+$SchemaVersion = 5
 $EmptyTreeSha = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 function Stop-ReviewOperation { param([Parameter(Mandatory = $true)][string]$Message) throw "REVIEW_HELPER: $Message" }
@@ -152,7 +152,19 @@ function Complete-ReviewCycle {
     if ([int]$State.schema_version -ne $SchemaVersion -or -not (Test-SamePath ([string]$State.repo_root) $RepoRoot) -or -not (Test-SamePath ([string]$State.git_dir) $GitDir)) { Stop-ReviewOperation 'Snapshot не соответствует текущему репозиторию. Выполните revs заново.' }
     $CurrentBranch = Get-CurrentBranch
     $CurrentHead = Get-CurrentHead
-    if ([string]$State.branch -ne $CurrentBranch -or [string]$State.head -ne [string]$CurrentHead) { Stop-ReviewOperation 'После revs изменилась ветка или HEAD. Выполните revs заново.' }
+    $StartHead = [string]$State.head
+    if ([string]$State.branch -ne $CurrentBranch) {
+        Stop-ReviewOperation 'После revs изменилась ветка. Вернитесь на исходную ветку или выполните revs заново.'
+    }
+    if (-not [string]::IsNullOrWhiteSpace($StartHead)) {
+        if ([string]::IsNullOrWhiteSpace($CurrentHead)) {
+            Stop-ReviewOperation 'После revs HEAD исчез. Выполните revs заново.'
+        }
+        $AncestorCheck = Invoke-Git @('merge-base', '--is-ancestor', $StartHead, $CurrentHead) -AllowFailure
+        if ($AncestorCheck.ExitCode -ne 0) {
+            Stop-ReviewOperation 'После revs история ветки была переписана или HEAD больше не является потомком исходного HEAD. Выполните revs заново.'
+        }
+    }
     $CurrentTree = New-WorkingTreeSnapshot $CurrentHead
     $Entries = @(Get-ChangedEntries ([string]$State.baseline_tree) $CurrentTree)
     if ($Entries.Count -eq 0) {
@@ -169,10 +181,10 @@ function Complete-ReviewCycle {
     if ((Invoke-Git @('check-ref-format', ('refs/heads/' + $ReviewBranch)) -AllowFailure).ExitCode -ne 0) { Stop-ReviewOperation 'Не удалось безопасно сформировать имя review-ветки.' }
     $Origin = Invoke-Git @('remote', 'get-url', 'origin') -AllowFailure
     if ($Origin.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($Origin.Text)) { Stop-ReviewOperation 'Remote origin не настроен. Review snapshot оставлен активным.' }
-    $HeadTree = Get-HeadTree $CurrentHead
-    $ReviewParent = $CurrentHead
-    if ([string]$State.baseline_tree -ne $HeadTree) {
-        $ReviewParent = New-SyntheticCommit ([string]$State.baseline_tree) $CurrentHead 'Review baseline (pre-existing local changes)'
+    $StartHeadTree = Get-HeadTree $StartHead
+    $ReviewParent = $StartHead
+    if ([string]$State.baseline_tree -ne $StartHeadTree) {
+        $ReviewParent = New-SyntheticCommit ([string]$State.baseline_tree) $StartHead 'Review baseline (pre-existing local changes)'
     }
     $ReviewCommit = New-SyntheticCommit $CurrentTree $ReviewParent 'Review post-snapshot changes'
     $ReviewRange = $ReviewParent + '..' + $ReviewCommit
@@ -183,7 +195,7 @@ function Complete-ReviewCycle {
     $RepoName = Split-Path -Leaf $RepoRoot
     Write-Host ''
     Write-Host '========================================'; Write-Host 'REVIEW READY' -ForegroundColor Green; Write-Host ''
-    Write-Host "Repository: $RepoName"; Write-Host "Source branch: $($State.branch)"; Write-Host "Review branch: $ReviewBranch"; Write-Host "Base HEAD: $CurrentHead"; Write-Host "Review commit: $ReviewCommit"; Write-Host "Review range: $ReviewRange"; Write-Host ''
+    Write-Host "Repository: $RepoName"; Write-Host "Source branch: $($State.branch)"; Write-Host "Review branch: $ReviewBranch"; Write-Host "Base HEAD: $StartHead"; Write-Host "Current HEAD: $CurrentHead"; Write-Host "Review commit: $ReviewCommit"; Write-Host "Review range: $ReviewRange"; Write-Host ''
     Write-Host "Files after revs: $($Entries.Count)"; foreach ($Entry in $Entries) { Write-Host "  $($Entry.Status)  $($Entry.Path)" }
     Write-Host ''; Write-Host 'git diff --check: PASS'; Write-Host 'Push: PASS'; Write-Host ''; Write-Host 'REVIEWER MESSAGE:' -ForegroundColor Cyan; Write-Host ''
     Write-Host 'Проверь изменения в ветке:'; Write-Host $ReviewBranch; Write-Host ''; Write-Host 'Review range:'; Write-Host $ReviewRange; Write-Host ''; Write-Host 'Scope:'; Write-Host 'только изменения после review snapshot.'; Write-Host ''

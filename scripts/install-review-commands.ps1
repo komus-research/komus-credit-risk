@@ -17,7 +17,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
 
 $ProfileBlock = @'
-# >>> universal-review-helper-v4 >>>
+# >>> universal-review-helper-v5 >>>
 function global:revs { Invoke-UniversalReviewHelper -Action start }
 function global:revp { Invoke-UniversalReviewHelper -Action prepare }
 function global:Invoke-UniversalReviewHelper {
@@ -34,7 +34,7 @@ function global:Invoke-UniversalReviewHelper {
     }
     & $helper $Action
 }
-# <<< universal-review-helper-v4 <<<
+# <<< universal-review-helper-v5 <<<
 '@
 
 function Remove-ManagedBlock {
@@ -53,7 +53,7 @@ function Update-ProfileFile {
     $Directory = Split-Path -Parent $ProfilePath
     if (-not (Test-Path -LiteralPath $Directory)) { New-Item -ItemType Directory -Path $Directory -Force | Out-Null }
     $Existing = if (Test-Path -LiteralPath $ProfilePath -PathType Leaf) { [System.IO.File]::ReadAllText($ProfilePath, [System.Text.Encoding]::UTF8) } else { '' }
-    foreach ($Version in @('v1', 'v2', 'v3', 'v4')) {
+    foreach ($Version in @('v1', 'v2', 'v3', 'v4', 'v5')) {
         $Existing = Remove-ManagedBlock -Text $Existing -Start "# >>> universal-review-helper-$Version >>>" -End "# <<< universal-review-helper-$Version <<<"
     }
     $Updated = $Existing.TrimEnd()
