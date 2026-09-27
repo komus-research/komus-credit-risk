@@ -1511,44 +1511,6 @@ def _render_result_interpretation(workflow: Any, evidence: Any, loaded_model_ver
     )
     responses = st.session_state.result_interpreter_responses_by_role
     errors = st.session_state.result_interpreter_errors_by_role
-    completed_roles = set(responses)
-    missing_roles = tuple(role for role in RESULT_INTERPRETER_ROLES if role not in completed_roles)
-
-    button_label = (
-        "Получить объяснения для 4 ролей"
-        if not completed_roles
-        else "Получить недостающие объяснения"
-    )
-    if missing_roles and st.button(
-        button_label,
-        key="interpret-result-for-four-roles",
-        type="secondary",
-    ):
-        status = st.status("Формируем ролевые объяснения", expanded=True)
-        for role in missing_roles:
-            status.write(f"Готовим объяснение: {_RESULT_INTERPRETER_ROLE_LABELS[role]}.")
-            _run_role_interpretation(
-                workflow=workflow,
-                evidence=evidence,
-                loaded_model_version=loaded_model_version,
-                recipient_role=role,
-            )
-        updated_errors = st.session_state.result_interpreter_errors_by_role
-        if updated_errors:
-            status.update(
-                label="Часть объяснений недоступна",
-                state="error",
-                expanded=True,
-            )
-        else:
-            status.update(label="Ролевые объяснения готовы", state="complete", expanded=False)
-        st.rerun()
-
-    responses = st.session_state.result_interpreter_responses_by_role
-    errors = st.session_state.result_interpreter_errors_by_role
-    if not responses and not errors:
-        return
-
     tabs = st.tabs([_RESULT_INTERPRETER_ROLE_LABELS[role] for role in RESULT_INTERPRETER_ROLES])
     for role, tab in zip(RESULT_INTERPRETER_ROLES, tabs, strict=True):
         with tab:
@@ -1574,7 +1536,18 @@ def _render_result_interpretation(workflow: Any, evidence: Any, loaded_model_ver
                     )
                     st.rerun()
             else:
-                st.info("Объяснение для этой роли ещё не сформировано.")
+                if st.button(
+                    "Получить объяснение",
+                    key=f"request-result-interpretation-{role}",
+                    type="secondary",
+                ):
+                    _run_role_interpretation(
+                        workflow=workflow,
+                        evidence=evidence,
+                        loaded_model_version=loaded_model_version,
+                        recipient_role=role,
+                    )
+                    st.rerun()
 
     st.caption(
         "Ролевые тексты основаны на одной и той же рассчитанной вероятности и Local SHAP. "
