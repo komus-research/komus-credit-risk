@@ -7,7 +7,7 @@ Status: **IMPLEMENTATION OPEN — ARCHITECT LOCK REQUIRED**
 ## READ FIRST
 
 1. [SPEC.md](SPEC.md)
-2. [../../workstreams/dataset_onboarding_v1/04_ANALYZER_POLICY.md](../dataset_onboarding_v1/04_ANALYZER_POLICY.md)
+2. [../dataset_onboarding_v1/04_ANALYZER_POLICY.md](../dataset_onboarding_v1/04_ANALYZER_POLICY.md)
 3. [../generic_dataset_onboarding_v1/FEATURE_SELECTION_UX_V1.md](../generic_dataset_onboarding_v1/FEATURE_SELECTION_UX_V1.md)
 4. [../../CURRENT_STATE.md](../../CURRENT_STATE.md)
 
