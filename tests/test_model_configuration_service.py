@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import unittest
+from copy import deepcopy
 from dataclasses import replace
+from math import inf, nan
 
 from komus_risk.model_platform import (
     ModelConfigurationError,
@@ -16,6 +18,7 @@ from komus_risk.models.gbdt import (
     LIGHTGBM_PROFILE,
     XGBOOST_PROFILE,
     CatBoostFactory,
+    XGBoostFactory,
 )
 
 
@@ -216,6 +219,23 @@ class ModelConfigurationServiceTests(unittest.TestCase):
         profile["runtime_policy"]["device"] = "gpu"
         with self.assertRaises(ValueError):
             CatBoostFactory().create(profile, 42)
+
+    def test_non_finite_float_overrides_fail_closed_before_hashing(self) -> None:
+        for value in (nan, inf, -inf):
+            with self.subTest(value=value):
+                self._reject(
+                    "NON_FINITE_VALUE",
+                    model_id="xgboost",
+                    mode="ADVANCED",
+                    user_overrides={"/estimator_params/learning_rate": value},
+                )
+
+    def test_factory_rejects_non_finite_editable_value(self) -> None:
+        profile = deepcopy(XGBOOST_PROFILE)
+        profile["estimator_params"]["learning_rate"] = nan
+
+        with self.assertRaisesRegex(ValueError, "non-finite"):
+            XGBoostFactory().create(profile, 42)
 
     def _reject(self, code: str, **kwargs) -> None:
         with self.assertRaises(ModelConfigurationError) as caught:

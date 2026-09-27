@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from importlib.metadata import PackageNotFoundError, version
+from math import isfinite
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_bool_dtype, is_complex_dtype, is_numeric_dtype
 from sklearn.model_selection import train_test_split
-
 
 FIT_RECIPE = {
     "inner_validation_fraction": 0.10,
@@ -69,6 +69,8 @@ def validate_configurable_profile(
         )
         if not valid_type:
             raise ValueError("GBDT factory received an invalid editable parameter type.")
+        if not isfinite(value):
+            raise ValueError("GBDT factory received a non-finite editable parameter.")
         if minimum is not None and value < minimum:
             raise ValueError("GBDT factory received an editable parameter below its allowed range.")
         if maximum is not None and value > maximum:

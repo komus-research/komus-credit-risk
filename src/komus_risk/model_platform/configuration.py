@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
 from typing import Any
 
 from komus_risk.hashing import stable_hash
@@ -180,6 +181,11 @@ class ModelConfigurationService:
                 raise ModelConfigurationError("INVALID_ENUM", parameter.parameter_path)
         if not correct:
             raise ModelConfigurationError("WRONG_TYPE", parameter.parameter_path)
+        if parameter.value_type in {
+            ParameterValueType.INTEGER,
+            ParameterValueType.FLOAT,
+        } and not isfinite(value):
+            raise ModelConfigurationError("NON_FINITE_VALUE", parameter.parameter_path)
         if parameter.minimum is not None and (
             value < parameter.minimum
             or (parameter.minimum_exclusive and value == parameter.minimum)

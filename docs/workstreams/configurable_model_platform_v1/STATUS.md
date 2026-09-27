@@ -40,6 +40,10 @@ passes its exact full profile into `ExperimentConfig.model_parameters`, and perm
 the accepted GBDT estimator parameters (including nested GBDT Mean components). The
 Recommended no-override path remains payload-identical to the accepted profiles.
 
+Corrective review fixes applied: non-finite numeric Advanced values now fail through a
+stable configuration error before hashing, factories independently reject non-finite
+editable values, and GBDT Mean component envelopes require their exact canonical keys.
+
 MP-C (configuration provenance and smoke), MP-D (provider-based persistence) and MP-E
 (catalog/runtime integration) remain intentionally unimplemented.
 
