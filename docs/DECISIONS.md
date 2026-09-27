@@ -885,7 +885,7 @@ Implementation C2c выполнен в ветке `feature/role-based-result-int
 - четыре Stage 20 роли имеют отдельные prompt rules и независимое session/retry state;
 - Streamlit берёт trusted `display_name_ru` / `description_ru` из сохранённой ModelVersion metadata через application facade;
 - REDACTED_V1 не расширен identifier/raw values/row identity; наружу добавлен только trusted `display_name_ru` рядом с уже разрешённым `description_ru`;
-- один UI action запускает четыре независимых role calls и показывает результаты по ролям.
+- четыре роли запускаются отдельными UI actions и имеют независимые response/retry states.
 
 Локальная verification: 68 focused tests PASS; full suite **253 tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
 
