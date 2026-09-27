@@ -113,7 +113,7 @@ Historical baseline №06 должен храниться как неизмен�
 - allow/deny rules;
 - feature provenance;
 - добавление и вычисление новых признаков;
-- защита от запрещённых `Q_B1_norm`/`Q_B2_norm` в рабочих сценариях.
+- защита от `Q_B1_norm`/`Q_B2_norm` в frozen historical working scenario.
 
 Не выбирает threshold и не считает бизнес-стоимость.
 
@@ -266,7 +266,7 @@ Feature set должен быть объектом конфигурации, а 
 - forbidden final features;
 - experimental features.
 
-`Q_B1_norm` и `Q_B2_norm` разрешены только в historical/reference-сценариях.
+В frozen historical Data_final profile `Q_B1_norm` и `Q_B2_norm` доступны только в historical/reference-сценариях; generic preparation не применяет name-based restriction.
 
 ## 9. Evaluation protocol
 
@@ -331,23 +331,65 @@ ExplanationResult
 
 LLM не пересчитывает SHAP и не создаёт «важность» из текста.
 
+## 12.1. Integration V1 — ModelVersion, inference и local explanation
+
+Принятая application-chain отделяет исследовательский результат от deployable model artifact:
+
+```text
+ExperimentArtifact
+      ↓ explicit final fit
+ModelVersion
+      ↓ load + verify
+LoadedModelVersion + TabularSnapshot
+      ↓
+PredictionBatch
+      ↓ selected row
+LocalExplanationEvidence
+```
+
+Инварианты:
+
+- `ExperimentArtifact != ModelVersion`;
+- `ModelVersion` создаётся отдельным explicit action и фиксирует trusted model/feature/dataset/code identity;
+- generic inference не содержит hardcoded `INN`, `DefMark` или конкретных feature names;
+- identifier берётся из сохранённого `DatasetContract`;
+- duplicate identifier values допустимы; строка различается через row identity/source position;
+- canonical inference output — probability, threshold decision является отдельной policy;
+- local explanation использует ту же загруженную модель и те же validated feature values, что и prediction;
+- local explanation является capability. В V1 CatBoost поддерживает native Local SHAP; отсутствие explainer для другой модели не блокирует inference;
+- CatBoost SHAP фиксируется в `raw_margin` и проверяется additivity.
+
+Новая модель подключается через adapter/capability boundary, а не через hardcoded ветвления во frontend или application core.
+
 ## 13. LLM boundary
 
 ```text
-ExperimentResult
-BusinessRules snapshot
-ExplanationResult
+LocalExplanationEvidence
         ↓
-ResultInterpreter
+ResultInterpreterService
         ↓
-InterpretationReport
+ResultInterpreterRequest
+        ↓
+ResultInterpreterClient
+        ↓
+provider adapter
+        ↓
+ResultInterpreterResponse
 ```
 
-Провайдер — заменяемая реализация.
+Инварианты:
 
-ML-core не импортирует OpenAI/Yandex/Qwen-specific код.
+- Result Interpreter model-independent и не знает конкретный model/explainer;
+- probability и SHAP поступают как готовые факты и не пересчитываются;
+- SHAP не трактуется как причинность;
+- отсутствие trusted description не разрешает выдумывать бизнес-смысл feature;
+- request semantic contents защищены deterministic `request_hash`;
+- failure LLM/provider не инвалидирует prediction или `LocalExplanationEvidence`;
+- provider — заменяемая реализация; ML/application core не содержит OpenAI/Yandex/Qwen-specific кода.
 
-При внешнем API идентификаторы/сырые данные не отправляются без отдельного разрешения.
+Текущий OpenAI adapter является одной реализацией `ResultInterpreterClient`: model name задаётся конфигурацией, вызов Responses API выполняется с `store=False`. Это не означает Zero Data Retention.
+
+При внешнем API реальные client identifiers/feature values не отправляются без отдельного подтверждённого data-sharing/redaction policy.
 
 ## 14. Артефакты
 
@@ -418,7 +460,56 @@ Backend должен:
 
 ## 17. Frontend evolution
 
-Frontend использует backend-контракты и не знает внутренностей библиотек CatBoost/XGBoost/LightGBM.
+Frontend использует application-facing contracts и не знает внутренностей библиотек CatBoost/XGBoost/LightGBM или конкретного LLM provider.
+
+Для Integration V1 принят тонкий application facade:
+
+`IntegrationWorkflowService`
+
+Он оркестрирует уже принятые services/stores и концептуально предоставляет frontend операции:
+
+- `save_model(...)`;
+- `predict(...)`;
+- `explain(...)`;
+- `interpret(...)`;
+- `capabilities(...)`.
+
+`streamlit_app.py` не работает напрямую с `ModelVersionStore`, native predictors, `LocalExplanationService`, OpenAI client, provider credentials или model-specific ветвлениями.
+
+Capability contract достаточен в форме `CapabilityStatus(state, reason_code)` со состояниями:
+
+- `AVAILABLE`;
+- `WAITING_FOR_INPUT`;
+- `UNSUPPORTED`;
+- `DISABLED`;
+- `MISCONFIGURED`.
+
+Capability проверяется отдельно для:
+
+- final model save;
+- inference;
+- local explanation;
+- result interpretation.
+
+Неподдерживаемая capability справа по цепочке не инвалидирует уже рассчитанный результат слева.
+
+Верхнеуровневый Streamlit flow остаётся:
+
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
+
+Новый top-level экран для inference/LLM не создаётся. На `Результат` добавляется последовательный блок **«Применить модель к новым данным»**.
+
+Минимальный downstream session-state:
+
+- active ModelVersion;
+- inference snapshot;
+- PredictionBatch;
+- selected prediction row_id;
+- LocalExplanationEvidence;
+- ResultInterpreterRequest/Response;
+- interpreter error.
+
+Invalidation идёт только вниз по цепочке: новая model version очищает inference и ниже; новый inference batch очищает row/SHAP/interpreter; новая row очищает SHAP/interpreter; LLM failure ничего выше себя не очищает.
 
 UI-компоненты:
 
@@ -430,6 +521,52 @@ UI-компоненты:
 - metrics comparison;
 - explanations;
 - artifact/reproducibility panel.
+
+### External interpretation boundary
+
+Stage III-C2a / External Data Boundary принят Reviewer.
+
+Полный внутренний `ResultInterpreterRequest` сохраняется без урезания и сначала проходит проверку `request_hash`. После этого отдельная outbound policy строит provider-safe payload.
+
+В III-C2 внешний provider по умолчанию отключён: `EXTERNAL_DATA_POLICY=DISABLED`.
+
+Без configured policy provider call не выполняется. Один пользовательский checkbox не является достаточным организационным разрешением.
+
+Defense-ready режим `REDACTED_V1` реализован как **positive allowlist projection**, а не blacklist/delete.
+
+Во внешний provider допускаются только:
+
+- `prediction.probability`;
+- `explanation.shap_output_space`;
+- для top features: `feature_id`, `column_name`, `shap_value`, `abs_rank`, optional trusted `description_ru`.
+
+Не передаются:
+
+- identifier column/value;
+- `row_id`;
+- raw feature values;
+- evidence/model provenance;
+- `raw_model_output`;
+- `base_value`.
+
+`ProviderDispatchReceipt` связывает полный `source_request_hash`, policy id/version и deterministic `provider_payload_hash`. Полный raw external sharing до защиты не реализуется.
+
+Stage III-C2b / Runtime + Streamlit Integration также принят Reviewer.
+
+Runtime/composition boundary:
+
+- отсутствие `KOMUS_EXTERNAL_DATA_POLICY` или явный `DISABLED` → штатный `DISABLED`, provider не создаётся;
+- единственный разрешённый внешний режим V1 — `REDACTED_V1`;
+- неизвестная policy или неполная provider/model/credential configuration → `MISCONFIGURED`, provider call невозможен;
+- provider registry и provider-specific credential construction живут только в composition root;
+- Streamlit/application core не ветвятся по OpenAI/provider id;
+- `IntegrationWorkflowService.interpret()` повторно enforce-ит readiness и разрешённую outbound policy, поэтому UI не является security boundary.
+
+Downstream session state хранит immutable internal request, displayable response text, dispatch receipt и stable error code; secret/provider client/policy object в session не сохраняются. Retry повторяет только provider call с тем же request. LLM failure не очищает prediction/SHAP.
+
+UI остаётся внутри `Результат`: после Local SHAP доступен блок «Объяснение простыми словами». Новый top-level экран не создаётся.
+
+Реальный provider manual E2E выполняется отдельно только при явной runtime-настройке `REDACTED_V1` и credentials; default запуск остаётся `DISABLED`.
 
 ## 18. Хранение истории
 
@@ -461,3 +598,55 @@ UI-компоненты:
 - сложную microservice-архитектуру.
 
 Сначала нужен корректный воспроизводимый baseline и общий experiment contract.
+
+## Dataset Preparation V1
+
+Принятая цепочка подготовки произвольного датасета:
+
+`Tabular source → TabularSnapshot → DatasetInspectionReport → DatasetPreparationProposal → Human Confirmation → materialization → PreparedDatasetContext → Planning / Application / Runner`.
+
+Границы уровней явные:
+
+- **FACT** — snapshot и factual inspection;
+- **PROPOSAL** — детерминированные кандидатные роли без runtime semantics;
+- **CONFIRMED** — явное решение специалиста о target, positive class, identifier и status каждой physical column;
+- **RUNTIME** — DatasetContract, FeatureRegistry, EvaluationPopulation, PreparedDatasetContext и deterministic manifest.
+
+Proposal не является fallback для confirmation. Для arbitrary dataset V1 материализуется полная популяция OOF без automatic protected final test или другого split. Final semantic/predictor validation выполняется по loaded dataframe, который входит в PreparedDatasetContext; snapshot сохраняет physical/provenance identity.
+
+## Generic Prepared Dataset Boundary
+
+`PreparedDatasetContext` является точкой схождения допустимых путей подготовки данных.
+
+До этой границы могут существовать разные preparation adapters:
+
+- generic dataset: inspection → proposal → human confirmation → materialization;
+- frozen compatibility profile принятого historical baseline.
+
+После получения `PreparedDatasetContext` downstream не ветвится по признаку «historical / arbitrary».
+
+Общий путь:
+
+`PreparedDatasetContext → Признаки → Модель → Эксперимент → Результат`.
+
+Filename, конкретное имя target, identifier или business-specific feature name не являются основанием для generic downstream behavior.
+
+Historical `Data_final` сохраняется как compatibility adapter для воспроизводимости старого исследования, а не как основной product mode.
+
+## Dataset History / Persistence — architecture direction
+
+Persistence исследовательской истории является отдельным application-layer направлением и не меняет scientific contracts Dataset Preparation.
+
+Инварианты:
+
+- exact dataset identity определяется содержимым, а не filename/path;
+- сохранённая preparation переиспользуется только при доказанной совместимости dataset identity и relevant rule/contract versions;
+- изменение правил анализа не удаляет историю, но может сделать старый inspection неактуальным;
+- сохранённые experiments остаются evidence своих исходных условий;
+- comparison учитывает dataset и evaluation compatibility;
+- similarity разных dataset не даёт права автоматически переносить `CONFIRMED` semantics;
+- similarity reuse допускается только как `PROPOSAL / DRAFT`.
+
+Физическое хранилище пока не фиксируется.
+
+Production DB, MLflow/DVC, orchestration и другая тяжёлая инфраструктура не вводятся без отдельной необходимости.

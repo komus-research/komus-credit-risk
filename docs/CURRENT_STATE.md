@@ -1,6 +1,6 @@
 # KOMUS — CURRENT STATE
 
-Дата фиксации: **2026-09-14**
+Дата фиксации: **2026-09-25**
 
 Этот файл содержит только актуальное подтверждённое состояние проекта.
 Он обновляется после принятого исследовательского этапа или существенного изменения требований.
@@ -10,7 +10,7 @@
 ## Source of truth и рабочая среда
 
 - Рабочий репозиторий: `komus-research/komus-credit-risk`.
-- Рабочая ветка: `main`.
+- Активная рабочая ветка определяется фактическим Git state перед изменением; статическая ветка в этом документе не является source of truth.
 - Локальная рабочая папка: `D:\Projects\komus-work`.
 - Точный `HEAD` и `git status` проверяются непосредственно перед изменением; они не фиксируются в этом документе.
 
@@ -649,6 +649,24 @@ Stage 20 закрыт. Новые API-вызовы не нужны. Следую
 
 Архитектурный invariant: ML-core не знает о Streamlit/SPARK. Frontend не знает о конкретных моделях и конкретном списке 47 признаков.
 
+### Integration V1 — принятая backend-цепочка
+
+Принята следующая модульная цепочка:
+
+`ExperimentArtifact → explicit final fit → immutable ModelVersion → targetless inference → PredictionBatch → selected-row LocalExplanationEvidence → ResultInterpreterRequest → ResultInterpreterClient → ResultInterpreterResponse`.
+
+Принятые этапы:
+
+- **Stage I / Fitted Model Lifecycle — ACCEPT.** `ExperimentArtifact` не является `ModelVersion`; сохранённая модель создаётся отдельным explicit final-fit действием и связывается с dataset/feature/config/code identity.
+- **Stage II-A / Generic Model Inference V1 — ACCEPT.** Новый targetless tabular source проверяется по сохранённому model contract; required features приводятся к точному порядку модели; identifier берётся из `DatasetContract`, а не из hardcoded `INN`; duplicate identifiers допустимы и различаются через row identity/source position; canonical output — probability.
+- **Stage II-B / Local SHAP V1 — ACCEPT.** Local explanation строится для той же сохранённой модели и тех же validated feature values. В V1 local SHAP поддержан только для CatBoost как capability; другие модели могут выполнять inference, а local explanation для них должен явно возвращать unsupported. Для CatBoost проверяется additivity в `raw_margin`.
+- **Stage III-A / Result Interpreter Core V1 — ACCEPT.** Interpreter model-independent, получает только структурированный `LocalExplanationEvidence`, не пересчитывает probability/SHAP, не принимает кредитное решение и защищает semantic request через deterministic hash integrity.
+- **Stage III-B / OpenAI Result Interpreter Adapter V1 — ACCEPT.** OpenAI реализован как сменный provider adapter к `ResultInterpreterClient`; model name задаётся конфигурацией, не hardcoded; Responses API вызывается с `store=False`. Это не трактуется как Zero Data Retention.
+
+Внешний LLM provider не является обязательным для prediction/SHAP path. Ошибка или отсутствие LLM не должны делать prediction и LocalExplanationEvidence недоступными.
+
+Для реальных клиентских identifiers/feature values использование внешнего LLM API требует отдельного подтверждения допустимого data-sharing/redaction policy. Наличие `store=False` само по себе такого разрешения не создаёт.
+
 ### Streamlit Prototype V1
 
 Пользовательский flow:
@@ -694,3 +712,220 @@ UX/runtime remediation имеет Reviewer verdict: `ACCEPT`.
 - threshold optimization/calibration;
 - production auth/DB/deployment;
 - отдельный production frontend.
+
+---
+
+## Dataset Preparation V1 — CLOSED / ACCEPTED
+
+Принята универсальная backend-граница подготовки табличного датасета:
+
+`file → inspection → proposal → human confirmation → materialization → PreparedDatasetContext`.
+
+Главный инвариант:
+
+`FACT ≠ PROPOSAL ≠ CONFIRMED`.
+
+Proposal не становится runtime semantics автоматически. Специалист явно подтверждает target, positive class, identifier и использование колонок.
+
+Run-ready contract требует ровно один `TARGET`, ровно один `IDENTIFIER` и минимум один `MODEL_ALLOWED`. Для generic arbitrary dataset V1 действует `FULL_OOF_NO_PROTECTED_FINAL_TEST`: вся подтверждённая популяция получает `partition_role="full"`, `final_test_locked=False`; automatic holdout/final/temporal split не создаётся.
+
+Physical headers проверяются до pandas normalization; snapshot/report/proposal/confirmation связаны deterministic identities. `positive_class` нормализуется в Python bool/int/finite float/str, а final semantic/predictor validation выполняется на фактически загруженном dataframe.
+
+`DatasetPreparationManifest` остаётся deterministic provenance artifact; source fingerprint/SHA и связанные provenance identities используются для fail-closed проверки stale source.
+
+Generic preparation не содержит name-based blacklist признаков.
+
+Historical `Data_final` сохраняется только как frozen compatibility profile для воспроизводимости принятого исследования. Его target, identifier, feature statuses и split не являются правилами универсального продукта.
+
+Stale source и provenance mismatch работают fail-closed.
+
+## Dataset Preparation UI V1 — TECHNICAL ACCEPT
+
+Техническая интеграция preparation flow со Streamlit реализована и получила итоговый Reviewer `ACCEPT`.
+
+Подтверждено:
+
+- generic-first rendering через `PreparedDatasetContext`;
+- explicit human confirmation;
+- explicit positive class;
+- explicit acknowledgement evaluation population;
+- successful materialization сразу переводит dataset в ready state;
+- stale/provenance fail-closed;
+- same-source reconfirmation;
+- lifecycle формы изолирован через `context_revision + snapshot fingerprint`;
+- downstream после UX V1: `Признаки → Алгоритм → Проверка качества → Результат` общий для любого `PreparedDatasetContext`.
+
+Execution evidence Codex: 69 targeted tests PASS, `compileall app` PASS, `git diff --check` PASS.
+
+### Universal Pipeline UX V1 — ACCEPTED
+
+После ручного E2E принят пользовательский слой универсального конвейера.
+
+Верхнеуровневый flow теперь:
+
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
+
+Подтверждено:
+
+- generic flow не содержит специальных правил по именам `Q_B1_norm`, `Q_B2_norm`, `INN`, `DefMark`;
+- historical `Data_final` остаётся отдельным frozen compatibility profile и не задаёт правила для новых датасетов;
+- экран подтверждения данных явно отделён от обучения;
+- количество `MODEL_ALLOWED` объясняется как число признаков, доступных к выбору далее, а не как уже выбранный feature set;
+- редкие dataset-level overrides спрятаны в «Дополнительные ограничения колонок»;
+- экран признаков явно фиксирует invariant: выбранные при обучении признаки затем требуются сохранённой ModelVersion на новых данных;
+- пользовательский термин «Алгоритм» заменяет внутренний `Predictor`, а recipe/version остаются в технических деталях;
+- этап обучения называется «Обучение и проверка качества» и показывает реальные progress events по fold/metrics/persistence;
+- Result объясняет OOF-метрики как проверку на строках, не использованных соответствующей моделью для обучения;
+- порог `0.5` обозначен только как техническая точка сравнения, не как business decision;
+- перед final fit явно сказано, что метрики повторно не считаются: качество уже измерено OOF;
+- inference UI объясняет, что target не нужен, а сохранённая модель ожидает тот же feature set; дополнительные колонки допустимы.
+
+Reviewer verdict: **ACCEPT Universal Pipeline UX V1**.
+
+## Integration V1 / Stage III-C1 — LOCAL MODEL USE FLOW — ACCEPTED
+
+Reviewer принял локальный пользовательский flow:
+
+`Результат → explicit save ModelVersion → targetless file → PredictionBatch → select row → LocalExplanationEvidence`.
+
+Реализовано:
+
+- верхнеуровневый Streamlit flow после UX V1: `Данные → Признаки → Алгоритм → Проверка качества → Результат`;
+- на экране `Результат` добавлен блок **«Применить модель к новым данным»**;
+- frontend работает через application-facing `IntegrationWorkflowService`;
+- ModelVersion создаётся только явным действием пользователя;
+- targetless inference использует `TabularReader → TabularSnapshot → ModelInferenceService`;
+- identifier и feature schema берутся из сохранённого ModelVersion contract, без hardcode `INN` / `DefMark`;
+- duplicate identifiers допустимы, строка выбирается по `row_id`;
+- local explanation подключается capability/registry-механизмом;
+- CatBoost Local SHAP работает через существующий `LocalExplanationService`;
+- модель без зарегистрированного explainer сохраняет рабочий prediction path и получает `UNSUPPORTED` для local explanation;
+- смена inference source немедленно инвалидирует только stale snapshot/batch/row/evidence и сохраняет active ModelVersion;
+- failure downstream не удаляет успешный upstream state.
+
+Reviewer verdict: **ACCEPT Stage III-C1**.
+
+Локальная verification evidence после corrective fix:
+
+- focused session/UI: 31 tests PASS;
+- full suite: 225 tests PASS;
+- `compileall src app` PASS;
+- `git diff --check` PASS.
+
+Принятый commit в рабочей ветке: `ec9f397e7ea30ba509283e095acc74b0a4c4352a`.
+
+### Manual Stage III-C1 E2E — PASS
+
+Ручной Streamlit-прогон завершён успешно:
+
+`проверка качества → save ModelVersion → targetless inference → select row → Local SHAP`.
+
+Фактически проверено:
+
+- CatBoost ModelVersion сохраняется и применяется к новому targetless файлу;
+- duplicate identifier values не схлопываются и различаются по `row_id`;
+- для двух строк с одинаковым identifier получены разные probability и разные Local SHAP;
+- смена source A → B убирает stale batch/row/evidence до нового успешного inference;
+- несовместимый новый файл fail-closed и не уничтожает active ModelVersion;
+- probability остаётся probability, без автоматического threshold/business decision;
+- UTF-8 CSV with BOM выявил реальный `header_identity_mismatch`; corrective fix принят Reviewer и зафиксирован commit `c009f3bd8bd94c23e13cf3ebf0db1be5c4c4c6e0`.
+
+После UX-прохода full suite: **229 tests PASS**, `compileall src app` PASS, `git diff --check` PASS.
+
+Принятый UX commit: `492b6dc6`.
+
+### Stage III-C2a / External Data Boundary — ACCEPTED
+
+Принята безопасная outbound boundary перед внешним Result Interpreter provider:
+
+`FULL ResultInterpreterRequest → request hash validation → REDACTED_V1 positive allowlist projection → provider-safe payload`.
+
+Подтверждено:
+
+- full internal request и lineage не урезаются;
+- `validate_request()` сохраняет прежнюю hash-integrity semantics, а `interpret_request()` продолжает валидировать request самостоятельно;
+- tampered probability/SHAP/description fail-close до policy/provider;
+- `REDACTED_V1` строится positive allowlist-ом, а не blacklist/delete;
+- наружу разрешены только probability, `shap_output_space` и top-feature `feature_id/column_name/shap_value/abs_rank/description_ru`;
+- identifier metadata/value, `row_id`, `raw_value`, model/evidence provenance, `raw_model_output`, `base_value` наружу не выходят;
+- deterministic `provider_payload_hash` и immutable dispatch receipt связывают sanitized payload с full `request_hash`;
+- policy-bound client передаёт underlying provider только sanitized dispatch payload;
+- accepted Stage III-A Result Interpreter semantics сохранены;
+- runtime/UI/provider configuration/capability activation намеренно отложены до III-C2b.
+
+Reviewer verdict: **ACCEPT Stage III-C2a**.
+
+Implementation commit: `ebb4c7d0`.
+Docs/acceptance commit: `ff2def77`.
+
+Verification перед commit:
+
+- focused: 22 tests PASS;
+- full: 237 tests PASS;
+- `compileall src app` PASS;
+- `git diff --check` PASS.
+
+### Stage III-C2b / Runtime + Streamlit Integration — ACCEPTED
+
+Reviewer принял runtime/UI интеграцию внешнего Result Interpreter после одного corrective fix для явного `KOMUS_EXTERNAL_DATA_POLICY=DISABLED`.
+
+Реализовано:
+
+- fail-safe runtime policy: отсутствие policy и явный `DISABLED` дают штатный `DISABLED / EXTERNAL_DATA_POLICY_DISABLED`;
+- единственный разрешённый внешний режим V1 — `REDACTED_V1`;
+- provider/model/credential собираются только в composition root;
+- OpenAI adapter остаётся заменяемым provider adapter и не протекает в Streamlit/application core;
+- capability `result_interpretation` различает WAITING/DISABLED/MISCONFIGURED/AVAILABLE стабильными reason codes;
+- application boundary fail-close запрещает provider call при disabled/misconfigured runtime;
+- session state хранит request/response text/dispatch receipt/error code без API key/provider client;
+- retry использует тот же immutable `ResultInterpreterRequest` без повторного prediction/SHAP;
+- LLM failure сохраняет ModelVersion, PredictionBatch, выбранную строку и Local SHAP;
+- существующий экран `Результат` продолжен блоком «Объяснение простыми словами» без нового top-level шага;
+- success/failure UX не показывает raw exception, API key или provider internals.
+
+Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
+
+Локальная verification после corrective fix:
+
+- full suite: **246 tests PASS**;
+- `compileall src app` PASS;
+- `git diff --check` PASS.
+
+Reviewer verdict: **ACCEPT Stage III-C2b**.
+
+**Manual defense E2E Stage III-C2 — TECHNICAL PASS / PRODUCT GAP FOUND**
+
+Ручной прогон 2026-09-25 подтвердил реальный пользовательский путь:
+
+`probability → Local SHAP → REDACTED_V1 → OpenAI → русское объяснение`.
+
+Подтверждено:
+- disabled path сохраняет рабочие prediction и Local SHAP;
+- ready REDACTED_V1 runtime реально вызывает OpenAI и возвращает текст;
+- failure-safe граница C2b остаётся рабочей.
+
+Одновременно обнаружен product gap:
+- UI использует один generic Result Interpreter вместо принятой Stage 20 ролевой адаптации;
+- текущий prompt выдаёт техническое SHAP-резюме вместо понятного role-oriented explanation;
+- trusted feature descriptions из сохранённой ModelVersion metadata не передаются в interpreter request, поэтому LLM видит в основном technical column names.
+
+**Stage III-C2c / Role-Based Result Interpretation Integration — ACCEPTED.**
+
+Итоговый contract:
+- четыре роли Stage 20 доступны после Local SHAP;
+- каждая роль запускается отдельным UI action;
+- role входит в request identity/hash и provider-safe payload;
+- trusted feature display/description metadata берётся из сохранённой ModelVersion;
+- request/response/error/retry независимы по ролям;
+- REDACTED_V1 не передаёт identifier, row identity и raw feature values;
+- probability/SHAP не пересчитываются, business threshold/approve-reject не вводятся.
+
+Коррекции review:
+- `4f579ed1` — удалён bulk-вызов четырёх ролей;
+- `1c4ae237` — синхронизировано описание role-by-role UI в документации.
+
+Финальная verification: **255 full tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
+
+Manual external E2E на synthetic/non-client input выполнен для `sales_manager` и `lawyer`: оба provider calls успешны, ответы различаются при неизменном ML result, identifier/row identity/raw values отсутствуют в provider-safe payload.
+
+Следующий отдельный product-pass: Result UX polish / final handoff; качество четырёх ролевых объяснений дополнительно проверяет Ярослав.

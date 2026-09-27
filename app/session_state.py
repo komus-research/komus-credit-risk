@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, MutableMapping
+from dataclasses import dataclass
 from typing import Any
 
-from komus_risk.application import RunExperimentRequest
+from komus_risk.application import RESULT_INTERPRETER_ROLES, RunExperimentRequest
+from komus_risk.contracts import FeatureUsageStatus
 from komus_risk.planning import ExperimentPlan, PlanningRequestMetadata
 
 
@@ -13,6 +15,13 @@ _DEFAULTS = {
     "current_step": 0,
     "dataset_context": None,
     "dataset_source_preparation": None,
+    "dataset_preparation_snapshot": None,
+    "dataset_preparation_report": None,
+    "dataset_preparation_proposal": None,
+    "dataset_preparation_draft": None,
+    "dataset_preparation_confirmation": None,
+    "dataset_preparation_manifest": None,
+    "dataset_preparation_step": 0,
     "selected_feature_ids": (),
     "selected_model_id": None,
     "experiment_inputs": {},
@@ -24,12 +33,42 @@ _DEFAULTS = {
     "last_successful_artifact_id": None,
     "context_revision": 0,
     "highest_reached_step": 0,
+    "active_model_version_id": None,
+    "loaded_model_version": None,
+    "inference_source_path": "",
+    "inference_snapshot": None,
+    "prediction_batch": None,
+    "selected_prediction_row_id": None,
+    "local_explanation_evidence": None,
+    "result_interpreter_request": None,
+    "result_interpreter_response": None,
+    "result_interpreter_dispatch_receipt": None,
+    "result_interpreter_error_code": None,
+    "result_interpreter_requests_by_role": None,
+    "result_interpreter_responses_by_role": None,
+    "result_interpreter_receipts_by_role": None,
+    "result_interpreter_errors_by_role": None,
 }
+
+
+@dataclass(frozen=True, slots=True)
+class ResultInterpreterSessionResponse:
+    """The user-displayable portion of a provider response, without runtime identity."""
+
+    text: str
 
 
 def initialize(state: MutableMapping[str, Any]) -> None:
     for key, value in _DEFAULTS.items():
         state.setdefault(key, value)
+    for key in (
+        "result_interpreter_requests_by_role",
+        "result_interpreter_responses_by_role",
+        "result_interpreter_receipts_by_role",
+        "result_interpreter_errors_by_role",
+    ):
+        if not isinstance(state.get(key), dict):
+            state[key] = {}
     if "highest_reached_step" not in state:
         state["highest_reached_step"] = 0
     state["highest_reached_step"] = max(
@@ -56,7 +95,7 @@ def set_dataset_context(state: MutableMapping[str, Any], context: Any) -> None:
         return
     state["dataset_context"] = context
     state["dataset_source_preparation"] = None
-    state["selected_feature_ids"] = ()
+    state["selected_feature_ids"] = _model_allowed_feature_ids(context)
     state["selected_model_id"] = None
     state["experiment_inputs"] = {}
     state["context_revision"] = state.get("context_revision", 0) + 1
@@ -67,17 +106,42 @@ def set_dataset_context(state: MutableMapping[str, Any], context: Any) -> None:
 def set_dataset_source_preparation(state: MutableMapping[str, Any], preparation: Any) -> None:
     """Store resolved-source state and expose a context only when it is prepared."""
     current = state.get("dataset_source_preparation")
-    if (
+    if preparation is None:
+        if current is None and state.get("dataset_context") is None:
+            return
+        state["dataset_source_preparation"] = None
+        state["dataset_context"] = None
+        state["dataset_preparation_step"] = 0
+        _clear_preparation_transients(state)
+        state["selected_feature_ids"] = ()
+        state["selected_model_id"] = None
+        state["experiment_inputs"] = {}
+        state["current_step"] = 0
+        state["context_revision"] = state.get("context_revision", 0) + 1
+        state["highest_reached_step"] = 0
+        _clear_plan_and_result(state)
+        return
+    same_source_and_status = (
         getattr(current, "source", None) == getattr(preparation, "source", None)
         and getattr(current, "preparation_status", None) == getattr(preparation, "preparation_status", None)
+    )
+    if (
+        same_source_and_status
+        and _same_prepared_dataset_identity(current, preparation)
     ):
+        # A repeated successful confirmation with identical context provenance is a no-op.
+        state["dataset_source_preparation"] = preparation
+        _store_preparation_transients(state, preparation)
         return
     if _same_prepared_dataset_identity(current, preparation):
         state["dataset_source_preparation"] = preparation
+        _store_preparation_transients(state, preparation)
         return
     state["dataset_source_preparation"] = preparation
     state["dataset_context"] = getattr(preparation, "context", None)
-    state["selected_feature_ids"] = ()
+    state["dataset_preparation_step"] = 0
+    _store_preparation_transients(state, preparation)
+    state["selected_feature_ids"] = _model_allowed_feature_ids(state["dataset_context"])
     state["selected_model_id"] = None
     state["experiment_inputs"] = {}
     state["current_step"] = 0
@@ -210,6 +274,7 @@ def run_request_from_snapshot(snapshot: PlanningRequestMetadata) -> RunExperimen
 
 
 def save_artifact(state: MutableMapping[str, Any], artifact: Any, comparison: Any | None) -> None:
+    _clear_integration_state(state)
     state["loaded_artifact"] = artifact
     state["comparison_result"] = comparison
     state["last_successful_artifact_id"] = artifact.artifact_id
@@ -218,9 +283,24 @@ def save_artifact(state: MutableMapping[str, Any], artifact: Any, comparison: An
 
 
 def return_to_experiment(state: MutableMapping[str, Any]) -> None:
-    """Start a new plan while preserving the session's saved comparison reference."""
+    """Start another experiment on the prepared context without re-preparing it."""
     _clear_plan_and_result(state)
-    state["current_step"] = 3
+    state["current_step"] = 1
+    state["highest_reached_step"] = max(int(state.get("highest_reached_step", 0)), 1)
+
+
+def _model_allowed_feature_ids(context: Any) -> tuple[str, ...]:
+    """Read the initial experiment set from the prepared FeatureRegistry only."""
+    registry = getattr(context, "feature_registry", None)
+    groups = getattr(registry, "_groups", {})
+    if registry is None or not isinstance(groups, dict):
+        return ()
+    feature_ids: list[str] = []
+    for group in groups.values():
+        for spec in registry.resolve(getattr(group, "feature_ids", ())):
+            if spec.usage_status is FeatureUsageStatus.MODEL_ALLOWED:
+                feature_ids.append(spec.feature_id)
+    return tuple(feature_ids)
 
 
 def _clear_plan_and_result(state: MutableMapping[str, Any]) -> None:
@@ -228,6 +308,168 @@ def _clear_plan_and_result(state: MutableMapping[str, Any]) -> None:
     state["experiment_plan"] = None
     state["loaded_artifact"] = None
     state["comparison_result"] = None
+    _clear_integration_state(state)
+
+
+def set_loaded_model_version(state: MutableMapping[str, Any], loaded_model_version: Any) -> None:
+    """Activate a new saved model and invalidate its downstream local use data."""
+    if loaded_model_version is state.get("loaded_model_version"):
+        return
+    state["loaded_model_version"] = loaded_model_version
+    state["active_model_version_id"] = getattr(getattr(loaded_model_version, "summary", None), "model_version_id", None)
+    _clear_inference_state(state)
+
+
+def set_inference_source_path(state: MutableMapping[str, Any], source_path: str | None) -> None:
+    """Change the targetless source and invalidate stale inference results below the active model."""
+    normalized = str(source_path or "").strip()
+    if normalized == state.get("inference_source_path", ""):
+        return
+    state["inference_source_path"] = normalized
+    _clear_inference_state(state)
+
+
+def set_prediction_batch(state: MutableMapping[str, Any], snapshot: Any, prediction_batch: Any) -> None:
+    """Store one targetless inference result and reset row-level state."""
+    if snapshot is state.get("inference_snapshot") and prediction_batch is state.get("prediction_batch"):
+        return
+    state["inference_snapshot"] = snapshot
+    state["prediction_batch"] = prediction_batch
+    state["selected_prediction_row_id"] = None
+    state["local_explanation_evidence"] = None
+    _clear_result_interpretation_state(state)
+
+
+def set_selected_prediction_row_id(state: MutableMapping[str, Any], row_id: str | None) -> None:
+    """Change the selected prediction row without clearing evidence for the same row."""
+    if row_id == state.get("selected_prediction_row_id"):
+        return
+    state["selected_prediction_row_id"] = row_id
+    state["local_explanation_evidence"] = None
+    _clear_result_interpretation_state(state)
+
+
+def set_local_explanation_evidence(state: MutableMapping[str, Any], evidence: Any) -> None:
+    if evidence is state.get("local_explanation_evidence"):
+        return
+    state["local_explanation_evidence"] = evidence
+    _clear_result_interpretation_state(state)
+
+
+def set_result_interpreter_request(state: MutableMapping[str, Any], request: Any) -> None:
+    state["result_interpreter_request"] = request
+    state["result_interpreter_response"] = None
+    state["result_interpreter_dispatch_receipt"] = None
+    state["result_interpreter_error_code"] = None
+
+
+def set_result_interpretation_success(state: MutableMapping[str, Any], outcome: Any) -> None:
+    text = getattr(getattr(outcome, "response", None), "text", None)
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Result interpreter response text must be non-empty.")
+    state["result_interpreter_response"] = ResultInterpreterSessionResponse(text=text)
+    state["result_interpreter_dispatch_receipt"] = outcome.dispatch_receipt
+    state["result_interpreter_error_code"] = None
+
+
+def set_result_interpretation_error(state: MutableMapping[str, Any], error_code: str) -> None:
+    if not isinstance(error_code, str) or not error_code:
+        raise ValueError("Result interpreter error code must be non-empty.")
+    state["result_interpreter_response"] = None
+    state["result_interpreter_dispatch_receipt"] = None
+    state["result_interpreter_error_code"] = error_code
+
+
+def set_role_result_interpreter_request(
+    state: MutableMapping[str, Any],
+    recipient_role: str,
+    request: Any,
+) -> None:
+    _validate_interpreter_role(recipient_role)
+    state["result_interpreter_requests_by_role"][recipient_role] = request
+    state["result_interpreter_responses_by_role"].pop(recipient_role, None)
+    state["result_interpreter_receipts_by_role"].pop(recipient_role, None)
+    state["result_interpreter_errors_by_role"].pop(recipient_role, None)
+
+
+def set_role_result_interpretation_success(
+    state: MutableMapping[str, Any],
+    recipient_role: str,
+    outcome: Any,
+) -> None:
+    _validate_interpreter_role(recipient_role)
+    text = getattr(getattr(outcome, "response", None), "text", None)
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("Result interpreter response text must be non-empty.")
+    state["result_interpreter_responses_by_role"][recipient_role] = ResultInterpreterSessionResponse(text=text)
+    state["result_interpreter_receipts_by_role"][recipient_role] = outcome.dispatch_receipt
+    state["result_interpreter_errors_by_role"].pop(recipient_role, None)
+
+
+def set_role_result_interpretation_error(
+    state: MutableMapping[str, Any],
+    recipient_role: str,
+    error_code: str,
+) -> None:
+    _validate_interpreter_role(recipient_role)
+    if not isinstance(error_code, str) or not error_code:
+        raise ValueError("Result interpreter error code must be non-empty.")
+    state["result_interpreter_responses_by_role"].pop(recipient_role, None)
+    state["result_interpreter_receipts_by_role"].pop(recipient_role, None)
+    state["result_interpreter_errors_by_role"][recipient_role] = error_code
+
+
+def _validate_interpreter_role(recipient_role: str) -> None:
+    if recipient_role not in RESULT_INTERPRETER_ROLES:
+        raise ValueError("Unknown result interpreter recipient role.")
+
+
+def _clear_inference_state(state: MutableMapping[str, Any]) -> None:
+    state["inference_snapshot"] = None
+    state["prediction_batch"] = None
+    state["selected_prediction_row_id"] = None
+    state["local_explanation_evidence"] = None
+    _clear_result_interpretation_state(state)
+
+
+def _clear_result_interpretation_state(state: MutableMapping[str, Any]) -> None:
+    state["result_interpreter_request"] = None
+    state["result_interpreter_response"] = None
+    state["result_interpreter_dispatch_receipt"] = None
+    state["result_interpreter_error_code"] = None
+    state["result_interpreter_requests_by_role"] = {}
+    state["result_interpreter_responses_by_role"] = {}
+    state["result_interpreter_receipts_by_role"] = {}
+    state["result_interpreter_errors_by_role"] = {}
+
+
+def _clear_integration_state(state: MutableMapping[str, Any]) -> None:
+    state["active_model_version_id"] = None
+    state["loaded_model_version"] = None
+    _clear_inference_state(state)
+
+
+def _store_preparation_transients(state: MutableMapping[str, Any], preparation: Any) -> None:
+    """Keep analysis artefacts tied to the currently checked physical source."""
+    state["dataset_preparation_snapshot"] = getattr(preparation, "snapshot", None)
+    state["dataset_preparation_report"] = getattr(preparation, "inspection_report", None)
+    state["dataset_preparation_proposal"] = getattr(preparation, "proposal", None)
+    state["dataset_preparation_confirmation"] = getattr(preparation, "confirmation", None)
+    state["dataset_preparation_manifest"] = getattr(preparation, "manifest", None)
+    if getattr(preparation, "preparation_status", None) != "confirmed_context_prepared":
+        state["dataset_preparation_draft"] = None
+
+
+def _clear_preparation_transients(state: MutableMapping[str, Any]) -> None:
+    for key in (
+        "dataset_preparation_snapshot",
+        "dataset_preparation_report",
+        "dataset_preparation_proposal",
+        "dataset_preparation_draft",
+        "dataset_preparation_confirmation",
+        "dataset_preparation_manifest",
+    ):
+        state[key] = None
 
 
 def _same_prepared_dataset_identity(current: Any, next_preparation: Any) -> bool:

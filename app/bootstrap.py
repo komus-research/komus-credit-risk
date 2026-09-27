@@ -8,21 +8,43 @@ services; it never constructs backend contracts itself.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
+import os
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from komus_risk.application.model_training import FinalModelTrainingService
-from komus_risk.application.service import ExperimentApplicationService
-from komus_risk.artifacts.model_store import ModelVersionStore
-from komus_risk.artifacts.store import ExperimentArtifactStore
+from komus_risk.application import (
+    ExperimentApplicationService,
+    FinalModelTrainingService,
+    IntegrationWorkflowService,
+    LocalExplanationService,
+    ModelInferenceService,
+    RedactedV1OutboundPolicy,
+    ResultInterpreterRuntimeConfiguration,
+    ResultInterpreterService,
+)
+from komus_risk.integrations.openai_result_interpreter import OpenAIResultInterpreterClient
+from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
 from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
-from komus_risk.data import LoadedDataset, ReadyDatasetAdapter
+from komus_risk.data import DatasetInspector, LoadedDataset, ReadyDatasetAdapter, TabularReader, TabularSnapshot
 from komus_risk.experiments import EvaluationPopulation
+from komus_risk.preparation import (
+    ConfirmedColumnDecision,
+    ConfirmedColumnStatus,
+    ConfirmedDatasetPreparation,
+    DatasetPreparationAnalyzer,
+    DatasetPreparationError,
+    DatasetPreparationManifest,
+    KomusDatasetPreparationService,
+    PopulationPolicyV1,
+)
+from komus_risk.preparation.context import PreparedDatasetContext
+from komus_risk.preparation.materializer import inspection_report_hash, proposal_hash
+from komus_risk.preparation.predictor_compatibility import predictor_compatibility_error
 from komus_risk.models import (
     CATBOOST_MODEL_SPEC,
     GBDT_MEAN_MODEL_SPEC,
@@ -36,17 +58,6 @@ from komus_risk.models import (
 )
 from komus_risk.planning import ExperimentPlanningService
 from komus_risk.registries import FeatureRegistry, ModelRegistry
-
-
-@dataclass(frozen=True, slots=True)
-class PreparedDatasetContext:
-    """The complete, runtime-only dataset bundle available to the UI."""
-
-    context_id: str
-    display_name: str
-    loaded_dataset: LoadedDataset
-    feature_registry: FeatureRegistry
-    population: EvaluationPopulation
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,11 +79,16 @@ class DatasetSourcePreparation:
     source: ResolvedDatasetSource
     preparation_status: str
     context: PreparedDatasetContext | None
+    snapshot: TabularSnapshot | None = None
+    inspection_report: Any | None = None
+    proposal: Any | None = None
+    confirmation: ConfirmedDatasetPreparation | None = None
+    manifest: DatasetPreparationManifest | None = None
 
     def __post_init__(self) -> None:
         if self.preparation_status == "context_not_prepared" and self.context is not None:
             raise ValueError("Неподготовленный источник не может иметь dataset context.")
-        if self.preparation_status in {"historical_context_prepared", "user_oof_context_prepared"} and self.context is None:
+        if self.preparation_status in {"historical_context_prepared", "confirmed_context_prepared"} and self.context is None:
             raise ValueError("Подготовленный источник должен иметь dataset context.")
 
     @property
@@ -89,6 +105,7 @@ class PrototypeRuntime:
     model_registry: ModelRegistry
     model_factories: Mapping[str, ModelAdapterFactory]
     supported_protocol: "SupportedProtocol"
+    integration_workflow_service: IntegrationWorkflowService
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,9 +323,22 @@ def prepare_resolved_source(
     historical_provider: HistoricalDatasetProvider | None = None,
     progress_listener: Callable[[str], None] | None = None,
 ) -> DatasetSourcePreparation:
-    """Prepare only a source that passed the exact accepted Data_final gate."""
+    """Check a source, preserving historical semantics or creating only a proposal."""
     if _sha256_file(source.local_runtime_path) != _ACCEPTED_DATASET_SHA256:
-        return DatasetSourcePreparation(source, "context_not_prepared", None)
+        # Resolution normally guarantees this.  Keeping the unprepared result for
+        # a vanished source preserves the resolver's user-facing error boundary.
+        if not source.local_runtime_path.is_file():
+            return DatasetSourcePreparation(source, "context_not_prepared", None)
+        _notify_data_progress(progress_listener, "reading_source")
+        snapshot = TabularReader().read(source.local_runtime_path)
+        _notify_data_progress(progress_listener, "inspecting_dataset")
+        report = DatasetInspector().inspect(snapshot)
+        _notify_data_progress(progress_listener, "analyzing_preparation")
+        proposal = DatasetPreparationAnalyzer().analyze(report)
+        return DatasetSourcePreparation(
+            source, "context_not_prepared", None,
+            snapshot=snapshot, inspection_report=report, proposal=proposal,
+        )
     provider = historical_provider or HistoricalDatasetProvider()
     return DatasetSourcePreparation(
         source,
@@ -317,7 +347,108 @@ def prepare_resolved_source(
     )
 
 
-def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:
+def default_preparation_draft(preparation: DatasetSourcePreparation) -> dict[str, Any]:
+    """Return proposal-backed UI defaults; this is not a confirmation."""
+    if preparation.snapshot is None or preparation.proposal is None:
+        raise ValueError("No source analysis is available for preparation.")
+    target = next((item.column_name for item in preparation.proposal.target_candidates), "")
+    identifier = next((item.column_name for item in preparation.proposal.identifier_candidates), "")
+    statuses = {
+        name: (
+            ConfirmedColumnStatus.MODEL_ALLOWED.value
+            if predictor_compatibility_error(preparation.snapshot.dataframe[name]) is None
+            else ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value
+        )
+        for name in preparation.snapshot.physical_headers
+    }
+    draft = {
+        "snapshot_fingerprint": preparation.snapshot.fingerprint,
+        "dataset_name": preparation.source.file_name,
+        "target_column": target,
+        "positive_class": None,
+        "identifier_column": identifier,
+        "column_statuses": statuses,
+        "blocked_reasons": {},
+        "population_policy": PopulationPolicyV1.FULL_OOF_NO_PROTECTED_FINAL_TEST.value,
+        "population_policy_acknowledged": False,
+    }
+    if preparation.confirmation is not None:
+        confirmation = preparation.confirmation
+        draft.update(
+            dataset_name=confirmation.dataset_name,
+            target_column=confirmation.target_column,
+            positive_class=confirmation.positive_class,
+            identifier_column=confirmation.identifier_column,
+            column_statuses={item.column_name: item.status.value for item in confirmation.column_decisions},
+            blocked_reasons={
+                item.column_name: item.blocked_reason
+                for item in confirmation.column_decisions if item.blocked_reason is not None
+            },
+        )
+    return draft
+
+
+def confirm_dataset_preparation(
+    preparation: DatasetSourcePreparation,
+    draft: Mapping[str, Any],
+    *,
+    progress_listener: Callable[[str], None] | None = None,
+) -> DatasetSourcePreparation:
+    """Materialize an immutable backend confirmation from the explicit UI draft."""
+    snapshot, report, proposal = preparation.snapshot, preparation.inspection_report, preparation.proposal
+    if snapshot is None or report is None or proposal is None:
+        raise ValueError("No source analysis is available for confirmation.")
+    if not draft.get("population_policy_acknowledged", False):
+        raise DatasetPreparationError("POPULATION_POLICY_NOT_ACKNOWLEDGED")
+    _notify_data_progress(progress_listener, "validating_confirmation")
+    target = str(draft.get("target_column") or "")
+    identifier = str(draft.get("identifier_column") or "")
+    if not target or not identifier:
+        raise DatasetPreparationError("INCOMPLETE_CONFIRMATION")
+    if draft.get("positive_class") is None:
+        raise DatasetPreparationError("POSITIVE_CLASS_MISSING")
+    statuses = dict(draft.get("column_statuses") or {})
+    reasons = dict(draft.get("blocked_reasons") or {})
+    decisions = []
+    for name in snapshot.physical_headers:
+        status = ConfirmedColumnStatus.TARGET if name == target else (
+            ConfirmedColumnStatus.IDENTIFIER if name == identifier else ConfirmedColumnStatus(
+                statuses.get(name, ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value)
+            )
+        )
+        decisions.append(ConfirmedColumnDecision(name, status, reasons.get(name) if status is ConfirmedColumnStatus.BLOCKED else None))
+    report_digest = inspection_report_hash(report)
+    confirmation = ConfirmedDatasetPreparation(
+        "1", snapshot.fingerprint, report_digest, proposal_hash(proposal, report_digest),
+        proposal.policy_id, proposal.policy_version, proposal.policy_hash,
+        str(draft.get("dataset_name") or preparation.source.file_name), target,
+        draft.get("positive_class"), identifier, tuple(decisions),
+        PopulationPolicyV1(draft.get("population_policy")),
+    )
+    _notify_data_progress(progress_listener, "materializing_dataset")
+    context, manifest = KomusDatasetPreparationService().prepare(snapshot, report, proposal, confirmation)
+    _notify_data_progress(progress_listener, "prepared_context_ready")
+    return DatasetSourcePreparation(
+        preparation.source, "confirmed_context_prepared", context,
+        snapshot=snapshot, inspection_report=report, proposal=proposal,
+        confirmation=confirmation, manifest=manifest,
+    )
+
+
+def reopen_dataset_preparation(preparation: DatasetSourcePreparation) -> DatasetSourcePreparation:
+    """Drop an active arbitrary context before its confirmation is edited."""
+    if preparation.preparation_status != "confirmed_context_prepared":
+        raise ValueError("Only a confirmed preparation can be edited.")
+    return replace(preparation, preparation_status="context_not_prepared", context=None, manifest=None)
+
+
+def create_runtime(
+    artifact_root: str | Path | None = None,
+    *,
+    environment: Mapping[str, str] | None = None,
+    secrets: Mapping[str, Any] | None = None,
+    result_interpreter_factories: Mapping[str, Callable[[str, str], Any]] | None = None,
+) -> PrototypeRuntime:
     """Wire existing model, planning, application, persistence and comparison services."""
     component_factories = (CatBoostFactory(), XGBoostFactory(), LightGBMFactory())
     mean_factory = GBDTMeanFactory({factory.model_id: factory for factory in component_factories})
@@ -327,14 +458,40 @@ def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:
         registry.register(spec)
     store_root = Path(artifact_root) if artifact_root is not None else _repository_root() / ".streamlit-artifacts"
     code_version = "streamlit-prototype-v1"
-    experiment_store = ExperimentArtifactStore(store_root)
-    model_store = ModelVersionStore(store_root, code_version=code_version)
+    artifact_store = ExperimentArtifactStore(store_root)
+    model_version_store = ModelVersionStore(
+        store_root / "model_versions",
+        code_version=code_version,
+        model_specs={spec.model_id: spec for spec in (CATBOOST_MODEL_SPEC, XGBOOST_MODEL_SPEC, LIGHTGBM_MODEL_SPEC, GBDT_MEAN_MODEL_SPEC)},
+    )
+    final_model_training_service = FinalModelTrainingService(
+        experiment_artifact_store=artifact_store,
+        model_version_store=model_version_store,
+        model_registry=registry,
+        model_factories=factories,
+        code_version=code_version,
+    )
+    runtime_configuration, interpreter_client, outbound_policy = _result_interpreter_wiring(
+        environment=os.environ if environment is None else environment,
+        secrets=secrets,
+        factories=result_interpreter_factories,
+    )
+    integration_workflow_service = IntegrationWorkflowService(
+        final_model_training_service=final_model_training_service,
+        model_version_store=model_version_store,
+        model_inference_service=ModelInferenceService(),
+        local_explainers={"catboost": LocalExplanationService()},
+        result_interpreter_service=ResultInterpreterService(),
+        result_interpreter_client=interpreter_client,
+        outbound_interpreter_policy=outbound_policy,
+        result_interpreter_runtime=runtime_configuration,
+    )
     return PrototypeRuntime(
         ExperimentPlanningService(),
         ExperimentApplicationService(
             model_registry=registry,
             model_factories=factories,
-            artifact_store=experiment_store,
+            artifact_store=artifact_store,
             comparison_service=ExperimentComparisonService(),
             code_version=code_version,
         ),
@@ -346,7 +503,83 @@ def create_runtime(artifact_root: str | Path | None = None) -> PrototypeRuntime:
         registry,
         factories,
         SUPPORTED_PROTOCOL,
+        integration_workflow_service,
     )
+
+
+def _result_interpreter_wiring(
+    *,
+    environment: Mapping[str, str],
+    secrets: Mapping[str, Any] | None,
+    factories: Mapping[str, Callable[[str, str], Any]] | None,
+) -> tuple[ResultInterpreterRuntimeConfiguration, Any | None, RedactedV1OutboundPolicy | None]:
+    """Resolve external interpretation exclusively in the composition root."""
+    policy = str(environment.get("KOMUS_EXTERNAL_DATA_POLICY", "")).strip()
+    if not policy or policy == "DISABLED":
+        return ResultInterpreterRuntimeConfiguration.disabled(), None, None
+    if policy != "REDACTED_V1":
+        return ResultInterpreterRuntimeConfiguration(policy_mode="INVALID"), None, None
+
+    provider = str(environment.get("KOMUS_RESULT_INTERPRETER_PROVIDER", "")).strip()
+    if not provider:
+        return ResultInterpreterRuntimeConfiguration(policy_mode=policy), None, None
+    provider_registry = dict(factories or {"openai": _openai_result_interpreter_factory})
+    factory = provider_registry.get(provider)
+    if factory is None:
+        return ResultInterpreterRuntimeConfiguration(
+            policy_mode=policy, provider_configured=True,
+        ), None, None
+
+    model = str(environment.get("KOMUS_RESULT_INTERPRETER_MODEL", "")).strip()
+    if not model:
+        return ResultInterpreterRuntimeConfiguration(
+            policy_mode=policy, provider_configured=True, provider_registered=True,
+        ), None, None
+    credential = _runtime_secret("OPENAI_API_KEY", secrets=secrets, environment=environment)
+    if not credential:
+        return ResultInterpreterRuntimeConfiguration(
+            policy_mode=policy, provider_configured=True, provider_registered=True,
+            model_configured=True,
+        ), None, None
+    return (
+        ResultInterpreterRuntimeConfiguration(
+            policy_mode=policy, provider_configured=True, provider_registered=True,
+            model_configured=True, credentials_configured=True,
+        ),
+        factory(model, credential),
+        RedactedV1OutboundPolicy(),
+    )
+
+
+def _runtime_secret(
+    name: str,
+    *,
+    secrets: Mapping[str, Any] | None,
+    environment: Mapping[str, str],
+) -> str:
+    available_secrets = _streamlit_secrets() if secrets is None else secrets
+    try:
+        value = available_secrets.get(name) if available_secrets is not None else None
+    except Exception:
+        value = None
+    if value is None:
+        value = environment.get(name)
+    return str(value).strip() if value is not None else ""
+
+
+def _streamlit_secrets() -> Mapping[str, Any] | None:
+    """Best-effort secrets access: a missing secrets file must not prevent launch."""
+    try:
+        import streamlit as st
+        return st.secrets
+    except Exception:
+        return None
+
+
+def _openai_result_interpreter_factory(model: str, credential: str) -> OpenAIResultInterpreterClient:
+    from openai import OpenAI
+
+    return OpenAIResultInterpreterClient(model=model, client=OpenAI(api_key=credential))
 
 
 def validate_supported_protocol(values: Mapping[str, Any], protocol: SupportedProtocol = SUPPORTED_PROTOCOL) -> str | None:

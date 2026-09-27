@@ -636,3 +636,262 @@ snapshots без временного якоря.
 
 Универсальные ΔGini threshold, cost function, optimal threshold и predictive gain
 конкретного нового признака не устанавливались.
+
+---
+
+## 2026-09-21
+
+### D-061 — Dataset Preparation V1 требует явного human confirmation
+
+Factual inspection и DatasetPreparationProposal не задают runtime semantics. Перед materialization специалист подтверждает target, positive class, identifier и usage status каждой physical column.
+
+### D-062 — Arbitrary dataset V1 использует full OOF без protected final test
+
+Политика `FULL_OOF_NO_PROTECTED_FINAL_TEST` материализует все строки с `partition_role="full"` и `final_test_locked=False`; automatic holdout/final/temporal split не создаётся.
+
+### D-063 — Generic preparation не содержит name-based policy для Q_B1/Q_B2
+
+`Q_B1_norm` и `Q_B2_norm` не являются глобально запрещёнными именами. Технически совместимая колонка может быть явно подтверждена как MODEL_ALLOWED в arbitrary dataset.
+
+### D-064 — Historical Data_final profile остаётся frozen
+
+Historical baseline сохраняет 47 MODEL_ALLOWED, `INN` как identifier, `DefMark` как target, `Q_B1_norm`/`Q_B2_norm` как BLOCKED, accepted Stage 3 working population и `final_test_locked=True`. Это профиль baseline, а не generic policy.
+
+### D-065 — Final materialization validation выполняется по actual loaded dataframe
+
+Snapshot служит источником physical/provenance identity, но semantic и predictor validation выполняются по dataframe, реально возвращаемому в PreparedDatasetContext. Fingerprint и source SHA fail closed защищают от stale source.
+
+### D-066 — DatasetPreparationManifest является deterministic provenance artifact
+
+Manifest фиксирует confirmation, delta и runtime identities. Его nested delta values immutable; filesystem path, session и timestamp не входят в scientific identity.
+
+## 2026-09-21 — Generic Dataset UX / History
+
+### D-067 — Product UI является generic-first
+
+Основной пользовательский flow начинается с загрузки файла и не предлагает отдельный основной режим «Исторический набор данных».
+
+Historical `Data_final` остаётся frozen compatibility profile внутри системы.
+
+После `PreparedDatasetContext` downstream flow общий для любого dataset.
+
+### D-068 — Dataset onboarding строится как последовательный мастер
+
+Принята структура:
+
+`Файл → Цель → Идентификатор → Признаки → Оценка → Проверка`.
+
+На экране активен один смысловой этап. Завершённые этапы сворачиваются в компактное summary.
+
+Внутренние enum/backend terms не выводятся в основном пользовательском UI.
+
+Причина: техническая реализация Dataset Preparation UI получила Reviewer `ACCEPT`, но ручная продуктовая приёмка показала, что текущая инженерная форма перегружена и непонятна пользователю.
+
+### D-069 — Analyzer предлагает target, но не определяет смысл задачи
+
+Target proposal является только предложением системы.
+
+Пользователь явно отвечает:
+
+**«Что модель должна предсказывать?»**
+
+Затем отдельно выбирает positive event из фактических значений target.
+
+Top candidate Analyzer нельзя автоматически превращать в semantic `CONFIRMED` target.
+
+### D-070 — Dataset History / Persistence V1 должен узнавать exact dataset по содержимому
+
+Это нормативное решение для будущего `Dataset History / Persistence V1`, а не описание уже реализованной capability.
+
+Переименование или копирование идентичного файла не должно создавать новую dataset identity.
+
+После реализации, при доказанном exact content identity и совместимых relevant rules/contracts, система должна позволять восстановить confirmed preparation и history experiments без обязательного повторного expensive inspection.
+
+Эта capability пока не реализована. В основном UI она должна отображаться как работа с сохранённым знакомым набором, а не через hash/cache terminology.
+
+### D-071 — История отделена от актуальности проверки
+
+Если dataset известен, но relevant inspection/preparation rules изменились, старая история и результаты сохраняются, однако старый inspection не выдаётся за актуальный.
+
+Similarity разных dataset не является exact identity.
+
+Будущий перенос настроек между похожими dataset допускается только как `PROPOSAL / DRAFT`, а не как `CONFIRMED`.
+
+Persistence backend пока не зафиксирован. Решение не требует production DB.
+
+## 2026-09-25 — Integration V1
+
+### D-072 — ExperimentArtifact и ModelVersion являются разными сущностями
+
+Успешный experiment не считается сохранённой deployable моделью. ModelVersion создаётся отдельным explicit final-fit действием и фиксирует trusted model spec, feature order, dataset/config/code identity и native model artifact.
+
+Причина: selection evidence и fitted runtime model имеют разный жизненный цикл и не должны смешиваться.
+
+### D-073 — Generic inference не содержит hardcoded identifier/target semantics
+
+Inference нового targetless файла использует contract сохранённого ModelVersion. Identifier берётся из DatasetContract, required features проверяются и упорядочиваются по model metadata, duplicate identifier values допустимы и различаются через row identity/source position. Canonical output — probability.
+
+Причина: один inference path должен работать для arbitrary confirmed dataset, а не только для historical INN/DefMark profile.
+
+### D-074 — Local explanation подключается как capability, а не как условие inference
+
+Local SHAP V1 принят для CatBoost через ту же loaded model и те же validated feature values, что использовались для prediction. Additivity проверяется в raw margin. Для моделей без принятого local explainer inference остаётся доступным, а explanation возвращает explicit unsupported.
+
+Причина: новая модель должна подключаться отдельным explainer adapter/capability без переписывания inference/UI core.
+
+### D-075 — Result Interpreter является model-independent post-processing boundary
+
+Result Interpreter получает только structured LocalExplanationEvidence, не пересчитывает probability/SHAP, не выбирает threshold и не принимает кредитное решение. Semantic request защищён deterministic request_hash, который проверяется до любого доступа к provider client.
+
+Причина: LLM должна объяснять уже рассчитанный результат, а не становиться частью predictor path.
+
+### D-076 — OpenAI является сменным provider adapter
+
+OpenAI adapter реализует общий ResultInterpreterClient; model name задаётся конфигурацией, API key не хранится в repository, Responses API вызывается с store=False. store=False не трактуется как Zero Data Retention.
+
+Реальные client identifiers/feature values не отправляются во внешний LLM API без отдельного подтверждённого data-sharing/redaction policy.
+
+### D-077 — Расширение системы выполняется через contracts/adapters/capabilities, без hardcode
+
+Новые модели, explainers, interpreter providers и dataset semantics подключаются локально через общие интерфейсы, registry/config/metadata и capability checks. Frontend/application core не должны разрастаться ветвлениями по конкретным model_id, provider, INN, DefMark, feature names, paths или threshold.
+
+Исключение допустимо только как явно зафиксированное временное V1 capability limitation, не как архитектурное правило.
+
+Причина: система должна позволять добавлять или заменять компоненты без переписывания уже принятой цепочки.
+
+### D-078 — Stage III-C разделён на локальный C1 и внешний C2
+
+Принятое разбиение:
+
+- **III-C1 / LOCAL MODEL USE FLOW**: Result → explicit save ModelVersion → targetless file → PredictionBatch → selected row → LocalExplanationEvidence;
+- **III-C2 / EXTERNAL INTERPRETATION FLOW**: LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation.
+
+III-C1 должен получить Reviewer ACCEPT до начала III-C2.
+
+Причина: C1 проверяет model lineage/inference/same-model explainability локально; C2 отдельно вводит внешний provider и data-sharing risk.
+
+### D-079 — III-C не добавляет новый верхнеуровневый экран Streamlit
+
+Верхнеуровневый flow остаётся:
+
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
+
+На `Результат` добавляется последовательный блок **«Применить модель к новым данным»**.
+
+Причина: это минимальный defense-ready UX без рефакторинга принятого experiment wizard.
+
+### D-080 — Streamlit работает через IntegrationWorkflowService и capability contract
+
+Frontend не обращается напрямую к stores/native predictors/explainers/provider clients. Тонкий application facade оркестрирует accepted services и возвращает typed results/capabilities.
+
+Capability states V1: `AVAILABLE`, `WAITING_FOR_INPUT`, `UNSUPPORTED`, `DISABLED`, `MISCONFIGURED`.
+
+Неподдерживаемая capability справа не инвалидирует уже рассчитанный результат слева.
+
+### D-081 — External LLM default policy отключена; defense-ready режим REDACTED_V1
+
+По умолчанию `EXTERNAL_DATA_POLICY=DISABLED`; без configured policy provider не вызывается.
+
+В `REDACTED_V1` внешний provider не получает identifier value, raw feature values и row identity. Full raw external sharing до защиты не реализуется.
+
+Один checkbox пользователя не заменяет организационное data-sharing permission. `store=False` также не является таким разрешением.
+
+### D-082 — Universal Pipeline UX V1 принят после manual III-C1 E2E
+
+Пользовательский flow фиксируется как:
+
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
+
+Generic UI не содержит специальных правил по именам `Q_B1_norm`, `Q_B2_norm`, `INN`, `DefMark`; исторические ограничения `Data_final` остаются только внутри frozen compatibility profile.
+
+Выбранный при обучении feature set является контрактом сохранённой ModelVersion для последующего inference: target на новых данных не требуется, дополнительные колонки допустимы, но все признаки модели должны присутствовать.
+
+Manual III-C1 E2E подтверждён; найденный UTF-8 BOM defect закрыт отдельным corrective fix.
+
+### D-083 — III-C2a фиксирует отдельную outbound policy boundary
+
+Stage III-C2 разделён на:
+
+- **III-C2a / External Data Boundary**;
+- **III-C2b / Runtime + Streamlit Integration**.
+
+III-C2a получил Reviewer `ACCEPT`.
+
+Принято:
+
+- полный `ResultInterpreterRequest` остаётся internal и не редактируется;
+- `request_hash` проверяется до outbound projection;
+- `REDACTED_V1` строится только positive allowlist-ом;
+- внешний provider не получает identifier, row identity, raw feature values и internal provenance;
+- sanitized payload имеет deterministic hash;
+- `ProviderDispatchReceipt` связывает source request hash, policy id/version и exact provider payload hash;
+- `PolicyBoundResultInterpreterClient` передаёт underlying provider только sanitized dispatch payload;
+- существующий Stage III-A direct internal client contract не переписывается;
+- capability `result_interpretation` до III-C2b остаётся `DISABLED / STAGE_III_C2_NOT_ENABLED`.
+
+Принятый implementation commit: `ebb4c7d0`.
+
+### D-084 — III-C2b подключает runtime/provider/UI только поверх принятой REDACTED_V1 boundary
+
+Stage III-C2b получил Reviewer `ACCEPT` после corrective fix.
+
+Принято:
+
+- отсутствие external policy и явный `DISABLED` эквивалентны штатному fail-safe `DISABLED`;
+- единственный разрешённый внешний режим V1 — `REDACTED_V1`;
+- неизвестная policy и неполная provider/model/credential configuration дают `MISCONFIGURED` и zero provider calls;
+- provider registry, model и credential composition находятся только в composition root;
+- frontend вызывает только `IntegrationWorkflowService` и не знает OpenAI/provider API;
+- application `interpret()` самостоятельно запрещает вызов при неготовом runtime и не полагается на disabled UI button;
+- session state не содержит API key/provider client/policy object/raw exception;
+- immutable interpreter request сохраняется для retry;
+- LLM failure не очищает ModelVersion, PredictionBatch, selected row или Local SHAP;
+- explanation продолжает существующий `Результат`, новый top-level экран не создаётся.
+
+Первое review выявило один MAJOR: explicit `KOMUS_EXTERNAL_DATA_POLICY=DISABLED` считался INVALID. Corrective delta установил expected semantics `DISABLED / EXTERNAL_DATA_POLICY_DISABLED` и доказал zero provider factory calls regression-тестом.
+
+Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
+
+### D-085 — Manual III-C2 E2E выявил product gap; Stage III-C2c возвращает принятую ролевую интерпретацию
+
+Manual defense E2E 2026-09-25 подтвердил технический внешний path:
+
+`probability → Local SHAP → REDACTED_V1 → OpenAI → Russian explanation`.
+
+Подтверждено вручную:
+- default/explicit disabled path не мешает prediction и Local SHAP;
+- ready `REDACTED_V1` реально вызывает provider и возвращает русский текст;
+- prediction/SHAP остаются доступны независимо от Result Interpreter.
+
+Одновременно выявлен product gap: текущий generic prompt выдаёт техническое SHAP-резюме и не использует принятый Stage 20 role-based contract. Кроме того, Streamlit не передаёт trusted feature descriptions в `prepare_interpretation()`, хотя `FeatureSpec.description_ru` сохраняется в ModelVersion metadata.
+
+Открыт узкий **Stage III-C2c / Role-Based Result Interpretation Integration**.
+
+Architect lock:
+- поддержать ровно четыре принятые Stage 20 роли: `sales_manager`, `credit_controller`, `lawyer`, `information_security`;
+- один и тот же immutable ML-result/Local SHAP evidence интерпретируется отдельно для выбранной роли; LLM не пересчитывает probability/SHAP и не принимает credit/business decision;
+- role является частью interpreter request semantics и hash identity;
+- trusted `display_name_ru` / `description_ru` берутся только из сохранённой ModelVersion metadata; при отсутствии полезного описания допускается technical column name без выдумывания смысла;
+- `REDACTED_V1` остаётся единственной разрешённой external policy и не расширяет outbound allowlist данными клиента: identifier, row identity и raw feature values наружу не передаются;
+- frontend по-прежнему вызывает только `IntegrationWorkflowService`;
+- отдельные role responses/retry state не должны инвалидировать ModelVersion, PredictionBatch, selected row или Local SHAP;
+- threshold/business policy не возвращается из Stage 20 prototype: текущая product chain не имеет принятого business threshold;
+- visual/button UX polish не входит в C2c и идёт отдельным проходом после functional ACCEPT.
+
+Stage III-C2b ACCEPT не отменяется: найденный gap относится к следующей продуктовой capability поверх уже принятой runtime/security boundary.
+
+Implementation C2c выполнен в ветке `feature/role-based-result-interpreter-v1`:
+- role включён в immutable request/hash semantics;
+- четыре Stage 20 роли имеют отдельные prompt rules и независимое session/retry state;
+- Streamlit берёт trusted `display_name_ru` / `description_ru` из сохранённой ModelVersion metadata через application facade;
+- REDACTED_V1 не расширен identifier/raw values/row identity; наружу добавлен только trusted `display_name_ru` рядом с уже разрешённым `description_ru`;
+- четыре роли запускаются отдельными UI actions и имеют независимые response/retry states.
+
+Финальная verification: **255 full tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
+
+Review closure:
+- `4f579ed1` закрыл MAJOR: initial action каждой роли вызывает только один provider call, bulk-flow удалён;
+- `1c4ae237` закрыл MINOR: source-of-truth документация синхронизирована с фактическим role-by-role UI;
+- manual external E2E на synthetic/non-client input выполнен для `sales_manager` и `lawyer`; оба вызова успешны, ответы различаются при одном ML result, redacted payload не содержит identifier/row identity/raw values.
+
+Статус C2c: **ACCEPT Stage III-C2c**.

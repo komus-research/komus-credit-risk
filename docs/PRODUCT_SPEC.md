@@ -63,9 +63,9 @@
 
 Обязательные правила:
 
-- `Q_B1_norm` и `Q_B2_norm` могут присутствовать только в исторических/reference-сценариях;
-- для финального рабочего кандидата оба признака запрещены;
-- запрещённые признаки не должны случайно возвращаться через пользовательскую конфигурацию;
+- в frozen historical Data_final profile `Q_B1_norm` и `Q_B2_norm` доступны только как reference/diagnostic signals;
+- для historical рабочего кандидата оба признака запрещены;
+- исторически заблокированные признаки не должны случайно возвращаться через пользовательскую конфигурацию этого profile;
 - новые признаки добавляются модульно и исследуются отдельными гипотезами;
 - provenance и доступность признака на момент прогноза должны быть понятны до включения в рабочий feature set.
 
@@ -239,6 +239,30 @@ LLM не должна:
 
 Конкретный провайдер LLM не является частью контракта ML-core.
 
+### Integration V1 — требования к интерпретации результата
+
+Для selected-row сценария LLM получает только structured facts, производные от принятого `LocalExplanationEvidence`:
+
+- identifier/row provenance;
+- готовую probability;
+- `shap_output_space`, raw model output и base value;
+- top feature contributions с raw value / SHAP / rank;
+- optional trusted feature descriptions.
+
+LLM не должна:
+
+- пересчитывать или менять probability;
+- пересчитывать SHAP;
+- утверждать причинность;
+- придумывать бизнес-смысл признака без trusted description;
+- выбирать threshold;
+- выдавать решение «одобрить/отказать»;
+- превращать отсутствие provider в отказ prediction/SHAP path.
+
+Provider подключается через общий `ResultInterpreterClient`. Конкретная model/provider configuration не хардкодится в core/UI.
+
+Для OpenAI adapter обязателен `store=False`; это не означает Zero Data Retention. Перед использованием внешнего provider на реальных клиентских identifiers/feature values должна быть отдельно подтверждена допустимая data-sharing/redaction policy.
+
 ## 14. Backend
 
 Backend должен быть тонким слоем над тем же research/ML-core, который используется в notebooks.
@@ -285,6 +309,56 @@ Backend не содержит собственной копии алгоритм
 - LLM-сводка;
 - Артефакты и воспроизводимость.
 
+Ближайший defense-ready flow использует уже принятые application boundaries и не создаёт новый верхнеуровневый экран.
+
+Верхнеуровневый путь остаётся:
+
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
+
+На `Результат` добавляется блок **«Применить модель к новым данным»**.
+
+### III-C1 — локальное применение модели
+
+`Результат → explicit save ModelVersion → targetless file → PredictionBatch → selected row → LocalExplanationEvidence`.
+
+Требования:
+
+- ModelVersion создаётся только явным действием пользователя;
+- текущая сохранённая версия становится active для этого Result;
+- targetless файл не проходит Dataset Preparation, его schema source — ModelVersion;
+- prediction table строится из `PredictionBatch` и показывает dynamic identifier + probability;
+- duplicate identifier values допустимы, выбор строки идёт по `row_id`;
+- local explanation вызывается по capability; `UNSUPPORTED` не блокирует inference.
+
+### III-C2 — внешняя интерпретация
+
+`LocalExplanationEvidence → external-data policy/redaction → ResultInterpreter → provider adapter → explanation`.
+
+Default: `EXTERNAL_DATA_POLICY=DISABLED`.
+
+Defense-ready режим `REDACTED_V1` не передаёт внешнему provider:
+
+- identifier value;
+- raw feature values;
+- row identity.
+
+Provider/model/API key не хардкодятся в Streamlit и не сохраняются в model/experiment artifacts.
+
+Frontend работает через `IntegrationWorkflowService` и capability contract; он не должен знать внутренности CatBoost/OpenAI и не должен содержать hardcoded `INN`, `DefMark`, feature names, provider model или threshold.
+
+Главный UX invariant: отказ следующей capability не ломает уже успешные предыдущие результаты. LLM failure не очищает prediction/SHAP; unsupported local explanation не очищает PredictionBatch.
+
+Stage III-C2 runtime/UI contract:
+
+- отсутствие policy или explicit `DISABLED` → `DISABLED / EXTERNAL_DATA_POLICY_DISABLED`;
+- unknown policy/provider и missing model/credential → `MISCONFIGURED` с stable reason code и без provider call;
+- ready `REDACTED_V1` → `AVAILABLE / RESULT_INTERPRETER_READY`;
+- request сохраняется для retry; retry не пересчитывает prediction/SHAP;
+- пользователь видит safe-data notice, provider-generated Russian explanation и non-causality/non-decision disclaimer;
+- raw exception, API key, request JSON и provider internals в основной UI не показываются.
+
+Stage III-C2b принят Reviewer. Реальный provider manual E2E является отдельной финальной проверкой defense flow.
+
 Красивый frontend не строится раньше устойчивого `ExperimentRunner`.
 
 ## 16. История и аудит
@@ -309,3 +383,193 @@ Backend не содержит собственной копии алгоритм
 - промышленный monitoring/drift stack;
 - автоматическое кредитное решение без исследовательской валидации;
 - переписывание исторического notebook №06 с нуля.
+
+## Dataset Preparation V1
+
+Для generic dataset система выполняет factual inspection и строит proposal.
+
+Пользователь явно подтверждает:
+
+- что модель должна предсказывать;
+- какое значение является положительным событием;
+- какой столбец идентифицирует объект;
+- какие колонки использовать в модели;
+- какие оставить только для анализа;
+- какие не использовать.
+
+Только после explicit confirmation dataset становится run-ready.
+
+Historical `Data_final` является frozen compatibility profile и не задаёт правила generic product.
+
+## Generic Dataset Onboarding UX
+
+Основной пользовательский сценарий начинается с:
+
+**«Загрузите файл»**
+
+Пользователь не выбирает отдельный режим «исторический / новый датасет».
+
+Onboarding строится как последовательный мастер:
+
+`Файл → Цель → Идентификатор → Признаки → Оценка → Проверка`.
+
+На экране одновременно активен один смысловой этап. Завершённый этап сворачивается в компактную строку и может быть открыт для изменения.
+
+### Файл
+
+После выбора файла необходимые технические проверки запускаются автоматически либо через понятное действие:
+
+**«Проверить файл»**
+
+Термин «Проверить источник» в основном UI не используется.
+
+Показывается краткая сводка:
+
+- имя файла;
+- число строк;
+- число колонок;
+- число найденных проблем.
+
+Повторяющиеся предупреждения агрегируются. Технические детали скрываются в разделе «Подробности».
+
+### Цель
+
+Главный вопрос:
+
+**«Что модель должна предсказывать?»**
+
+Analyzer может предложить кандидатов, но предложение системы не является подтверждением.
+
+Target всегда явно выбирает человек.
+
+После этого пользователь отвечает:
+
+**«Какое значение считать положительным событием?»**
+
+Варианты берутся только из фактических значений текущего target.
+
+При смене target positive class сбрасывается.
+
+### Идентификатор
+
+Вопрос:
+
+**«Какой столбец идентифицирует объект?»**
+
+Подсказка объясняет, что это может быть ID клиента, ИНН, номер договора и т.п. Identifier не используется как predictor.
+
+### Признаки
+
+Для 50–200 колонок не показывается длинная последовательность больших dropdown.
+
+Сначала выводится сводка:
+
+- готовы к использованию;
+- требуют решения;
+- рекомендуется исключить.
+
+Детальный список открывается при необходимости.
+
+Пользовательские статусы:
+
+- `MODEL_ALLOWED` → **Использовать в модели**;
+- `DIAGNOSTIC_ONLY` → **Оставить только для анализа**;
+- `BLOCKED` → **Не использовать**.
+
+Внутренние статусы `FEATURE_CANDIDATE`, `TARGET_CANDIDATE`, `REVIEW_REQUIRED`, `ELIGIBLE_CANDIDATE` и аналогичные не показываются в основном UI.
+
+### Оценка
+
+Если V1 поддерживает только одну evaluation policy, фиктивный selector не создаётся.
+
+Пользователь явно подтверждает:
+
+**«Использовать все строки для OOF-оценки. Отдельная финальная тестовая выборка автоматически создана не будет.»**
+
+### Проверка
+
+Перед materialization показывается компактное summary:
+
+- dataset;
+- target;
+- positive event;
+- identifier;
+- число predictors;
+- число diagnostic-only;
+- число excluded;
+- evaluation setup.
+
+Основные действия:
+
+**«Изменить»**
+
+**«Подтвердить и продолжить»**
+
+## Dataset History / Persistence V1
+
+Система должна позволять продолжать исследование после перезапуска приложения.
+
+Exact dataset определяется по содержимому, а не по имени файла или пути.
+
+Переименование или копирование идентичного файла не создаёт новую dataset identity.
+
+Если exact dataset уже известен и сохранённое состояние совместимо с текущими правилами, приложение предлагает:
+
+- **Продолжить работу**;
+- **История экспериментов**;
+- **Проверить заново**.
+
+Повторный дорогой inspection не выполняется без необходимости, если совместимость сохранённого состояния доказана.
+
+SHA-256, fingerprint, manifest, policy hash и cache не являются понятиями основного UI. Они доступны только в технических сведениях.
+
+### Что сохраняется
+
+Для dataset history нужны как минимум:
+
+- dataset identity;
+- последняя подтверждённая preparation;
+- target и positive event;
+- identifier;
+- feature usage summary;
+- версии relevant preparation/inspection rules;
+- evaluation setup;
+- список experiments;
+- feature selection каждого experiment;
+- model и parameters;
+- Gini / ROC-AUC;
+- PR-AUC;
+- Recall;
+- Precision;
+- F1;
+- runtime;
+- reproducibility/provenance references.
+
+### История экспериментов
+
+Основной вид — таблица.
+
+Пользователь может выбрать несколько экспериментов и увидеть их результаты рядом.
+
+Прямой controlled comparison допустим только при одинаковых критичных experimental conditions: dataset identity и population, split/folds, seed, preprocessing, feature set, evaluation protocol и metrics — кроме заранее объявленного единственного changed dimension конкретного controlled experiment.
+
+Если критичные условия различаются более чем по этому контролируемому изменению, результаты должны быть помечены как `partially comparable` или `incomparable`. Интерфейс не должен представлять их как прямой leaderboard или делать вывод о победителе на основании такого сравнения.
+
+### Изменение правил
+
+Exact dataset не означает, что старый analysis всегда остаётся актуальным.
+
+Если relevant rules изменились:
+
+- старая история сохраняется;
+- experiment results сохраняются;
+- старый inspection не выдаётся за актуальный;
+- при необходимости предлагается обновить проверку.
+
+### Similar dataset
+
+Поиск похожих, но не идентичных dataset и перенос старых настроек не входят в V1.
+
+В будущем такие настройки могут переноситься только как `PROPOSAL / DRAFT`, но не как автоматически подтверждённый `CONFIRMED` state.
+
+Конкретное физическое хранилище пока не фиксируется. Это требование само по себе не является основанием вводить production-БД.

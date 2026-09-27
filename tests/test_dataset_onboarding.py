@@ -71,7 +71,7 @@ class DatasetOnboardingTests(unittest.TestCase):
             path.write_text("a,a\n1,2\n", encoding="utf-8")
             with self.assertRaises(TabularReadError) as error:
                 TabularReader().read(path)
-            self.assertEqual("duplicate_headers", error.exception.code)
+            self.assertEqual("invalid_physical_header", error.exception.code)
             valid = Path(directory) / "valid.csv"
             valid.write_text("a;b\n1;2\n", encoding="utf-8")
             snapshot = TabularReader().read(valid, separator=";")
@@ -85,29 +85,15 @@ class DatasetOnboardingTests(unittest.TestCase):
                 TabularReader().read(Path(directory) / "missing.csv")
             self.assertEqual("file_not_found", error.exception.code)
 
-    def test_header_preview_reads_only_columns_and_rejects_ambiguous_names(self) -> None:
+    def test_reader_accepts_utf8_bom_without_header_identity_mismatch(self) -> None:
         with TemporaryDirectory() as directory:
-            source = Path(directory) / "source.csv"
-            source.write_text("INN,DefMark,A1_norm\n1,0,0.5\n", encoding="utf-8")
-            with patch("komus_risk.data.tabular.pd.read_csv") as read_csv:
-                self.assertEqual(("INN", "DefMark", "A1_norm"), TabularReader().preview_columns(source))
-            read_csv.assert_not_called()
+            path = Path(directory) / "bom.csv"
+            path.write_text("identifier,feature\nDEMO-1,1.5\n", encoding="utf-8-sig")
 
-            source.write_text("INN,A1_norm,A1_norm\n1,0.5,0.7\n", encoding="utf-8")
-            with self.assertRaises(TabularReadError) as error:
-                TabularReader().preview_columns(source)
-            self.assertEqual("duplicate_headers", error.exception.code)
+            snapshot = TabularReader().read(path)
 
-            source.write_text("INN,,A1_norm\n1,0,0.5\n", encoding="utf-8")
-            with self.assertRaises(TabularReadError) as error:
-                TabularReader().preview_columns(source)
-            self.assertEqual("invalid_headers", error.exception.code)
-
-            binary_source = Path(directory) / "source.xlsb"
-            binary_source.write_bytes(b"fixture")
-            with patch.object(TabularReader, "_validate_headers", return_value=("INN", "A1_norm")) as headers:
-                self.assertEqual(("INN", "A1_norm"), TabularReader().preview_columns(binary_source))
-            self.assertEqual(headers.call_args.args[1], "xlsb")
+            self.assertEqual(("identifier", "feature"), snapshot.physical_headers)
+            self.assertEqual(("identifier", "feature"), tuple(snapshot.dataframe.columns))
 
     def test_target_with_missing_keeps_target_role(self) -> None:
         frame = pd.DataFrame({"event_flag": [0, 1] * 9 + [None, None], "amount": list(range(20))})
@@ -236,7 +222,7 @@ class DatasetOnboardingTests(unittest.TestCase):
             self.assertEqual("parquet", TabularReader().read(parquet).source_format)
             xlsb = root / "data.xlsb"
             xlsb.write_bytes(b"fixture")
-            with patch.object(TabularReader, "_validate_headers"), patch("komus_risk.data.tabular.pd.read_excel", return_value=frame) as read_excel:
+            with patch.object(TabularReader, "_physical_headers", return_value=("a", "b")), patch("komus_risk.data.tabular.pd.read_excel", return_value=frame) as read_excel:
                 self.assertEqual("xlsb", TabularReader().read(xlsb).source_format)
             read_excel.assert_called_once_with(xlsb, sheet_name=0, engine="pyxlsb")
             unsupported = root / "data.txt"

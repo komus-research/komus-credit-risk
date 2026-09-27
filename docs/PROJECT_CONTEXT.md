@@ -345,22 +345,122 @@ Explainability также обязательна. SHAP/permutation importance о
 
 Текущее решение: LLM не является кредитным predictor.
 
-LLM используется как post-processing Result Interpreter для уже рассчитанных:
+LLM используется как post-processing Result Interpreter для уже рассчитанных ML facts. В принятом Integration V1 selected-row path источником является structured `LocalExplanationEvidence`: готовая probability, SHAP facts, row/identifier provenance и optional trusted feature descriptions.
 
-- метрик;
-- сравнений;
-- explainability;
-- threshold/business scenarios;
-- ограничений исследования.
+LLM:
 
-LLM не меняет рассчитанные метрики и не заменяет SHAP.
+- не пересчитывает probability;
+- не пересчитывает SHAP;
+- не выбирает threshold;
+- не принимает решение «одобрить/отказать»;
+- не трактует SHAP как причинность;
+- не придумывает business meaning feature без trusted description.
+
+Result Interpreter model-independent; provider подключается через `ResultInterpreterClient`. OpenAI является одной сменной реализацией, а не частью ML-core. Текущий OpenAI adapter использует configurable model и `store=False`; это не Zero Data Retention.
+
+Ошибка или отсутствие LLM provider не должны делать prediction и Local SHAP недоступными.
+
+### Product/Application Integration V1 — current accepted backend state
+
+Принята цепочка:
+
+`ExperimentArtifact → explicit final fit → ModelVersion → targetless inference → PredictionBatch → selected-row LocalExplanationEvidence → ResultInterpreterRequest → ResultInterpreterClient → ResultInterpreterResponse`.
+
+Accepted:
+
+- Stage I — Fitted Model Lifecycle;
+- Stage II-A — Generic Model Inference V1;
+- Stage II-B — CatBoost Local SHAP V1 как capability;
+- Stage III-A — model-independent Result Interpreter Core V1;
+- Stage III-B — modular OpenAI adapter с `store=False`.
+
+Architect Lock для Stage III-C принят.
+
+**Stage III-C1 / LOCAL MODEL USE FLOW — ACCEPTED.**
+
+Реализован и принят Reviewer flow:
+
+`Result → explicit save ModelVersion → targetless file → PredictionBatch → select row → LocalExplanationEvidence`.
+
+Подтверждено:
+
+- новый верхнеуровневый экран не создавался; после Universal Pipeline UX V1 flow: `Данные → Признаки → Алгоритм → Проверка качества → Результат`;
+- локальное применение модели находится на экране `Результат`;
+- frontend работает через `IntegrationWorkflowService` и capability contract;
+- ModelVersion создаётся explicit action;
+- inference schema динамически берётся из сохранённого ModelVersion;
+- local explainer подключён registry/capability-механизмом;
+- CatBoost Local SHAP работает через accepted backend;
+- unsupported explainer не блокирует prediction;
+- stale inference source invalidation закрыта: новый source очищает старый batch/row/evidence, но сохраняет active ModelVersion.
+
+Принятый Stage III-C1 commit: `ec9f397e7ea30ba509283e095acc74b0a4c4352a`.
+
+**Manual III-C1 E2E — PASS.**
+
+Ручной пользовательский прогон подтвердил:
+
+- final fit/save CatBoost ModelVersion;
+- targetless inference;
+- duplicate identifiers через отдельный `row_id`;
+- selected-row Local SHAP;
+- source A → B invalidation;
+- fail-closed несовместимого файла без потери active ModelVersion.
+
+Во время E2E найден и закрыт UTF-8 BOM defect физического header reader: commit `c009f3bd8bd94c23e13cf3ebf0db1be5c4c4c6e0`.
+
+**Universal Pipeline UX V1 — ACCEPTED.**
+
+Generic UI не содержит special-case правил для `Q_B1_norm`, `Q_B2_norm`, `INN`, `DefMark`; historical semantics остаются только внутри frozen compatibility profile. Пользовательский flow и терминология приведены к:
+
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
+
+Принятый UX commit: `492b6dc6`.
+Текущая local verification evidence: 52 focused UX tests PASS, 229 full tests PASS, `compileall src app` PASS, `git diff --check` PASS.
+
+**Stage III-C2a / External Data Boundary — ACCEPTED.**
+
+Принята provider-neutral outbound boundary:
+
+`FULL ResultInterpreterRequest → request hash validation → REDACTED_V1 positive allowlist projection → provider-safe payload`.
+
+Full internal request, lineage и `request_hash` сохраняются. Наружу допускаются только probability, `shap_output_space` и top-feature `feature_id/column_name/shap_value/abs_rank/description_ru`. Identifier, row identity, raw feature values и provenance внешнему provider не передаются.
+
+Policy-bound client игнорирует прежний full internal client payload и передаёт underlying provider только sanitized dispatch payload. Existing Stage III-A direct Result Interpreter contract при этом не изменён.
+
+Implementation commit: `ebb4c7d0`.
+Acceptance/docs commit: `ff2def77`.
+Reviewer verdict: **ACCEPT Stage III-C2a**.
+
+**Stage III-C2b / Runtime + Streamlit Integration — ACCEPTED.**
+
+`LocalExplanationEvidence → accepted REDACTED_V1 boundary → runtime policy/provider configuration → ResultInterpreter → provider adapter → Russian explanation`.
+
+Принятые свойства:
+
+- default и explicit `DISABLED` — штатный fail-safe режим без provider creation/call;
+- неизвестная policy, отсутствующие provider/model/credential дают `MISCONFIGURED` и zero provider calls;
+- готовый `REDACTED_V1` runtime даёт `AVAILABLE / RESULT_INTERPRETER_READY`;
+- provider/model/API key конфигурируются только на runtime/composition boundary;
+- Streamlit не знает OpenAI API и работает только через `IntegrationWorkflowService`;
+- interpreter request сохраняется для retry, а provider failure не инвалидирует prediction/SHAP;
+- новый top-level экран не добавлен: explanation встроен в существующий `Результат`.
+
+Implementation commit: `f0577383418de249e725b6d7a17f051b73cd39a2`.
+Reviewer verdict: **ACCEPT Stage III-C2b**.
+
+Локально после corrective fix: 246 full tests PASS, `compileall src app` PASS, `git diff --check` PASS.
+
+**Следующий шаг — manual defense E2E Stage III-C2.**
+
+Нужно вручную проверить реальный путь `probability → Local SHAP → REDACTED_V1 → provider → Russian explanation` на synthetic/non-client input. На текущем рабочем запуске external policy/provider/model/credential ещё не настроены; default остаётся `DISABLED`.
 
 ---
 
 ## 12. Текущие открытые вопросы
 
 1. Утверждённое отношение/стоимость FN и FP.
-2. Допустимые локальные LLM и разрешение/запрет внешнего LLM API для обезличенных результатов.
+2. Допустимые локальные LLM и отдельное разрешение/data-sharing/redaction policy для передачи реальных client identifiers/feature values во внешний LLM API.
 3. В сообщении заказчика упоминаются «7 внешних признаков 100% дефолта», но подтверждено только 6 внешних факторов; седьмой не додумывать.
 4. Temporal validation для текущего `Data_final` невозможна без дополнительной исторической структуры.
 5. Формальная связь ошибок/threshold-сценариев с целью ПДЗ `15% → 10%`.

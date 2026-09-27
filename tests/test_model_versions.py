@@ -1,359 +1,170 @@
-"""Stage 4: final fit, native model versions and fail-closed disk restoration."""
-
 from __future__ import annotations
 
 from dataclasses import replace
-from io import BytesIO
+from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from types import SimpleNamespace
 import unittest
 
 import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier
-from lightgbm import LGBMClassifier
-from xgboost import XGBClassifier
 
 from komus_risk.application import FinalModelTrainingService
-from komus_risk.application.model_inference import predict_uploaded_file
 from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
-from komus_risk.contracts import ExperimentConfig
-from komus_risk.data import DatasetInspector, TabularReader
-from komus_risk.experiments import EvaluationPopulation, ExperimentRunner
-from komus_risk.hashing import stable_hash
-from komus_risk.models import XGBOOST_MODEL_SPEC, XGBoostFactory
-from komus_risk.models.gbdt.catboost import CATBOOST_PROFILE, CatBoostAdapter
-from komus_risk.models.gbdt.lightgbm import LIGHTGBM_PROFILE, LightGBMAdapter
-from komus_risk.models.gbdt.mean import GBDTMeanAdapter
-from komus_risk.models.gbdt.native import load_native_predictor, save_fitted_native
-from komus_risk.models.gbdt.xgboost import XGBOOST_PROFILE, XGBoostAdapter
-from komus_risk.preparation import (
-    ConfirmedDatasetRoles, DatasetPreparationAnalyzer, materialize_confirmed_dataset, prepare_oof_evaluation,
+from komus_risk.contracts import DatasetContract, ExperimentConfig, ExperimentResult, FeatureGroup, FeatureSpec, FeatureUsageStatus
+from komus_risk.data import LoadedDataset
+from komus_risk.experiments import EvaluationPopulation, ExperimentRunOutput
+from komus_risk.models.gbdt import (
+    CATBOOST_MODEL_SPEC, CATBOOST_PROFILE, GBDT_MEAN_PROFILE, LIGHTGBM_PROFILE,
+    XGBOOST_PROFILE, CatBoostAdapter, CatBoostFactory, GBDTMeanAdapter, GBDTMeanFactory, LightGBMFactory, XGBoostFactory,
 )
-from komus_risk.registries import ModelRegistry
+from komus_risk.models.gbdt.native import load_native_predictor, save_native_model, validate_fitted_adapter_recipe
+from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 
 class ModelVersionTests(unittest.TestCase):
-    @staticmethod
-    def _ready(directory: str):
-        path = Path(directory) / "companies.csv"
-        rows = [f"{1000000000 + i},{i % 2},{(i % 10) + 0.1},{(i % 7) + 0.2}" for i in range(60)]
-        path.write_text("INN,DefMark,A1,A2\n" + "\n".join(rows) + "\n", encoding="utf-8")
-        snapshot = TabularReader().read(path)
-        inspection = DatasetInspector().inspect(snapshot)
-        proposal = DatasetPreparationAnalyzer().analyze(inspection)
-        roles = ConfirmedDatasetRoles(snapshot.fingerprint, "DefMark", 1, "INN", ("A1", "A2"))
-        return prepare_oof_evaluation(
-            materialize_confirmed_dataset(snapshot, inspection, proposal, roles), confirm_no_time_axis=True,
+    def setUp(self) -> None:
+        self.temp = TemporaryDirectory()
+        root = Path(self.temp.name)
+        self.source = root / "dataset.csv"
+        rows = 40
+        self.frame = pd.DataFrame({"id": range(rows), "f_a": np.linspace(0, 1, rows), "f_b": np.tile([0.0, 1.0], rows // 2), "target": np.tile([0, 1], rows // 2)})
+        self.frame.to_csv(self.source, index=False)
+        self.registry = FeatureRegistry(
+            "features-v1",
+            (
+                FeatureSpec("f_a", "f_a", "A", "A", "base", "float64", "numeric", "source", FeatureUsageStatus.MODEL_ALLOWED, None, None, None, 0),
+                FeatureSpec("f_b", "f_b", "B", "B", "base", "float64", "numeric", "source", FeatureUsageStatus.MODEL_ALLOWED, None, None, None, 1),
+            ),
+            (FeatureGroup("base", "Base", "Base", 0, "source", ("f_a", "f_b")),),
         )
+        self.contract = DatasetContract("dataset", "v1", "Synthetic", "ready_csv", "fingerprint", rows, 4, "target", 1, "id", self.registry.registry_id, self.registry.registry_hash, "validated", True)
+        self.loaded = LoadedDataset(self.frame, self.contract, self.source, "csv", sha256(self.source.read_bytes()).hexdigest())
+        self.population = EvaluationPopulation(tuple(range(rows)), "working-v1", "population-sha", "working")
+        self.config = ExperimentConfig("experiment-v1", "dataset", "fingerprint", "target", ("f_a", "f_b"), None, ("base",), "catboost", "accepted_stage1_v2", CATBOOST_PROFILE, "stratified_kfold_oof", "1", 7, 2, "oof", None, None, ())
+        result = ExperimentResult("result-v1", self.config.experiment_id, self.config.config_hash, "fingerprint", self.config.feature_set_hash, "catboost", "accepted_stage1_v2", "oof", {"roc_auc": 0.5}, {"threshold": 0.5}, ({"fold": 1}, {"fold": 2}), 0.0, {}, "code-v1", datetime.now(timezone.utc).isoformat(), ())
+        self.output = ExperimentRunOutput(result, np.full(rows, 0.5), np.tile([1, 2], rows // 2), self.population.row_positions, self.population.population_id, self.population.population_fingerprint)
+        self.experiments = ExperimentArtifactStore(root / "experiments")
+        self.artifact = self.experiments.save(config=self.config, dataset_contract=self.contract, population=self.population, run_output=self.output)
+        registry = ModelRegistry(); registry.register(CATBOOST_MODEL_SPEC)
+        self.versions = ModelVersionStore(root / "models", code_version="code-v1", model_specs={"catboost": CATBOOST_MODEL_SPEC})
+        self.service = FinalModelTrainingService(experiment_artifact_store=self.experiments, model_version_store=self.versions, model_registry=registry, model_factories={"catboost": CatBoostFactory()}, code_version="code-v1")
 
-    @staticmethod
-    def _evaluate(ready, root: Path, feature_ids: tuple[str, ...]):
-        registry = ModelRegistry()
-        registry.register(XGBOOST_MODEL_SPEC)
-        factory = XGBoostFactory()
-        config = ExperimentConfig(
-            experiment_id="test-" + "-".join(feature_ids),
-            dataset_id=ready.loaded_dataset.contract.dataset_id,
-            dataset_fingerprint=ready.loaded_dataset.contract.dataset_fingerprint,
-            target="DefMark", feature_ids=feature_ids, feature_set_hash=None,
-            feature_groups=("confirmed_predictors",), model_id="xgboost",
-            model_version=XGBOOST_MODEL_SPEC.version,
-            model_parameters=XGBOOST_MODEL_SPEC.default_profile,
-            protocol_id="stratified_kfold_oof", protocol_version="1", seed=42, folds=3,
-            evaluation_level="oof", reference_result_id=None, changed_dimension=None, changed_elements=(),
-        )
-        output = ExperimentRunner(
-            feature_registry=ready.feature_registry, model_registry=registry,
-            adapter_factory=factory, code_version="test-v1",
-        ).run(ready.loaded_dataset, config, ready.population)
-        artifact_store = ExperimentArtifactStore(root)
-        artifact = artifact_store.save(
-            config=config, dataset_contract=ready.loaded_dataset.contract,
-            population=ready.population, run_output=output,
-        )
-        model_store = ModelVersionStore(root, code_version="test-v1")
-        service = FinalModelTrainingService(
-            experiment_store=artifact_store, model_store=model_store,
-            model_registry=registry, model_factories={"xgboost": factory}, code_version="test-v1",
-        )
-        return service, model_store, artifact
+    def tearDown(self) -> None:
+        self.temp.cleanup()
 
-    def test_final_model_is_separate_from_oof_and_survives_restart(self) -> None:
-        with TemporaryDirectory() as directory:
-            ready = self._ready(directory)
-            root = Path(directory) / "artifacts"
-            service, store, artifact = self._evaluate(ready, root, ("A1",))
-            self.assertEqual(store.catalog(), ((), ()))
-            stages = []
-            saved = service.train_and_save(
-                experiment_artifact_id=artifact.artifact_id, loaded_dataset=ready.loaded_dataset,
-                feature_registry=ready.feature_registry, population=ready.population,
-                progress_listener=stages.append,
-            )
-            self.assertEqual(stages, ["verifying_source", "fitting_final_model", "saving_model", "completed"])
-            self.assertEqual(saved.feature_count, 1)
-            self.assertEqual(saved.experiment_artifact_id, artifact.artifact_id)
-            self.assertEqual(len(store.catalog()[0]), 1)
+    def test_final_fit_persists_and_native_reload_preserves_prediction(self) -> None:
+        saved = self.service.train(experiment_artifact_id=self.artifact.artifact_id, loaded_dataset=self.loaded, feature_registry=self.registry, population=self.population)
+        X = self.frame.loc[:, ["f_a", "f_b"]]
+        loaded = self.versions.load(saved.model_version_id, dataset_contract=self.contract, config=self.config, feature_registry=self.registry, population=self.population)
+        expected = CatBoostFactory().create(CATBOOST_PROFILE, self.config.seed)
+        expected.fit(X, self.frame["target"])
+        np.testing.assert_allclose(expected.predict_positive_proba(X), loaded.predictor.predict_positive_proba(X), rtol=1e-10, atol=1e-12)
+        self.assertEqual(loaded.metadata["experiment_artifact_id"], self.artifact.artifact_id)
+        self.assertEqual(loaded.metadata["feature_ids"], ["f_a", "f_b"])
+        with self.assertRaisesRegex(ValueError, "exact persisted"):
+            loaded.predictor.predict_positive_proba(X.loc[:, ["f_b", "f_a"]])
 
-            restored = ModelVersionStore(root, code_version="test-v1").load(saved.version_id)
-            X = ready.loaded_dataset.dataframe.loc[:, ["A1"]].iloc[:4]
-            probabilities = restored.predictor.predict_positive_proba(X)
-            self.assertEqual(probabilities.shape, (4,))
-            self.assertTrue(np.isfinite(probabilities).all())
-            self.assertEqual(restored.metadata["population"]["partition_role"], "full")
-            self.assertEqual(restored.feature_specs[0].column_name, "A1")
-            self.assertEqual(restored.summary.version_id, saved.version_id)
-            with self.assertRaisesRegex(ValueError, "схемой"):
-                restored.predictor.predict_positive_proba(X.rename(columns={"A1": "А1"}))
-            with self.assertRaisesRegex(ValueError, "Версия кода"):
-                ModelVersionStore(root, code_version="another-version").load(saved.version_id)
-            repeated = service.train_and_save(
-                experiment_artifact_id=artifact.artifact_id, loaded_dataset=ready.loaded_dataset,
-                feature_registry=ready.feature_registry, population=ready.population,
-            )
-            self.assertNotEqual(repeated.version_id, saved.version_id)
-            self.assertEqual(len(store.catalog()[0]), 2)
+    def test_mismatches_and_locked_final_test_fail_closed(self) -> None:
+        with self.assertRaisesRegex(ValueError, "requires the working"):
+            self.service.train(experiment_artifact_id=self.artifact.artifact_id, loaded_dataset=self.loaded, feature_registry=self.registry, population=EvaluationPopulation(self.population.row_positions, "full-v1", "full-sha", "full"))
+        with self.assertRaisesRegex(ValueError, "changed"):
+            self.source.write_text("changed", encoding="utf-8")
+            self.service.train(experiment_artifact_id=self.artifact.artifact_id, loaded_dataset=self.loaded, feature_registry=self.registry, population=self.population)
 
-    def test_different_features_produce_separate_versions_and_changed_source_is_rejected(self) -> None:
-        with TemporaryDirectory() as directory:
-            ready = self._ready(directory)
-            root = Path(directory) / "artifacts"
-            one_service, store, one_artifact = self._evaluate(ready, root, ("A1",))
-            one = one_service.train_and_save(
-                experiment_artifact_id=one_artifact.artifact_id, loaded_dataset=ready.loaded_dataset,
-                feature_registry=ready.feature_registry, population=ready.population,
-            )
-            two_service, _, two_artifact = self._evaluate(ready, root, ("A1", "A2"))
-            two = two_service.train_and_save(
-                experiment_artifact_id=two_artifact.artifact_id, loaded_dataset=ready.loaded_dataset,
-                feature_registry=ready.feature_registry, population=ready.population,
-            )
-            self.assertNotEqual(one.version_id, two.version_id)
-            self.assertNotEqual(one.feature_set_hash, two.feature_set_hash)
-            self.assertEqual(len(store.catalog()[0]), 2)
+    def test_generic_dataset_requires_and_allows_full_population(self) -> None:
+        generic_contract = DatasetContract("dataset", "v1", "Synthetic", "ready_csv", "fingerprint", len(self.frame), 4, "target", 1, "id", self.registry.registry_id, self.registry.registry_hash, "validated", False)
+        generic_population = EvaluationPopulation(tuple(range(len(self.frame))), "full-v1", "full-sha", "full")
+        generic_output = ExperimentRunOutput(self.output.result, self.output.oof_positive_proba, self.output.fold_assignments, generic_population.row_positions, generic_population.population_id, generic_population.population_fingerprint)
+        artifact = self.experiments.save(config=self.config, dataset_contract=generic_contract, population=generic_population, run_output=generic_output)
+        loaded = LoadedDataset(self.frame, generic_contract, self.source, "csv", self.loaded.source_file_sha256)
+        saved = self.service.train(experiment_artifact_id=artifact.artifact_id, loaded_dataset=loaded, feature_registry=self.registry, population=generic_population)
+        self.assertEqual(saved.model_id, "catboost")
 
-            ready.loaded_dataset.source_path.write_text("changed\n", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "изменился"):
-                one_service.train_and_save(
-                    experiment_artifact_id=one_artifact.artifact_id, loaded_dataset=ready.loaded_dataset,
-                    feature_registry=ready.feature_registry, population=ready.population,
-                )
-            self.assertEqual(len(store.catalog()[0]), 2)
+    def test_corrupt_native_file_or_manifest_is_rejected(self) -> None:
+        saved = self.service.train(experiment_artifact_id=self.artifact.artifact_id, loaded_dataset=self.loaded, feature_registry=self.registry, population=self.population)
+        version_dir = Path(self.temp.name) / "models" / saved.model_version_id
+        native = version_dir / "native" / "model.cbm"
+        native.write_bytes(native.read_bytes() + b"corrupt")
+        with self.assertRaisesRegex(ValueError, "integrity"):
+            self.versions.load(saved.model_version_id)
 
-    def test_corrupt_native_file_is_not_loaded_or_listed(self) -> None:
-        with TemporaryDirectory() as directory:
-            ready = self._ready(directory)
-            root = Path(directory) / "artifacts"
-            service, store, artifact = self._evaluate(ready, root, ("A1",))
-            saved = service.train_and_save(
-                experiment_artifact_id=artifact.artifact_id, loaded_dataset=ready.loaded_dataset,
-                feature_registry=ready.feature_registry, population=ready.population,
-            )
-            with (root / "models" / saved.version_id / "xgboost.json").open("ab") as target:
-                target.write(b"corrupt")
-            with self.assertRaisesRegex(ValueError, "целостности"):
-                store.load(saved.version_id)
-            self.assertEqual(store.catalog(), ((), (saved.version_id,)))
-            with self.assertRaisesRegex(ValueError, "идентификатор"):
-                store.load("../outside")
+    def test_corrupt_manifest_is_rejected(self) -> None:
+        saved = self.service.train(experiment_artifact_id=self.artifact.artifact_id, loaded_dataset=self.loaded, feature_registry=self.registry, population=self.population)
+        manifest = Path(self.temp.name) / "models" / saved.model_version_id / "manifest.json"
+        manifest.write_text("{}", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "manifest"):
+            self.versions.load(saved.model_version_id)
 
-    def test_final_fit_rejects_another_dataset_context(self) -> None:
-        with TemporaryDirectory() as directory:
-            ready = self._ready(directory)
-            root = Path(directory) / "artifacts"
-            service, store, artifact = self._evaluate(ready, root, ("A1",))
-            other_contract = replace(ready.loaded_dataset.contract, dataset_fingerprint="other-dataset")
-            other_loaded = replace(ready.loaded_dataset, contract=other_contract)
-            with self.assertRaisesRegex(ValueError, "не совпадают"):
-                service.train_and_save(
-                    experiment_artifact_id=artifact.artifact_id, loaded_dataset=other_loaded,
-                    feature_registry=ready.feature_registry, population=ready.population,
-                )
-            self.assertEqual(store.catalog(), ((), ()))
+    def test_native_roundtrip_for_xgboost_lightgbm_and_gbdt_mean(self) -> None:
+        X = self.frame.loc[:, ["f_a", "f_b"]]
+        y = self.frame["target"]
+        mean_factory = GBDTMeanFactory({"catboost": CatBoostFactory(), "xgboost": XGBoostFactory(), "lightgbm": LightGBMFactory()})
+        for model_id, factory, profile in (
+            ("xgboost", XGBoostFactory(), XGBOOST_PROFILE),
+            ("lightgbm", LightGBMFactory(), LIGHTGBM_PROFILE),
+            ("gbdt_mean", mean_factory, GBDT_MEAN_PROFILE),
+        ):
+            with self.subTest(model_id=model_id):
+                adapter = factory.create(profile, seed=19)
+                adapter.fit(X, y)
+                directory = Path(self.temp.name) / f"native-{model_id}"
+                save_native_model(model_id, adapter, directory)
+                restored = load_native_predictor(model_id, directory, ("f_a", "f_b"))
+                np.testing.assert_allclose(adapter.predict_positive_proba(X), restored.predict_positive_proba(X), rtol=1e-8, atol=1e-10)
 
-    def test_locked_historical_contract_trains_only_working_population(self) -> None:
-        with TemporaryDirectory() as directory:
-            ready = self._ready(directory)
-            locked = replace(ready.loaded_dataset, contract=replace(ready.loaded_dataset.contract, final_test_locked=True))
-            positions = tuple(range(45))
-            working = EvaluationPopulation(positions, "historical-working", stable_hash(positions), "working")
-            context = SimpleNamespace(loaded_dataset=locked, feature_registry=ready.feature_registry, population=working)
-            root = Path(directory) / "artifacts"
-            service, store, artifact = self._evaluate(context, root, ("A1",))
-            saved = service.train_and_save(
-                experiment_artifact_id=artifact.artifact_id, loaded_dataset=locked,
-                feature_registry=ready.feature_registry, population=working,
-            )
-            metadata = store.load(saved.version_id).metadata
-            self.assertEqual(metadata["population"]["population_size"], 45)
-            self.assertEqual(metadata["population"]["partition_role"], "working")
-            self.assertTrue(metadata["dataset"]["final_test_locked"])
+    def test_store_enforces_current_code_recipe_and_feature_registry_boundaries(self) -> None:
+        saved = self.service.train(experiment_artifact_id=self.artifact.artifact_id, loaded_dataset=self.loaded, feature_registry=self.registry, population=self.population)
+        root = Path(self.temp.name) / "models"
+        with self.assertRaisesRegex(ValueError, "code identity"):
+            ModelVersionStore(root, code_version="other-code", model_specs={"catboost": CATBOOST_MODEL_SPEC}).load(saved.model_version_id)
+        with self.assertRaises(ValueError):
+            ModelVersionStore(root, code_version="code-v1", model_specs={"catboost": replace(CATBOOST_MODEL_SPEC, default_profile={})}).load(saved.model_version_id)
+        with self.assertRaises(ValueError):
+            ModelVersionStore(root, code_version="code-v1", model_specs={"catboost": replace(CATBOOST_MODEL_SPEC, adapter_version="other")}).load(saved.model_version_id)
 
-    def test_native_codecs_restore_all_supported_algorithms(self) -> None:
-        frame = pd.DataFrame({"A1": np.arange(60, dtype=float), "A2": np.arange(60, dtype=float) % 7})
-        target = pd.Series(np.arange(60) % 2)
-        cat = CatBoostAdapter(CATBOOST_PROFILE, 42)
-        cat.refit_estimator = CatBoostClassifier(iterations=6, depth=2, verbose=False, allow_writing_files=False)
-        cat.refit_estimator.fit(frame, target)
-        cat.best_iteration = 6
-        xgb = XGBoostAdapter(XGBOOST_PROFILE, 42)
-        xgb.refit_estimator = XGBClassifier(n_estimators=6, max_depth=2, eval_metric="logloss")
-        xgb.refit_estimator.fit(frame, target)
-        xgb.best_iteration = 6
-        lgb = LightGBMAdapter(LIGHTGBM_PROFILE, 42)
-        lgb.refit_estimator = LGBMClassifier(n_estimators=6, max_depth=2, min_child_samples=2, verbosity=-1)
-        lgb.refit_estimator.fit(frame, target)
-        lgb.best_iteration = 6
-        components = {"catboost": cat, "xgboost": xgb, "lightgbm": lgb}
-        mean = GBDTMeanAdapter(components)
-        mean._fitted = True
-        with TemporaryDirectory() as directory:
-            for model_id, adapter in [*components.items(), ("gbdt_mean", mean)]:
-                path = Path(directory) / model_id
-                path.mkdir()
-                self.assertTrue(save_fitted_native(adapter, model_id, path))
-                restored = load_native_predictor(model_id, path, tuple(frame.columns))
-                np.testing.assert_allclose(
-                    restored.predict_positive_proba(frame.iloc[:5]),
-                    adapter.predict_positive_proba(frame.iloc[:5]),
-                    rtol=1e-5, atol=1e-5,
-                )
+        original = self.registry.resolve(self.config.feature_ids)
+        with self.assertRaisesRegex(ValueError, "frozen ModelSpec"):
+            self.versions.save(experiment_artifact_id=self.artifact.artifact_id, dataset_contract=self.contract, config=replace(self.config, model_parameters={}), feature_specs=original, feature_registry=self.registry, population=self.population, adapter=object(), source_file_sha256=self.loaded.source_file_sha256)
+        diagnostic = (replace(original[0], usage_status=FeatureUsageStatus.DIAGNOSTIC_ONLY), original[1])
+        duplicate_column = (original[0], replace(original[1], column_name="f_a"))
+        target_feature = (replace(original[0], column_name="target", usage_status=FeatureUsageStatus.TARGET), original[1])
+        identifier_feature = (replace(original[0], column_name="id", usage_status=FeatureUsageStatus.IDENTIFIER), original[1])
+        for label, specs in (("diagnostic", diagnostic), ("duplicate", duplicate_column), ("target", target_feature), ("identifier", identifier_feature)):
+            with self.subTest(label=label):
+                registry = FeatureRegistry(f"{label}-registry", specs, (FeatureGroup("base", "Base", "Base", 0, "source", ("f_a", "f_b")),))
+                contract = replace(self.contract, feature_registry_id=registry.registry_id, feature_registry_hash=registry.registry_hash)
+                with self.assertRaises(ValueError):
+                    self.versions.save(experiment_artifact_id=self.artifact.artifact_id, dataset_contract=contract, config=self.config, feature_specs=specs, feature_registry=registry, population=self.population, adapter=object(), source_file_sha256=self.loaded.source_file_sha256)
+        with self.assertRaisesRegex(ValueError, "not bound"):
+            self.versions.save(experiment_artifact_id=self.artifact.artifact_id, dataset_contract=self.contract, config=self.config, feature_specs=original, feature_registry=FeatureRegistry("other-registry", original, (FeatureGroup("base", "Base", "Base", 0, "source", ("f_a", "f_b")),)), population=self.population, adapter=object(), source_file_sha256=self.loaded.source_file_sha256)
 
-    def test_saved_model_predicts_uploaded_inns_without_training_and_rejects_bad_schema(self) -> None:
-        with TemporaryDirectory() as directory:
-            ready = self._ready(directory)
-            service, store, artifact = self._evaluate(ready, Path(directory) / "artifacts", ("A1",))
-            saved = service.train_and_save(
-                experiment_artifact_id=artifact.artifact_id, loaded_dataset=ready.loaded_dataset,
-                feature_registry=ready.feature_registry, population=ready.population,
-            )
-            restored = store.load(saved.version_id)
-            batch = predict_uploaded_file(
-                restored, "new.csv", b"INN,A1,Unused\n9999999999,1.5,x\n8888888888,2.5,y\n",
-            )
-            self.assertEqual(list(batch.predictions["INN"]), ["9999999999", "8888888888"])
-            self.assertEqual(batch.version_id, saved.version_id)
-            self.assertEqual(batch.ignored_columns, ("Unused",))
-            self.assertTrue(batch.predictions["Вероятность события"].between(0, 1).all())
-            workbook = BytesIO()
-            pd.DataFrame({"INN": ["9999999999", "8888888888"], "A1": [1.5, 2.5]}).to_excel(workbook, index=False)
-            xlsx_batch = predict_uploaded_file(restored, "new.xlsx", workbook.getvalue())
-            self.assertEqual(list(xlsx_batch.predictions["INN"]), ["9999999999", "8888888888"])
-            np.testing.assert_allclose(xlsx_batch.predictions["Вероятность события"], batch.predictions["Вероятность события"])
-            with self.assertRaisesRegex(ValueError, "проверьте алфавит"):
-                predict_uploaded_file(restored, "new.csv", "INN,А1\n9999999999,1.5\n".encode("utf-8"))
-            with self.assertRaisesRegex(ValueError, "ИНН должны"):
-                predict_uploaded_file(restored, "new.csv", b"INN,A1\n9999999999,1.5\n9999999999,2.5\n")
-            with self.assertRaisesRegex(ValueError, "ИНН должны"):
-                predict_uploaded_file(restored, "new.csv", b"INN,A1\n=1+1,1.5\n")
-            with self.assertRaisesRegex(ValueError, "нечисловые"):
-                predict_uploaded_file(restored, "new.csv", b"INN,A1\n9999999999,not-a-number\n")
+    def test_store_rejects_actual_adapter_mismatch_before_publication(self) -> None:
+        X = self.frame.loc[:, ["f_a", "f_b"]]
+        wrong_seed = CatBoostFactory().create(CATBOOST_PROFILE, self.config.seed + 1)
+        wrong_seed.fit(X, self.frame["target"])
+        root = Path(self.temp.name) / "models"
+        before = set(root.iterdir())
+        with self.assertRaisesRegex(ValueError, "profile or seed"):
+            self.versions.save(experiment_artifact_id=self.artifact.artifact_id, dataset_contract=self.contract, config=self.config, feature_specs=self.registry.resolve(self.config.feature_ids), feature_registry=self.registry, population=self.population, adapter=wrong_seed, source_file_sha256=self.loaded.source_file_sha256)
+        self.assertEqual(before, set(root.iterdir()))
+        with self.assertRaisesRegex(ValueError, "adapter type"):
+            self.versions.save(experiment_artifact_id=self.artifact.artifact_id, dataset_contract=self.contract, config=self.config, feature_specs=self.registry.resolve(self.config.feature_ids), feature_registry=self.registry, population=self.population, adapter=object(), source_file_sha256=self.loaded.source_file_sha256)
+        incomplete_mean = GBDTMeanAdapter({})
+        incomplete_mean._fitted = True
+        with self.assertRaisesRegex(ValueError, "components"):
+            validate_fitted_adapter_recipe("gbdt_mean", incomplete_mean, GBDT_MEAN_PROFILE, self.config.seed)
 
-    def test_saved_versions_are_visible_in_data_step_after_restart(self) -> None:
-        from types import SimpleNamespace
-        from unittest.mock import Mock, patch
-        import app.streamlit_app as prototype
+    def test_store_rejects_subclass_adapter_before_publication(self) -> None:
+        class SubclassedCatBoostAdapter(CatBoostAdapter):
+            pass
 
-        with TemporaryDirectory() as directory:
-            ready = self._ready(directory)
-            root = Path(directory) / "artifacts"
-            service, store, artifact = self._evaluate(ready, root, ("A1",))
-            service.train_and_save(
-                experiment_artifact_id=artifact.artifact_id, loaded_dataset=ready.loaded_dataset,
-                feature_registry=ready.feature_registry, population=ready.population,
-            )
-            reopened = ModelVersionStore(root, code_version="test-v1")
-            stub = SimpleNamespace(
-                subheader=Mock(), dataframe=Mock(return_value=SimpleNamespace(selection=SimpleNamespace(rows=[]))),
-                caption=Mock(), warning=Mock(),
-            )
-            with patch.object(prototype, "st", stub):
-                prototype._render_saved_model_catalog(SimpleNamespace(model_store=reopened))
-            stub.dataframe.assert_called_once()
-            self.assertEqual(stub.dataframe.call_args.args[0][0]["Алгоритм"], "xgboost")
-            self.assertRegex(stub.dataframe.call_args.args[0][0]["Дата"], r"^\d{2}\.\d{2}\.\d{2}$")
-            self.assertEqual(prototype._format_saved_model_date("2026-09-21T22:30:00+00:00"), "22.09.26")
-            class SessionState(dict):
-                __getattr__ = dict.__getitem__
-
-                def __setattr__(self, name, value):
-                    self[name] = value
-
-            stub.session_state = SessionState(current_step=0, highest_reached_step=0)
-            stub.rerun = Mock()
-            stub.dataframe.return_value.selection.rows = [0]
-            with patch.object(prototype, "st", stub):
-                prototype._render_saved_model_catalog(SimpleNamespace(model_store=reopened))
-            self.assertEqual(stub.session_state.selected_model_version_id, reopened.catalog()[0][0].version_id)
-            self.assertEqual(stub.session_state.current_step, 6)
-            stub.rerun.assert_called_once()
-
-    def test_prediction_screen_lists_required_features_and_runs_saved_version(self) -> None:
-        from unittest.mock import Mock, patch
-        import app.streamlit_app as prototype
-
-        with TemporaryDirectory() as directory:
-            ready = self._ready(directory)
-            service, store, artifact = self._evaluate(ready, Path(directory) / "artifacts", ("A1",))
-            saved = service.train_and_save(
-                experiment_artifact_id=artifact.artifact_id, loaded_dataset=ready.loaded_dataset,
-                feature_registry=ready.feature_registry, population=ready.population,
-            )
-            class SessionState(dict):
-                __getattr__ = dict.__getitem__
-
-            stub = SimpleNamespace(
-                session_state=SessionState(selected_model_version_id=saved.version_id),
-                header=Mock(), success=Mock(), caption=Mock(), subheader=Mock(), write=Mock(), markdown=Mock(),
-                dataframe=Mock(), download_button=Mock(), error=Mock(), warning=Mock(),
-                selectbox=Mock(return_value="A1"), expander=Mock(),
-                file_uploader=Mock(side_effect=lambda label, **_: None if label.startswith("Загрузить описания") else SimpleNamespace(
-                    name="new.csv", getvalue=lambda: b"INN,A1\n9999999999,1.5\n",
-                )),
-                button=Mock(side_effect=lambda label, **_: label == "Получить прогноз"),
-            )
-            with patch.object(prototype, "st", stub), patch.object(prototype, "_navigation_button"):
-                prototype._render_prediction_step(SimpleNamespace(model_store=store))
-            self.assertEqual(stub.dataframe.call_args_list[0].args[0].data.iloc[0]["Столбец"], "A1")
-            self.assertEqual(stub.dataframe.call_args_list[0].args[0].data.iloc[0]["Описание"], "Описание не указано")
-            missing_style = stub.dataframe.call_args_list[0].args[0]._compute().ctx[(0, 2)]
-            self.assertIn(("color", "#ff6b6b"), missing_style)
-            self.assertIn(":red[Описание не указано]", stub.markdown.call_args.args[0])
-            stub.expander.assert_not_called()
-            self.assertEqual(stub.selectbox.call_args.args[1], ("A1",))
-            self.assertEqual(stub.session_state[prototype._PREDICTION_RESULT_KEY].predictions.iloc[0]["INN"], "9999999999")
-            self.assertEqual(stub.download_button.call_count, 3)
-            stub.error.assert_not_called()
-
-    def test_result_disables_training_for_saved_version_and_offers_navigation(self) -> None:
-        from contextlib import nullcontext
-        from unittest.mock import Mock, patch
-        import app.streamlit_app as prototype
-
-        with TemporaryDirectory() as directory:
-            ready = self._ready(directory)
-            service, store, artifact = self._evaluate(ready, Path(directory) / "artifacts", ("A1",))
-            service.train_and_save(
-                experiment_artifact_id=artifact.artifact_id, loaded_dataset=ready.loaded_dataset,
-                feature_registry=ready.feature_registry, population=ready.population,
-            )
-            columns = [Mock() for _ in range(3)]
-            stub = SimpleNamespace(
-                container=Mock(return_value=nullcontext()), subheader=Mock(), columns=Mock(return_value=columns),
-                success=Mock(), info=Mock(), caption=Mock(), warning=Mock(), error=Mock(), button=Mock(),
-            )
-            runtime = SimpleNamespace(model_store=store, model_registry=service.model_registry)
-            with patch.object(prototype, "st", stub), patch.object(prototype, "_navigation_button") as navigate:
-                self.assertTrue(prototype._render_final_model_section(runtime, artifact))
-            stub.button.assert_called_once_with(
-                "Обучение завершено", disabled=True, type="primary", key="prototype_final_model_saved",
-            )
-            self.assertEqual([call.args[1] for call in navigate.call_args_list],
-                             ["Исторический SHAP →", "Вернуться в начало"])
-            self.assertIn("SHAP именно этой сохранённой версии пока не рассчитан", stub.info.call_args.args[0])
-
-
-if __name__ == "__main__":
-    unittest.main()
+        X = self.frame.loc[:, ["f_a", "f_b"]]
+        adapter = SubclassedCatBoostAdapter(CATBOOST_PROFILE, self.config.seed)
+        adapter.fit(X, self.frame["target"])
+        root = Path(self.temp.name) / "models"
+        before = set(root.iterdir())
+        with self.assertRaisesRegex(ValueError, "adapter type"):
+            self.versions.save(experiment_artifact_id=self.artifact.artifact_id, dataset_contract=self.contract, config=self.config, feature_specs=self.registry.resolve(self.config.feature_ids), feature_registry=self.registry, population=self.population, adapter=adapter, source_file_sha256=self.loaded.source_file_sha256)
+        self.assertEqual(before, set(root.iterdir()))

@@ -166,27 +166,33 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertIn("resolve_explicit_local_path", source)
         self.assertIn("preparation.is_prepared", source)
 
-    def test_data_screen_uses_locked_user_facing_copy_and_keeps_details_collapsed(self) -> None:
+    def test_data_screen_uses_generic_prepared_context_copy_and_keeps_details_collapsed(self) -> None:
         import app.streamlit_app as prototype
 
         source = Path(prototype.__file__).read_text(encoding="utf-8")
 
-        self.assertIn('"accepted_historical": "Исторический набор данных"', source)
-        self.assertIn('"Какие данные использовать?"', source)
-        self.assertIn('"Файл данных"', source)
-        self.assertNotIn('"Указать путь вручную"', source)
-        self.assertNotIn('"Путь к файлу"', source)
-        self.assertIn('_SUPPORTED_SOURCE_EXTENSIONS = (".csv", ".xlsx", ".xlsb")', source)
-        self.assertIn('type=[extension.removeprefix(".") for extension in _SUPPORTED_SOURCE_EXTENSIONS]', source)
+        self.assertIn('"Данные → Признаки → Алгоритм → Проверка качества → Результат"', source)
+        self.assertIn('"Выберите файл с данными для обучения и проверки качества модели."', source)
+        self.assertNotIn('"Какие данные использовать?"', source)
+        self.assertNotIn('"Исторический набор данных"', source)
+        self.assertIn('"Выбрать файл…"', source)
+        self.assertIn('"Указать расположение файла вручную"', source)
+        self.assertIn('choose_local_file(_SUPPORTED_SOURCE_EXTENSIONS)', source)
         self.assertIn('st.expander("Технические сведения", expanded=False)', source)
-        self.assertIn('"Данные готовы к эксперименту"', source)
+        self.assertIn('"Данные подготовлены"', source)
         self.assertIn('"Продолжить к признакам →"', source)
-        self.assertIn('completion_label="Проверка источника завершена"', source)
+        self.assertIn('completion_label="Проверка файла завершена"', source)
         self.assertIn('status.update(label=completion_label, state="complete", expanded=False)', source)
         self.assertIn('_restore_source_controls(st.session_state)', source)
-        self.assertIn('columns[0].metric("Организации / строки"', source)
-        self.assertIn('columns[1].metric("Рабочая выборка"', source)
-        self.assertIn('columns[2].metric("Защищённая контрольная выборка"', source)
+        self.assertIn('"Продолжить к подготовке →"', source)
+        self.assertIn('"Подтвердить и продолжить"', source)
+        self.assertIn('"Понимаю: качество будет оцениваться перекрёстно, без отдельной финальной тестовой выборки."', source)
+        self.assertIn('columns[0].metric("Строки"', source)
+        self.assertIn('columns[1].metric("Популяция оценки"', source)
+        self.assertIn('columns[2].metric("Реестр признаков"', source)
+        self.assertIn('if passport.final_test_locked:', source)
+        self.assertIn('Защищённая финальная тестовая выборка не задана.', source)
+        self.assertNotIn('def _render_prepared_source(preparation: Any, source_kind: str)', source)
         self.assertNotIn("st.subheader(source.display_name)", source)
         self.assertIn("st.file_uploader", source)
 
@@ -197,10 +203,10 @@ class StreamlitBootstrapTests(unittest.TestCase):
 
         self.assertIn('"← Назад"', source)
         self.assertIn('"В начало"', source)
-        self.assertIn('"Новый эксперимент"', source)
+        self.assertIn('"Попробовать другой вариант на этих данных"', source)
         self.assertIn('navigate_to_step(st.session_state, target_step)', source)
-        self.assertNotIn("return_to_experiment(st.session_state)", source)
-        self.assertIn('_navigation_button(navigation[2], "Новый эксперимент", 3, primary=True)', source)
+        self.assertIn("return_to_experiment(st.session_state)", source)
+        self.assertIn('navigation[2].button("Попробовать другой вариант на этих данных", type="primary")', source)
 
     def test_step_navigator_keeps_the_compact_caption_visual(self) -> None:
         import app.streamlit_app as prototype
@@ -241,11 +247,9 @@ class StreamlitBootstrapTests(unittest.TestCase):
             [
                 ("button", "○ Данные"), ("caption", "→"),
                 ("button", "● Признаки"), ("caption", "→"),
-                ("caption", "○ Модель"), ("caption", "→"),
-                ("caption", "○ Эксперимент"), ("caption", "→"),
-                ("caption", "○ Результат"), ("caption", "→"),
-                ("caption", "○ SHAP"), ("caption", "→"),
-                ("caption", "○ Прогноз"),
+                ("caption", "○ Алгоритм"), ("caption", "→"),
+                ("caption", "○ Проверка качества"), ("caption", "→"),
+                ("caption", "○ Результат"),
             ],
         )
         markup = "".join(streamlit.html_blocks)
@@ -430,7 +434,7 @@ class StreamlitBootstrapTests(unittest.TestCase):
         source = Path(prototype.__file__).read_text(encoding="utf-8")
 
         self.assertIn('already_checked = preparation is not None', source)
-        self.assertIn('"Проверить повторно" if already_checked', source)
+        self.assertIn('"Проверить файл повторно" if already_checked', source)
 
     def test_manual_recheck_runs_the_existing_preparation_flow(self) -> None:
         import app.streamlit_app as prototype
@@ -482,7 +486,7 @@ class StreamlitBootstrapTests(unittest.TestCase):
         ):
             prototype._render_source_check_action("accepted_historical", "", ("accepted_historical", ""))
 
-        self.assertEqual(streamlit.buttons, [("Проверить повторно", {"type": "secondary", "disabled": False})])
+        self.assertEqual(streamlit.buttons, [("Проверить файл повторно", {"type": "secondary", "disabled": False})])
         prepare.assert_called_once_with(source, progress_listener=unittest.mock.ANY)
 
     def test_browser_upload_is_persisted_under_runtime_storage(self) -> None:
@@ -661,6 +665,85 @@ class StreamlitBootstrapTests(unittest.TestCase):
             "evaluation_level": protocol.evaluation_level,
             "folds": protocol.minimum_folds,
         }))
+
+    def test_runtime_composes_shared_experiment_store_and_isolated_model_version_store(self) -> None:
+        with TemporaryDirectory() as directory:
+            runtime = bootstrap.create_runtime(directory)
+            workflow = runtime.integration_workflow_service
+
+            self.assertIs(
+                runtime.application_service.artifact_store,
+                workflow.final_model_training_service.experiment_artifact_store,
+            )
+            self.assertEqual(workflow.model_version_store.root, Path(directory) / "model_versions")
+            self.assertNotEqual(workflow.model_version_store.root, runtime.application_service.artifact_store.root)
+
+    def test_result_interpreter_runtime_defaults_to_disabled_without_environment(self) -> None:
+        with TemporaryDirectory() as directory:
+            runtime = bootstrap.create_runtime(directory, environment={}, secrets={})
+        configuration = runtime.integration_workflow_service.result_interpreter_runtime
+        self.assertEqual(configuration.policy_mode, "DISABLED")
+        self.assertFalse(configuration.is_ready)
+
+    def test_explicit_disabled_policy_creates_no_result_interpreter_provider(self) -> None:
+        calls = []
+
+        def factory(model, credential):
+            calls.append((model, credential))
+            return object()
+
+        with TemporaryDirectory() as directory:
+            runtime = bootstrap.create_runtime(
+                directory,
+                environment={"KOMUS_EXTERNAL_DATA_POLICY": "DISABLED"},
+                secrets={"OPENAI_API_KEY": "secret"},
+                result_interpreter_factories={"openai": factory},
+            )
+        workflow = runtime.integration_workflow_service
+        capability = workflow.capabilities(local_explanation_evidence=object())["result_interpretation"]
+
+        self.assertEqual(workflow.result_interpreter_runtime.policy_mode, "DISABLED")
+        self.assertEqual((capability.state, capability.reason_code), ("DISABLED", "EXTERNAL_DATA_POLICY_DISABLED"))
+        self.assertIsNone(workflow.result_interpreter_client)
+        self.assertEqual(calls, [])
+
+    def test_result_interpreter_runtime_reports_incomplete_configuration_without_provider_creation(self) -> None:
+        cases = (
+            ({"KOMUS_EXTERNAL_DATA_POLICY": "UNSAFE"}, "EXTERNAL_DATA_POLICY_INVALID"),
+            ({"KOMUS_EXTERNAL_DATA_POLICY": "REDACTED_V1"}, "RESULT_INTERPRETER_PROVIDER_MISSING"),
+            ({"KOMUS_EXTERNAL_DATA_POLICY": "REDACTED_V1", "KOMUS_RESULT_INTERPRETER_PROVIDER": "other"}, "RESULT_INTERPRETER_PROVIDER_NOT_REGISTERED"),
+            ({"KOMUS_EXTERNAL_DATA_POLICY": "REDACTED_V1", "KOMUS_RESULT_INTERPRETER_PROVIDER": "openai"}, "RESULT_INTERPRETER_MODEL_MISSING"),
+            ({"KOMUS_EXTERNAL_DATA_POLICY": "REDACTED_V1", "KOMUS_RESULT_INTERPRETER_PROVIDER": "openai", "KOMUS_RESULT_INTERPRETER_MODEL": "test"}, "RESULT_INTERPRETER_CREDENTIALS_MISSING"),
+        )
+        for environment, reason in cases:
+            with self.subTest(reason=reason), TemporaryDirectory() as directory:
+                runtime = bootstrap.create_runtime(directory, environment=environment, secrets={})
+                capability = runtime.integration_workflow_service.capabilities(local_explanation_evidence=object())["result_interpretation"]
+                self.assertEqual(capability.reason_code, reason)
+                self.assertIsNone(runtime.integration_workflow_service.result_interpreter_client)
+
+    def test_result_interpreter_runtime_uses_injected_factory_only_when_ready(self) -> None:
+        created = []
+        fake_client = SimpleNamespace(interpreter_id="test", interpreter_model="test-model")
+
+        def factory(model, credential):
+            created.append((model, credential))
+            return fake_client
+
+        environment = {
+            "KOMUS_EXTERNAL_DATA_POLICY": "REDACTED_V1",
+            "KOMUS_RESULT_INTERPRETER_PROVIDER": "test",
+            "KOMUS_RESULT_INTERPRETER_MODEL": "configured-model",
+        }
+        with TemporaryDirectory() as directory:
+            runtime = bootstrap.create_runtime(
+                directory, environment=environment, secrets={"OPENAI_API_KEY": "secret"},
+                result_interpreter_factories={"test": factory},
+            )
+        workflow = runtime.integration_workflow_service
+        self.assertEqual(created, [("configured-model", "secret")])
+        self.assertIs(workflow.result_interpreter_client, fake_client)
+        self.assertTrue(workflow.result_interpreter_runtime.is_ready)
 
 
 if __name__ == "__main__":

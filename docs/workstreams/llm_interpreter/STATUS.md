@@ -1,31 +1,48 @@
 # LLM Result Interpreter
 
-PHASE: DESIGN
+PHASE: ACCEPTED / HANDOFF
 
 ## PURPOSE
 
-Спроектировать отдельный интерпретатор уже рассчитанных ML-результатов и объяснений без участия LLM в кредитном решении.
+Интерпретировать уже рассчитанные ML-результаты и Local SHAP без участия LLM в расчёте риска или кредитном решении.
 
 ## ACCEPTED
 
-- Нет доступных принятых документов.
+- Stage 20 V1 — ролевой прототип Result Interpreter;
+- Stage III-A — Result Interpreter Core V1;
+- Stage III-B — OpenAI adapter V1;
+- Stage III-C2a — External Data Boundary / `REDACTED_V1`;
+- Stage III-C2b — Runtime + Streamlit Integration;
+- Stage III-C2c — Role-Based Result Interpretation Integration.
 
-## IN PROGRESS
+## CURRENT STATE
 
-- Исходный handoff для Ярослава и будущий `02_LLM_DESIGN.md` не были переданы вместе с задачей.
+В продукте доступны четыре независимые роли: менеджер по продажам, кредитный контролёр, юрист и информационная безопасность.
 
-## BLOCKED
+Каждая роль запускается отдельным UI action и имеет независимый retry.
 
-- Создание `01_ARCHITECT_HANDOFF.md` заблокировано отсутствием исходного handoff; пустой документ не создаётся.
+LLM получает только allowlisted обезличенные модельные факты через `REDACTED_V1`. Identifier, row identity и raw feature values наружу не передаются.
+
+Trusted `display_name_ru` / `description_ru` берутся из сохранённого `ModelVersion.metadata["feature_specs"]`.
+
+## VERIFICATION
+
+- full suite: 255 tests PASS;
+- `compileall src app` — PASS;
+- `git diff --check` — PASS;
+- manual external E2E на synthetic/non-client input для `sales_manager` и `lawyer` — PASS;
+- ответы двух ролей различаются при неизменном ML result — PASS;
+- identifier / row identity / raw values отсутствуют в provider-safe payload — PASS.
 
 ## NEXT
 
-Передать исходный handoff для Ярослава, затем проверить и зафиксировать его как отдельный документ workstream.
+Ярослав отдельно проверяет качество четырёх LLM-объяснений и фактический расход API.
+
+Отдельный следующий product workstream — UX polish экрана `Результат` и финальная упаковка материалов для защиты.
 
 ## READ FIRST
 
-Нет: принятый handoff отсутствует.
-
-## SUPERSEDED
-
-- Нет.
+- `docs/workstreams/llm_interpreter/02_STAGE_III_C2C_ARCHITECT_LOCK.md`
+- `docs/CURRENT_STATE.md`
+- `docs/DECISIONS.md`
+- `docs/ROADMAP.md`
