@@ -909,21 +909,23 @@ Reviewer verdict: **ACCEPT Stage III-C2b**.
 - текущий prompt выдаёт техническое SHAP-резюме вместо понятного role-oriented explanation;
 - trusted feature descriptions из сохранённой ModelVersion metadata не передаются в interpreter request, поэтому LLM видит в основном technical column names.
 
-**CURRENT PRODUCT PRIORITY — Stage III-C2c / Role-Based Result Interpretation Integration.**
+**Stage III-C2c / Role-Based Result Interpretation Integration — ACCEPTED.**
 
-C2c должен вернуть принятые четыре роли Stage 20 — менеджер по продажам, кредитный контролёр, юрист, информационная безопасность — поверх уже принятой REDACTED_V1 boundary, без identifier/raw values и без business threshold/credit decision.
-
-Визуальная иерархия кнопок и общий UX-polish остаются отдельным проходом после functional C2c ACCEPT.
-
-**Stage III-C2c implementation — READY FOR REVIEW / MANUAL E2E.**
-
-Реализовано:
-- четыре независимых объяснения для ролей Stage 20;
-- role входит в request identity/hash;
+Итоговый contract:
+- четыре роли Stage 20 доступны после Local SHAP;
+- каждая роль запускается отдельным UI action;
+- role входит в request identity/hash и provider-safe payload;
 - trusted feature display/description metadata берётся из сохранённой ModelVersion;
-- раздельные request/response/error/retry states по ролям;
-- REDACTED_V1 сохраняет запрет на identifier, row identity и raw feature values.
+- request/response/error/retry независимы по ролям;
+- REDACTED_V1 не передаёт identifier, row identity и raw feature values;
+- probability/SHAP не пересчитываются, business threshold/approve-reject не вводятся.
 
-Локальная verification: 68 focused tests PASS; **253 full tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
+Коррекции review:
+- `4f579ed1` — удалён bulk-вызов четырёх ролей;
+- `1c4ae237` — синхронизировано описание role-by-role UI в документации.
 
-Следующий шаг: review C2c и короткий manual E2E реального OpenAI-path с просмотром качества всех четырёх текстов. После functional ACCEPT — отдельный UX-pass по визуальной иерархии кнопок.
+Финальная verification: **255 full tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
+
+Manual external E2E на synthetic/non-client input выполнен для `sales_manager` и `lawyer`: оба provider calls успешны, ответы различаются при неизменном ML result, identifier/row identity/raw values отсутствуют в provider-safe payload.
+
+Следующий отдельный product-pass: Result UX polish / final handoff; качество четырёх ролевых объяснений дополнительно проверяет Ярослав.

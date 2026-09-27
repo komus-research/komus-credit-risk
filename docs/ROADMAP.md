@@ -609,27 +609,32 @@ Security/runtime contract C2b работает: disabled path безопасен
 
 Product gap: подключённый generic interpreter не использует принятую Stage 20 role-based механику и не получает trusted feature descriptions из ModelVersion metadata.
 
-## NEXT — STAGE III-C2c / ROLE-BASED RESULT INTERPRETATION INTEGRATION
+## Stage III-C2c / ROLE-BASED RESULT INTERPRETATION INTEGRATION — ACCEPTED
 
-Functional scope:
-- четыре принятые роли: sales manager, credit controller, lawyer, information security;
-- role-aware prompt semantics без изменения probability/SHAP;
-- trusted feature display/description metadata в request;
-- REDACTED_V1 allowlist и zero raw client values сохраняются;
-- role-specific response/retry state;
-- no business threshold / approve-deny decision.
+Закрыто:
+- четыре принятые роли Stage 20;
+- отдельный UI action для каждой роли;
+- role-bound request identity;
+- trusted ModelVersion feature metadata;
+- `recipient_role` в `REDACTED_V1`;
+- independent response/error/retry state;
+- zero raw client values в provider-safe payload;
+- сохранение C2b DISABLED/MISCONFIGURED semantics;
+- отсутствие business threshold / approve-deny decision.
 
-Out of scope C2c:
-- визуальный редизайн кнопок и общий UX-polish;
-- изменение ML protocol;
-- расширение external-data policy;
-- production auth/DB/deployment.
+Финальная verification:
+- **255 full tests PASS**;
+- `compileall src app` PASS;
+- `git diff --check` PASS;
+- manual external E2E двух разных ролей на synthetic/non-client input PASS.
 
-Implementation C2c готов к проверке: четыре role calls, role-bound request identity, trusted ModelVersion feature text, role-specific retry state и неизменная REDACTED_V1 privacy boundary.
+## NEXT — RESULT UX POLISH + FINAL HANDOFF
 
-Verification: 68 focused tests PASS; **253 full tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
-
-Следующий gate: Reviewer + manual E2E всех четырёх реальных OpenAI explanations. После functional C2c ACCEPT выполняется отдельный UX pass для визуальной иерархии действий на экране Result.
+Следующий отдельный product-pass:
+- привести визуальную иерархию действий на экране `Результат` к понятному пользовательскому приоритету;
+- выполнить финальный пользовательский E2E;
+- собрать evidence/demo package для защиты;
+- Ярослав отдельно проверяет качество четырёх LLM-объяснений и фактический расход API.
 
 ## AFTER DEFENSE-CRITICAL INTEGRATION
 

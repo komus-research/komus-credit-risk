@@ -1,122 +1,122 @@
-﻿# ARCHITECT LOCK тАФ Stage III-C2c Role-Based Result Interpretation
+# ARCHITECT LOCK — Stage III-C2c Role-Based Result Interpretation
 
-╨Ф╨░╤В╨░: 2026-09-25
+Дата: 2026-09-25
 
 ## STATUS
 
-`READY_FOR_IMPLEMENTATION`
+`ACCEPTED`
 
-╨Ю╤Б╨╜╨╛╨▓╨░╨╜╨╕╨╡:
+Основание:
 
-- Stage III-C2a / External Data Boundary тАФ ACCEPTED;
-- Stage III-C2b / Runtime + Streamlit Integration тАФ ACCEPTED;
-- manual E2E ╨┐╨╛╨┤╤В╨▓╨╡╤А╨┤╨╕╨╗ ╤А╨╡╨░╨╗╤М╨╜╤Л╨╣ OpenAI path ╤З╨╡╤А╨╡╨╖ `REDACTED_V1`;
-- Stage 20 V1 / Role-Based Result Interpreter тАФ ACCEPTED research evidence.
+- Stage III-C2a / External Data Boundary — ACCEPTED;
+- Stage III-C2b / Runtime + Streamlit Integration — ACCEPTED;
+- manual E2E подтвердил реальный OpenAI path через `REDACTED_V1`;
+- Stage 20 V1 / Role-Based Result Interpreter — ACCEPTED research evidence.
 
 ## PROBLEM
 
-╨в╨╡╨║╤Г╤Й╨╕╨╣ product UI ╨┐╨╛╨┤╨║╨╗╤О╤З╨░╨╡╤В ╤В╨╛╨╗╤М╨║╨╛ ╨╛╨┤╨╕╨╜ ╨╛╨▒╤Й╨╕╨╣ Result Interpreter response.
-╨н╤В╨╛ ╤В╨╡╤Е╨╜╨╕╤З╨╡╤Б╨║╨╕ ╤А╨░╨▒╨╛╤В╨░╨╡╤В, ╨╜╨╛ ╨┐╤А╨╛╨┤╤Г╨║╤В╨╛╨▓╨╛ ╤В╨╡╤А╤П╨╡╤В ╨┐╤А╨╕╨╜╤П╤В╤Г╤О Stage 20 ╤Б╨╡╨╝╨░╨╜╤В╨╕╨║╤Г:
+Текущий product UI подключает только один общий Result Interpreter response.
+Это технически работает, но продуктово теряет принятую Stage 20 семантику:
 
-- ╨╜╨╡╤В `recipient_role`;
-- ╨╛╨┤╨╕╨╜ ╨╕ ╤В╨╛╤В ╨╢╨╡ ML result ╨╜╨╡ ╨░╨┤╨░╨┐╤В╨╕╤А╤Г╨╡╤В╤Б╤П ╨┤╨╗╤П ╤З╨╡╤В╤Л╤А╤С╤Е ╤А╨░╨▒╨╛╤З╨╕╤Е ╤А╨╛╨╗╨╡╨╣;
-- Streamlit ╨▓╤Л╨╖╤Л╨▓╨░╨╡╤В `prepare_interpretation(evidence=evidence)` ╨▒╨╡╨╖ trusted feature descriptions;
-- ╨┐╨╛╤Н╤В╨╛╨╝╤Г provider ╨┐╨╛╨╗╤Г╤З╨░╨╡╤В technical names ╨▓╤А╨╛╨┤╨╡ `B3_norm` ╨▒╨╡╨╖ ╨┐╤А╨╡╨┤╨╝╨╡╤В╨╜╨╛╨│╨╛ ╤Б╨╝╤Л╤Б╨╗╨░ ╨╕ ╨▓╤Л╨╜╤Г╨╢╨┤╨╡╨╜ ╤П╨▓╨╜╨╛ ╤Б╨╛╨╛╨▒╤Й╨░╤В╤М, ╤З╤В╨╛ ╨╛╨┐╨╕╤Б╨░╨╜╨╕╤П ╨┐╤А╨╕╨╖╨╜╨░╨║╨╛╨▓ ╨╛╤В╤Б╤Г╤В╤Б╤В╨▓╤Г╤О╤В.
+- нет `recipient_role`;
+- один и тот же ML result не адаптируется для четырёх рабочих ролей;
+- Streamlit вызывает `prepare_interpretation(evidence=evidence)` без trusted feature descriptions;
+- поэтому provider получает technical names вроде `B3_norm` без предметного смысла и вынужден явно сообщать, что описания признаков отсутствуют.
 
-Manual E2E 2026-09-25 ╤Б╤З╨╕╤В╨░╨╡╤В╤Б╤П:
+Manual E2E 2026-09-25 считается:
 
-- runtime/provider/REDACTED_V1 path тАФ PASS;
-- role-based interpretation UX тАФ GAP;
-- trusted feature-description propagation тАФ GAP.
+- runtime/provider/REDACTED_V1 path — PASS;
+- role-based interpretation UX — GAP;
+- trusted feature-description propagation — GAP.
 
-Stage III-C2b ACCEPT ╨╜╨╡ ╨╛╤В╨╝╨╡╨╜╤П╨╡╤В╤Б╤П.
+Stage III-C2b ACCEPT не отменяется.
 
 ## ACCEPTED SOURCE
 
-╨а╨╛╨╗╨╡╨▓╨╛╨╣ contract ╨▒╨╡╤А╤С╤В╤Б╤П ╨╕╨╖ accepted Stage 20 V1:
+Ролевой contract берётся из accepted Stage 20 V1:
 
-1. `sales_manager` тАФ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А ╨┐╨╛ ╨┐╤А╨╛╨┤╨░╨╢╨░╨╝;
-2. `credit_controller` тАФ ╨║╤А╨╡╨┤╨╕╤В╨╜╤Л╨╣ ╨║╨╛╨╜╤В╤А╨╛╨╗╤С╤А;
-3. `lawyer` тАФ ╤О╤А╨╕╤Б╤В;
-4. `information_security` тАФ ╨╕╨╜╤Д╨╛╤А╨╝╨░╤Ж╨╕╨╛╨╜╨╜╨░╤П ╨▒╨╡╨╖╨╛╨┐╨░╤Б╨╜╨╛╤Б╤В╤М.
+1. `sales_manager` — менеджер по продажам;
+2. `credit_controller` — кредитный контролёр;
+3. `lawyer` — юрист;
+4. `information_security` — информационная безопасность.
 
-Stage 20 ╨┤╨╛╨║╨░╨╖╨░╨╗ ╤В╨╛╨╗╤М╨║╨╛ role adaptation ╤Г╨╢╨╡ ╤А╨░╤Б╤Б╤З╨╕╤В╨░╨╜╨╜╨╛╨│╨╛ ML result. ╨Х╨│╨╛ synthetic threshold/`ml_decision` contract ╨Э╨Х ╨┐╨╡╤А╨╡╨╜╨╛╤Б╨╕╤В╤Б╤П ╨░╨▓╤В╨╛╨╝╨░╤В╨╕╤З╨╡╤Б╨║╨╕ ╨▓ product runtime.
+Stage 20 доказал только role adaptation уже рассчитанного ML result. Его synthetic threshold/`ml_decision` contract НЕ переносится автоматически в product runtime.
 
 ## ARCHITECTURAL DECISION
 
-╨Ъ╨░╨╜╨╛╨╜╨╕╤З╨╡╤Б╨║╨╕╨╣ flow C2c:
+Канонический flow C2c:
 
 ```text
 PredictionBatch
-  тЖУ
+  ↓
 selected row
-  тЖУ
+  ↓
 LocalExplanationEvidence
-  тЖУ
+  ↓
 trusted FeatureSpec descriptions from saved ModelVersion
-  тЖУ
+  ↓
 ResultInterpreterRequest + recipient_role
-  тЖУ
+  ↓
 REDACTED_V1 allowlist projection
-  тЖУ
+  ↓
 provider
-  тЖУ
+  ↓
 role-specific Russian explanation
 ```
 
-╨Ю╨┤╨╕╨╜ ML result ╨╝╨╛╨╢╨╡╤В ╨╕╨╝╨╡╤В╤М ╨┤╨╛ ╤З╨╡╤В╤Л╤А╤С╤Е ╨╜╨╡╨╖╨░╨▓╨╕╤Б╨╕╨╝╤Л╤Е interpretation responses тАФ ╨┐╨╛ ╨╛╨┤╨╜╨╛╨╣ ╨╜╨░ ╨║╨░╨╢╨┤╤Г╤О ╤А╨╛╨╗╤М.
+Один ML result может иметь до четырёх независимых interpretation responses — по одной на каждую роль.
 
 ## ROLE SEMANTICS
 
 ### sales_manager
 
-╨ж╨╡╨╗╤М: ╨║╨╛╤А╨╛╤В╨║╨╛ ╨╕ ╨┐╨╛╨╜╤П╤В╨╜╤Л╨╝ ╨┤╨╡╨╗╨╛╨▓╤Л╨╝ ╤П╨╖╤Л╨║╨╛╨╝ ╨╛╨▒╤К╤П╤Б╨╜╨╕╤В╤М, ╤З╤В╨╛ ╨┐╨╛╨║╨░╨╖╨░╨╗╨░ ╨╝╨╛╨┤╨╡╨╗╤М ╨╕ ╨║╨░╨║╨╕╨╡ ╤Д╨░╨║╤В╨╛╤А╤Л ╤Б╨╕╨╗╤М╨╜╨╡╨╡ ╨▓╤Б╨╡╨│╨╛ ╨┐╨╛╨▓╨╗╨╕╤П╨╗╨╕ ╨╜╨░ ╨╛╤Ж╨╡╨╜╨║╤Г.
+Цель: коротко и понятным деловым языком объяснить, что показала модель и какие факторы сильнее всего повлияли на оценку.
 
-╨Э╨╡ ╨┐╨╡╤А╨╡╨│╤А╤Г╨╢╨░╤В╤М SHAP/internal terminology, ╨╡╤Б╨╗╨╕ ╨╡╤С ╨╝╨╛╨╢╨╜╨╛ ╨▓╤Л╤А╨░╨╖╨╕╤В╤М ╨╛╨▒╤Л╤З╨╜╤Л╨╝╨╕ ╤Б╨╗╨╛╨▓╨░╨╝╨╕.
+Не перегружать SHAP/internal terminology, если её можно выразить обычными словами.
 
-╨Э╨╡ ╤Д╨╛╤А╨╝╤Г╨╗╨╕╤А╨╛╨▓╨░╤В╤М ╨║╤А╨╡╨┤╨╕╤В╨╜╨╛╨╡ ╤А╨╡╤И╨╡╨╜╨╕╨╡.
+Не формулировать кредитное решение.
 
 ### credit_controller
 
-╨ж╨╡╨╗╤М: ╨┐╨╛╨║╨░╨╖╨░╤В╤М probability, ╨╛╤Б╨╜╨╛╨▓╨╜╤Л╨╡ ╨┐╨╛╨▓╤Л╤И╨░╤О╤Й╨╕╨╡/╨┐╨╛╨╜╨╕╨╢╨░╤О╤Й╨╕╨╡ ╤Д╨░╨║╤В╨╛╤А╤Л, ╨╛╨│╤А╨░╨╜╨╕╤З╨╡╨╜╨╕╤П ╨╕╨╜╤В╨╡╤А╨┐╤А╨╡╤В╨░╤Ж╨╕╨╕ ╨╕ ╨╛╤В╤Б╤Г╤В╤Б╤В╨▓╨╕╨╡ ╨┐╤А╨╕╤З╨╕╨╜╨╜╨╛╨│╨╛ ╨▓╤Л╨▓╨╛╨┤╨░.
+Цель: показать probability, основные повышающие/понижающие факторы, ограничения интерпретации и отсутствие причинного вывода.
 
-╨Э╨╡ ╨▓╤Л╨▒╨╕╤А╨░╤В╤М threshold ╨╕ ╨╜╨╡ ╨▓╤Л╨▓╨╛╨┤╨╕╤В╤М approve/reject.
+Не выбирать threshold и не выводить approve/reject.
 
 ### lawyer
 
-╨ж╨╡╨╗╤М: ╨╛╤В╨┤╨╡╨╗╨╕╤В╤М model facts ╨╛╤В interpretation, ╤П╨▓╨╜╨╛ ╨╜╨░╨╖╨▓╨░╤В╤М ╨╛╨│╤А╨░╨╜╨╕╤З╨╡╨╜╨╕╤П, provenance ╨╕ ╨╛╤В╤Б╤Г╤В╤Б╤В╨▓╨╕╨╡ ╨┐╤А╨╕╤З╨╕╨╜╨╜╨╛╤Б╤В╨╕/╤Б╨░╨╝╨╛╤Б╤В╨╛╤П╤В╨╡╨╗╤М╨╜╨╛╨│╨╛ ╤О╤А╨╕╨┤╨╕╤З╨╡╤Б╨║╨╛╨│╨╛ ╤А╨╡╤И╨╡╨╜╨╕╤П.
+Цель: отделить model facts от interpretation, явно назвать ограничения, provenance и отсутствие причинности/самостоятельного юридического решения.
 
-╨Э╨╡ ╨┤╨╡╨╗╨░╤В╤М ╨╜╨╛╤А╨╝╨░╤В╨╕╨▓╨╜╤Л╤Е ╨╕╨╗╨╕ ╤О╤А╨╕╨┤╨╕╤З╨╡╤Б╨║╨╕╤Е ╨▓╤Л╨▓╨╛╨┤╨╛╨▓ ╤Б╨▓╨╡╤А╤Е ╨▓╤Е╨╛╨┤╨╜╤Л╤Е ╤Д╨░╨║╤В╨╛╨▓.
+Не делать нормативных или юридических выводов сверх входных фактов.
 
 ### information_security
 
-╨ж╨╡╨╗╤М: ╨╛╨▒╤К╤П╤Б╨╜╨╕╤В╤М data-sharing boundary ╤В╨╡╨║╤Г╤Й╨╡╨│╨╛ ╨▓╤Л╨╖╨╛╨▓╨░.
+Цель: объяснить data-sharing boundary текущего вызова.
 
-╨а╨░╨╖╤А╨╡╤И╨╡╨╜╨╛ ╨╛╨┐╨╕╤Б╤Л╨▓╨░╤В╤М ╤В╨╛╨╗╤М╨║╨╛ ╤Д╨░╨║╤В╨╕╤З╨╡╤Б╨║╨╕ ╨┐╤А╨╕╨╝╨╡╨╜╤С╨╜╨╜╤Г╤О runtime policy:
+Разрешено описывать только фактически применённую runtime policy:
 
 - `REDACTED_V1`;
-- ╨╜╨░╤А╤Г╨╢╤Г ╨╜╨╡ ╨┐╨╡╤А╨╡╨┤╨░╤О╤В╤Б╤П identifier value, row identity ╨╕ raw feature values;
-- ╨┐╨╡╤А╨╡╨┤╨░╤О╤В╤Б╤П ╤В╨╛╨╗╤М╨║╨╛ allowlisted ╨╛╨▒╨╡╨╖╨╗╨╕╤З╨╡╨╜╨╜╤Л╨╡ model facts;
-- `store=false` ╨╜╨╡ ╤В╤А╨░╨║╤В╤Г╨╡╤В╤Б╤П ╨║╨░╨║ Zero Data Retention.
+- наружу не передаются identifier value, row identity и raw feature values;
+- передаются только allowlisted обезличенные model facts;
+- `store=false` не трактуется как Zero Data Retention.
 
 ## TRUSTED FEATURE DESCRIPTIONS
 
-╨Ш╤Б╤В╨╛╤З╨╜╨╕╨║ ╤З╨╡╨╗╨╛╨▓╨╡╨║╨╛╤З╨╕╤В╨░╨╡╨╝╨╛╨│╨╛ ╤Б╨╝╤Л╤Б╨╗╨░ ╨┐╤А╨╕╨╖╨╜╨░╨║╨░ тАФ ╤В╨╛╨╗╤М╨║╨╛ immutable `FeatureSpec`, ╤Б╨╛╤Е╤А╨░╨╜╤С╨╜╨╜╤Л╨╣ ╨▓╨╜╤Г╤В╤А╨╕ active `ModelVersion.metadata["feature_specs"]`.
+Источник человекочитаемого смысла признака — только immutable `FeatureSpec`, сохранённый внутри active `ModelVersion.metadata["feature_specs"]`.
 
-╨Ф╨╗╤П ╨║╨░╨╢╨┤╨╛╨│╨╛ top feature ╨┤╨╛╨┐╤Г╤Б╤В╨╕╨╝╨╛ ╨╕╤Б╨┐╨╛╨╗╤М╨╖╨╛╨▓╨░╤В╤М:
+Для каждого top feature допустимо использовать:
 
 - `display_name_ru`;
 - `description_ru`.
 
-Frontend ╨╜╨╡ ╨┐╤А╨╕╨┤╤Г╨╝╤Л╨▓╨░╨╡╤В descriptions ╨╕ ╨╜╨╡ ╨┐╨╛╨┤╨┤╨╡╤А╨╢╨╕╨▓╨░╨╡╤В ╨╛╤В╨┤╨╡╨╗╤М╨╜╤Л╨╣ ╤Б╨╗╨╛╨▓╨░╤А╤М.
+Frontend не придумывает descriptions и не поддерживает отдельный словарь.
 
-╨Х╤Б╨╗╨╕ trusted description ╨╛╤В╤Б╤Г╤В╤Б╤В╨▓╤Г╨╡╤В/╤П╨▓╨╗╤П╨╡╤В╤Б╤П generic technical placeholder, LLM ╨╛╨▒╤П╨╖╨░╨╜ ╨╕╤Б╨┐╨╛╨╗╤М╨╖╨╛╨▓╨░╤В╤М technical column name ╨╕ ╨┐╤А╤П╨╝╨╛ ╨╜╨╡ ╨┐╤А╨╕╨┤╤Г╨╝╤Л╨▓╨░╤В╤М business meaning.
+Если trusted description отсутствует/является generic technical placeholder, LLM обязан использовать technical column name и прямо не придумывать business meaning.
 
 ## OUTBOUND BOUNDARY
 
-`REDACTED_V1` ╨╛╤Б╤В╨░╤С╤В╤Б╤П positive allowlist.
+`REDACTED_V1` остаётся positive allowlist.
 
-╨Э╨░╤А╤Г╨╢╤Г ╨Э╨Х ╨┐╨╡╤А╨╡╨┤╨░╤О╤В╤Б╤П:
+Наружу НЕ передаются:
 
 - identifier column/value;
 - row id/source position;
@@ -124,17 +124,17 @@ Frontend ╨╜╨╡ ╨┐╤А╨╕╨┤╤Г╨╝╤Л╨▓╨░╨╡�
 - raw model output/base value;
 - model/dataset provenance beyond fields explicitly allowed by policy.
 
-╨Т C2c ╤А╨░╨╖╤А╨╡╤И╨░╨╡╤В╤Б╤П ╨┤╨╛╨▒╨░╨▓╨╕╤В╤М ╨▓ allowlist:
+В C2c разрешается добавить в allowlist:
 
 - `recipient_role`;
 - trusted `display_name_ru`;
 - trusted `description_ru`;
 
-╨┐╤А╨╕ ╤Г╤Б╨╗╨╛╨▓╨╕╨╕, ╤З╤В╨╛ ╤Н╤В╨╛ metadata ╨┐╤А╨╕╨╖╨╜╨░╨║╨╛╨▓, ╨░ ╨╜╨╡ client row data.
+при условии, что это metadata признаков, а не client row data.
 
 ## SESSION STATE
 
-Interpretation state ╤Б╤В╨░╨╜╨╛╨▓╨╕╤В╤Б╤П role-keyed.
+Interpretation state становится role-keyed.
 
 Conceptually:
 
@@ -145,63 +145,86 @@ dispatch_receipts_by_role
 errors_by_role
 ```
 
-╨Ш╨╖╨╝╨╡╨╜╨╡╨╜╨╕╨╡ selected row / prediction batch / LocalExplanationEvidence ╨╛╤З╨╕╤Й╨░╨╡╤В ╨▓╤Б╨╡ role responses downstream.
+Изменение selected row / prediction batch / LocalExplanationEvidence очищает все role responses downstream.
 
-╨Ю╤И╨╕╨▒╨║╨░ ╨╛╨┤╨╜╨╛╨╣ ╤А╨╛╨╗╨╕ ╨╜╨╡ ╨┤╨╛╨╗╨╢╨╜╨░ ╨╛╤З╨╕╤Й╨░╤В╤М:
+Ошибка одной роли не должна очищать:
 
 - ModelVersion;
 - PredictionBatch;
 - selected row;
 - Local SHAP;
-- ╤Г╤Б╨┐╨╡╤И╨╜╤Л╨╡ ╨╛╤В╨▓╨╡╤В╤Л ╨┤╤А╤Г╨│╨╕╤Е ╤А╨╛╨╗╨╡╨╣.
+- успешные ответы других ролей.
 
 ## UI CONTRACT
 
-╨Я╨╛╤Б╨╗╨╡ Local SHAP ╨┐╨╛╨║╨░╨╖╤Л╨▓╨░╨╡╤В╤Б╤П ╨▒╨╗╨╛╨║:
+После Local SHAP показывается блок:
 
-`╨Ю╨▒╤К╤П╤Б╨╜╨╡╨╜╨╕╨╡ ╨┤╨╗╤П ╤А╨░╨╖╨╜╤Л╤Е ╤А╨╛╨╗╨╡╨╣`
+`Объяснение для разных ролей`
 
-╨Т╨╜╤Г╤В╤А╨╕ тАФ ╤З╨╡╤В╤Л╤А╨╡ ╨┐╨╛╨╜╤П╤В╨╜╤Л╨╡ ╨▓╨║╨╗╨░╨┤╨║╨╕/╤Б╨╡╨║╤Ж╨╕╨╕:
+Внутри — четыре понятные вкладки/секции:
 
-- ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А ╨┐╨╛ ╨┐╤А╨╛╨┤╨░╨╢╨░╨╝
-- ╨Ъ╤А╨╡╨┤╨╕╤В╨╜╤Л╨╣ ╨║╨╛╨╜╤В╤А╨╛╨╗╤С╤А
-- ╨о╤А╨╕╤Б╤В
-- ╨Ш╨╜╤Д╨╛╤А╨╝╨░╤Ж╨╕╨╛╨╜╨╜╨░╤П ╨▒╨╡╨╖╨╛╨┐╨░╤Б╨╜╨╛╤Б╤В╤М
+- Менеджер по продажам
+- Кредитный контролёр
+- Юрист
+- Информационная безопасность
 
-╨Ъ╨░╨╢╨┤╨░╤П ╤А╨╛╨╗╤М ╨╖╨░╨┐╤Г╤Б╨║╨░╨╡╤В╤Б╤П ╨╛╤В╨┤╨╡╨╗╤М╨╜╨╛ ╨╕ ╨╕╨╝╨╡╨╡╤В ╨╜╨╡╨╖╨░╨▓╨╕╤Б╨╕╨╝╤Л╨╣ retry.
+Каждая роль запускается отдельно и имеет независимый retry.
 
-C2c ╨Э╨Х ╤П╨▓╨╗╤П╨╡╤В╤Б╤П ╨╛╨▒╤Й╨╕╨╝ visual redesign. ╨Я╨╡╤А╨╡╤Б╤В╤А╨╛╨╣╨║╨░ ╨▓╨╕╨╖╤Г╨░╨╗╤М╨╜╨╛╨╣ ╨╕╨╡╤А╨░╤А╤Е╨╕╨╕ ╨│╨╗╨╛╨▒╨░╨╗╤М╨╜╤Л╤Е CTA-╨║╨╜╨╛╨┐╨╛╨║ ╤Д╨╕╨║╤Б╨╕╤А╤Г╨╡╤В╤Б╤П ╨╛╤В╨┤╨╡╨╗╤М╨╜╤Л╨╝ ╤Б╨╗╨╡╨┤╤Г╤О╤Й╨╕╨╝ UX pass.
+C2c НЕ является общим visual redesign. Перестройка визуальной иерархии глобальных CTA-кнопок фиксируется отдельным следующим UX pass.
 
 ## NON-GOALS
 
-╨Э╨╡ ╨┤╨╛╨▒╨░╨▓╨╗╤П╤В╤М:
+Не добавлять:
 
 - business threshold;
 - approve/reject;
 - `ml_decision`;
 - credit policy;
-- ╨╜╨╛╨▓╤Л╨╡ ╨╝╨╛╨┤╨╡╨╗╨╕;
-- ╨╜╨╛╨▓╤Л╨╡ explainers;
-- ╨╜╨╛╨▓╤Л╨╣ outbound policy;
-- ╨┐╨╡╤А╨╡╨┤╨░╤З╤Г raw values;
+- новые модели;
+- новые explainers;
+- новый outbound policy;
+- передачу raw values;
 - full Stage 20 synthetic card schema;
-- ╨╛╨▒╤Й╨╕╨╣ redesign ╨┐╤А╨╕╨╗╨╛╨╢╨╡╨╜╨╕╤П.
+- общий redesign приложения.
 
 ## ACCEPTANCE CRITERIA
 
-1. ╨Т╤Б╨╡ ╤З╨╡╤В╤Л╤А╨╡ accepted ╤А╨╛╨╗╨╕ ╨┤╨╛╤Б╤В╤Г╨┐╨╜╤Л ╨▓ product UI.
-2. ╨Ф╨╗╤П ╨╛╨┤╨╜╨╛╨│╨╛ evidence ╨╝╨╛╨╢╨╜╨╛ ╨╜╨╡╨╖╨░╨▓╨╕╤Б╨╕╨╝╨╛ ╨┐╨╛╨╗╤Г╤З╨╕╤В╤М ╤З╨╡╤В╤Л╤А╨╡ role-specific responses.
-3. ML probability/SHAP ╨╜╨╡ ╨┐╨╡╤А╨╡╤Б╤З╨╕╤В╤Л╨▓╨░╤О╤В╤Б╤П ╨╕ ╨╜╨╡ ╨╝╨╡╨╜╤П╤О╤В╤Б╤П ╨╝╨╡╨╢╨┤╤Г ╤А╨╛╨╗╤П╨╝╨╕.
-4. Trusted descriptions ╨▒╨╡╤А╤Г╤В╤Б╤П ╨╕╨╖ active ModelVersion `feature_specs`, ╨╜╨╡ ╨╕╨╖ UI hardcode.
-5. ╨Т╨╜╨╡╤И╨╜╨╕╨╣ payload ╨╛╤Б╤В╨░╤С╤В╤Б╤П `REDACTED_V1` ╨╕ ╨╜╨╡ ╤Б╨╛╨┤╨╡╤А╨╢╨╕╤В identifier/raw values/row identity.
-6. Role ╨▓╤Е╨╛╨┤╨╕╤В ╨▓ provider payload ╨╕ ╨▓╨╗╨╕╤П╨╡╤В ╤В╨╛╨╗╤М╨║╨╛ ╨╜╨░ ╤Д╨╛╤А╨╝╤Г/╨░╨║╤Ж╨╡╨╜╤В╤Л ╨╛╨▒╤К╤П╤Б╨╜╨╡╨╜╨╕╤П.
+1. Все четыре accepted роли доступны в product UI.
+2. Для одного evidence можно независимо получить четыре role-specific responses.
+3. ML probability/SHAP не пересчитываются и не меняются между ролями.
+4. Trusted descriptions берутся из active ModelVersion `feature_specs`, не из UI hardcode.
+5. Внешний payload остаётся `REDACTED_V1` и не содержит identifier/raw values/row identity.
+6. Role входит в provider payload и влияет только на форму/акценты объяснения.
 7. Unknown role rejected fail-closed.
-8. Failure ╨╛╨┤╨╜╨╛╨╣ ╤А╨╛╨╗╨╕ ╨╜╨╡ ╨╕╨╜╨▓╨░╨╗╨╕╨┤╨╕╤А╤Г╨╡╤В prediction/SHAP/╨┤╤А╤Г╨│╨╕╨╡ role responses.
-9. `DISABLED` ╨╕ `MISCONFIGURED` semantics C2b ╨╜╨╡ ╨╝╨╡╨╜╤П╤О╤В╤Б╤П.
-10. Regression tests ╨┐╨╛╨║╤А╤Л╨▓╨░╤О╤В policy projection, application service, session invalidation ╨╕ Streamlit role UI.
-11. Full test suite, `compileall src app`, `git diff --check` тАФ PASS.
-12. Manual defense E2E ╨▓╤Л╨┐╨╛╨╗╨╜╤П╨╡╤В╤Б╤П ╨╝╨╕╨╜╨╕╨╝╤Г╨╝ ╨┤╨╗╤П ╨┤╨▓╤Г╤Е ╤Б╤Г╤Й╨╡╤Б╤В╨▓╨╡╨╜╨╜╨╛ ╤А╨░╨╖╨╜╤Л╤Е ╤А╨╛╨╗╨╡╨╣ ╨╜╨░ synthetic/non-client input ╨╕ ╨┐╨╛╨┤╤В╨▓╨╡╤А╨╢╨┤╨░╨╡╤В ╤А╨░╨╖╨╗╨╕╤З╨╕╨╡ explanation ╨┐╤А╨╕ ╨╜╨╡╨╕╨╖╨╝╨╡╨╜╨╜╨╛╨╝ ML result.
+8. Failure одной роли не инвалидирует prediction/SHAP/другие role responses.
+9. `DISABLED` и `MISCONFIGURED` semantics C2b не меняются.
+10. Regression tests покрывают policy projection, application service, session invalidation и Streamlit role UI.
+11. Full test suite, `compileall src app`, `git diff --check` — PASS.
+12. Manual defense E2E выполняется минимум для двух существенно разных ролей на synthetic/non-client input и подтверждает различие explanation при неизменном ML result.
+
+## FINAL STATUS
+
+`ACCEPTED`
+
+Implementation chain:
+
+- `1fbc0036` — основная C2c integration;
+- `5bd0d2aa` — `recipient_role` добавлен в exact `REDACTED_V1` provider-safe payload;
+- `4f579ed1` — роли переведены с bulk-action на отдельные UI actions;
+- `1c4ae237` — source-of-truth документация синхронизирована с итоговым UI contract.
+
+Финальная verification:
+
+- 255 full tests PASS;
+- `compileall src app` PASS;
+- `git diff --check` PASS;
+- manual external E2E на synthetic/non-client input выполнен для `sales_manager` и `lawyer`;
+- оба provider calls успешны;
+- role responses различаются при неизменном ML result;
+- identifier, row identity и raw feature values отсутствуют в provider-safe payload.
+
+Stage III-C2c закрыт.
 
 ## NEXT
 
-╨Я╨╛╤Б╨╗╨╡ C2c ACCEPT ╨╛╤В╨║╤А╤Л╤В╤М ╨╛╤В╨┤╨╡╨╗╤М╨╜╤Л╨╣ UX pass ╨┤╨╗╤П ╨▓╨╕╨╖╤Г╨░╨╗╤М╨╜╨╛╨╣ ╨╕╨╡╤А╨░╤А╤Е╨╕╨╕ CTA/buttons ╨╜╨░ ╤Н╨║╤А╨░╨╜╨╡ `╨а╨╡╨╖╤Г╨╗╤М╤В╨░╤В`.
+Отдельный следующий workstream — Result UX polish / final handoff.

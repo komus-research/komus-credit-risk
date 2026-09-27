@@ -887,6 +887,11 @@ Implementation C2c выполнен в ветке `feature/role-based-result-int
 - REDACTED_V1 не расширен identifier/raw values/row identity; наружу добавлен только trusted `display_name_ru` рядом с уже разрешённым `description_ru`;
 - четыре роли запускаются отдельными UI actions и имеют независимые response/retry states.
 
-Локальная verification: 68 focused tests PASS; full suite **253 tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
+Финальная verification: **255 full tests PASS**; `compileall src app` PASS; `git diff --check` PASS.
 
-Статус C2c: **IMPLEMENTED / READY FOR REVIEW + MANUAL E2E**. ACCEPT до отдельной проверки не объявляется.
+Review closure:
+- `4f579ed1` закрыл MAJOR: initial action каждой роли вызывает только один provider call, bulk-flow удалён;
+- `1c4ae237` закрыл MINOR: source-of-truth документация синхронизирована с фактическим role-by-role UI;
+- manual external E2E на synthetic/non-client input выполнен для `sales_manager` и `lawyer`; оба вызова успешны, ответы различаются при одном ML result, redacted payload не содержит identifier/row identity/raw values.
+
+Статус C2c: **ACCEPT Stage III-C2c**.
