@@ -109,6 +109,8 @@ Historical `Data_final` остаётся internal compatibility profile и не 
 
 Canonical source доступных downstream groups — `FeatureRegistry → FeatureGroup`. Experiment-level экран не требует для работы `DatasetPreparationProposal`, `DatasetPreparationProposal.technical_groups`, inspection report или Analyzer state. После `PreparedDatasetContext` UI не различает происхождение датасета.
 
+Current implementation note (2026-09-27): `DatasetPreparationAnalyzer` уже создаёт `DatasetPreparationProposal.technical_groups` каскадом `structural stem → repeated name token → logical type → fallback`. Generic materializer пока не переносит эту richer grouping metadata в materialized `FeatureRegistry`, поэтому end-to-end grouping остаётся отдельным открытым workstream `Feature Grouping Propagation V1`. Downstream contract не меняется: UI читает только `FeatureRegistry → FeatureGroup`.
+
 Инициализация зависит от сценария:
 
 - первый эксперимент после создания нового `PreparedDatasetContext` начинает с `selected_feature_ids`, содержащего все доступные IDs с `MODEL_ALLOWED`;
