@@ -108,6 +108,21 @@ class GBDTMeanTests(unittest.TestCase):
 
         self.assertIsNotNone(adapter)
 
+    def test_factory_rejects_component_envelope_extra_or_missing_keys(self) -> None:
+        cases = []
+        extra = deepcopy(GBDT_MEAN_PROFILE)
+        extra["components"]["catboost"]["unexpected"] = "ignored"
+        cases.append(extra)
+        missing = deepcopy(GBDT_MEAN_PROFILE)
+        del missing["components"]["xgboost"]["adapter_version"]
+        cases.append(missing)
+
+        for profile in cases:
+            with self.subTest(profile=profile), self.assertRaisesRegex(
+                ValueError, "component envelope"
+            ):
+                GBDTMeanFactory(component_factories()).create(profile, 42)
+
     def test_predict_rejects_invalid_component_probabilities(self) -> None:
         cases = (
             {"catboost": np.array([0.1]), "xgboost": np.array([0.2, 0.3]), "lightgbm": np.array([0.3, 0.4])},

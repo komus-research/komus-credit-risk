@@ -16,7 +16,6 @@ from .catboost import CATBOOST_PROFILE
 from .lightgbm import LIGHTGBM_PROFILE
 from .xgboost import XGBOOST_PROFILE
 
-
 _COMPONENT_IDENTITIES = {
     "catboost": ("catboost", "accepted_stage1_v2", "1"),
     "xgboost": ("xgboost", "accepted_stage1_v2", "1"),
@@ -118,7 +117,10 @@ class GBDTMeanFactory(ModelAdapterFactory):
             raise ValueError("GBDT mean component identities are invalid.")
         for model_id, identity in _COMPONENT_IDENTITIES.items():
             component = parameters["components"][model_id]
-            if not isinstance(component, dict) or (
+            expected_component = GBDT_MEAN_PROFILE["components"][model_id]
+            if not isinstance(component, dict) or set(component) != set(expected_component):
+                raise ValueError("GBDT mean component envelope is invalid.")
+            if (
                 component.get("model_version"), component.get("adapter_version")
             ) != identity[1:]:
                 raise ValueError("GBDT mean component identities are locked.")
