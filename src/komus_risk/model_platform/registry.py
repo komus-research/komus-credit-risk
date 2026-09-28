@@ -7,13 +7,17 @@ from komus_risk.model_platform.contracts import (
     CapabilitySupport,
     ModelPlugin,
 )
+from komus_risk.model_platform.persistence import ModelPersistenceProviderRegistry
 
 
 class ModelPluginRegistry:
     """Stores compatible plugin registrations without replacing ``ModelRegistry``."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, persistence_providers: ModelPersistenceProviderRegistry | None = None
+    ) -> None:
         self._plugins: dict[str, ModelPlugin] = {}
+        self._persistence_providers = persistence_providers
 
     def register(
         self, plugin: ModelPlugin, *, registry_key: str | None = None
@@ -45,8 +49,12 @@ class ModelPluginRegistry:
     def list(self) -> tuple[ModelPlugin, ...]:
         return tuple(self._plugins[model_id] for model_id in sorted(self._plugins))
 
-    @staticmethod
-    def _validate(plugin: ModelPlugin) -> None:
+    @property
+    def persistence_providers(self) -> ModelPersistenceProviderRegistry | None:
+        """Trusted executable providers, intentionally absent from catalog DTOs."""
+        return self._persistence_providers
+
+    def _validate(self, plugin: ModelPlugin) -> None:
         spec = plugin.spec
         identity = (spec.model_id, spec.version, spec.adapter_version)
         if any(not item.strip() for item in identity):
@@ -101,6 +109,11 @@ class ModelPluginRegistry:
             plugin.recommended_profile.payload
         )
         ModelPluginRegistry._validate_provider_claims(plugin)
+        if (
+            self._persistence_providers is not None
+            and plugin.persistence_provider is not None
+        ):
+            self._persistence_providers.validate_plugin_provider(plugin)
 
     @staticmethod
     def _validate_provider_claims(plugin: ModelPlugin) -> None:

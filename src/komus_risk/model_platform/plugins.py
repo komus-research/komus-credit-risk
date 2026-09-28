@@ -6,17 +6,17 @@ from copy import deepcopy
 from typing import Any
 
 from komus_risk.models.gbdt import (
+    CATBOOST_EDITABLE_PARAMETERS,
     CATBOOST_MODEL_SPEC,
     CATBOOST_PROFILE,
-    CATBOOST_EDITABLE_PARAMETERS,
     GBDT_MEAN_MODEL_SPEC,
     GBDT_MEAN_PROFILE,
+    LIGHTGBM_EDITABLE_PARAMETERS,
     LIGHTGBM_MODEL_SPEC,
     LIGHTGBM_PROFILE,
-    LIGHTGBM_EDITABLE_PARAMETERS,
+    XGBOOST_EDITABLE_PARAMETERS,
     XGBOOST_MODEL_SPEC,
     XGBOOST_PROFILE,
-    XGBOOST_EDITABLE_PARAMETERS,
     CatBoostFactory,
     GBDTMeanFactory,
     LightGBMFactory,
@@ -38,17 +38,22 @@ from .contracts import (
     ProviderDescriptor,
     RecommendedModelProfile,
 )
+from .persistence import builtin_gbdt_persistence_providers
 from .registry import ModelPluginRegistry
 
-_PERSISTENCE_PROVIDER = ProviderDescriptor(
-    "legacy_model_version_store",
-    "1",
-    "persistence",
-    {
-        "implementation": "existing ModelVersionStore V1 dispatch",
-        "migration_stage": "MP-D",
-    },
-)
+
+def _persistence_provider(model_id: str) -> ProviderDescriptor:
+    return ProviderDescriptor(
+        f"{model_id}_native_persistence",
+        "1",
+        "persistence",
+        {
+            "native_format": "trusted_gbdt_native",
+            "model_id": model_id,
+        },
+    )
+
+
 _CATBOOST_EXPLANATION_PROVIDER = ProviderDescriptor(
     "catboost_native_local_shap",
     "1",
@@ -68,7 +73,10 @@ def _value_type(value: Any) -> ParameterValueType:
 
 
 def _parameter(
-    path: str, name: str, value: Any, order: int,
+    path: str,
+    name: str,
+    value: Any,
+    order: int,
     constraints: dict[str, tuple[type, int | float | None, int | float | None]],
 ) -> ModelParameter:
     _, minimum, maximum = constraints[name]
@@ -76,7 +84,11 @@ def _parameter(
         parameter_path=path,
         display_name_ru=name,
         description_ru=f"Зафиксированное значение параметра {name}.",
-        value_type=(ParameterValueType.FLOAT if constraints[name][0] is float else _value_type(value)),
+        value_type=(
+            ParameterValueType.FLOAT
+            if constraints[name][0] is float
+            else _value_type(value)
+        ),
         required=True,
         nullable=False,
         editable=True,
@@ -111,7 +123,9 @@ def _locked_enum(
 
 
 def _schema(
-    spec: ModelSpec, profile: dict[str, Any], names: tuple[str, ...],
+    spec: ModelSpec,
+    profile: dict[str, Any],
+    names: tuple[str, ...],
     constraints: dict[str, tuple[type, int | float | None, int | float | None]],
 ) -> ModelParameterSchema:
     return ModelParameterSchema(
@@ -143,7 +157,12 @@ def _mean_schema() -> ModelParameterSchema:
         ),
     ]
     models = (
-        ("catboost", CATBOOST_PROFILE, ("iterations", "learning_rate", "depth"), CATBOOST_EDITABLE_PARAMETERS),
+        (
+            "catboost",
+            CATBOOST_PROFILE,
+            ("iterations", "learning_rate", "depth"),
+            CATBOOST_EDITABLE_PARAMETERS,
+        ),
         (
             "xgboost",
             XGBOOST_PROFILE,
@@ -156,7 +175,8 @@ def _mean_schema() -> ModelParameterSchema:
                 "colsample_bytree",
                 "reg_alpha",
                 "reg_lambda",
-            ), XGBOOST_EDITABLE_PARAMETERS,
+            ),
+            XGBOOST_EDITABLE_PARAMETERS,
         ),
         (
             "lightgbm",
@@ -172,7 +192,8 @@ def _mean_schema() -> ModelParameterSchema:
                 "colsample_bytree",
                 "reg_alpha",
                 "reg_lambda",
-            ), LIGHTGBM_EDITABLE_PARAMETERS,
+            ),
+            LIGHTGBM_EDITABLE_PARAMETERS,
         ),
     )
     order = 1
@@ -202,7 +223,11 @@ def _mean_schema() -> ModelParameterSchema:
                     parameter_path=f"/components/{model_id}/profile/estimator_params/{name}",
                     display_name_ru=f"{model_id}: {name}",
                     description_ru=f"Параметр component {model_id}: {name}.",
-                    value_type=(ParameterValueType.FLOAT if constraints[name][0] is float else _value_type(value)),
+                    value_type=(
+                        ParameterValueType.FLOAT
+                        if constraints[name][0] is float
+                        else _value_type(value)
+                    ),
                     required=True,
                     nullable=False,
                     editable=True,
@@ -251,7 +276,10 @@ def _input_contract(spec: ModelSpec) -> ModelInputContract:
 
 
 def _capabilities(
-    spec: ModelSpec, *, local_explanation: bool
+    spec: ModelSpec,
+    persistence_provider: ProviderDescriptor,
+    *,
+    local_explanation: bool,
 ) -> ModelCapabilityManifest:
     explanation = (
         CapabilitySupport.SUPPORTED
@@ -267,17 +295,18 @@ def _capabilities(
                 CapabilityDomain.TRAINING, CapabilitySupport.SUPPORTED
             ),
             CapabilityDeclaration(
-                CapabilityDomain.CONFIGURATION, CapabilitySupport.SUPPORTED,
+                CapabilityDomain.CONFIGURATION,
+                CapabilitySupport.SUPPORTED,
             ),
             CapabilityDeclaration(
                 CapabilityDomain.PERSISTENCE,
                 CapabilitySupport.SUPPORTED,
-                _PERSISTENCE_PROVIDER.provider_id,
+                persistence_provider.provider_id,
             ),
             CapabilityDeclaration(
                 CapabilityDomain.LOADING,
                 CapabilitySupport.SUPPORTED,
-                _PERSISTENCE_PROVIDER.provider_id,
+                persistence_provider.provider_id,
             ),
             CapabilityDeclaration(
                 CapabilityDomain.TARGETLESS_INFERENCE, CapabilitySupport.SUPPORTED
@@ -299,6 +328,10 @@ def _capabilities(
 
 def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
     """Builds fresh, deterministic declarations without changing runtime composition."""
+    catboost_provider = _persistence_provider("catboost")
+    xgboost_provider = _persistence_provider("xgboost")
+    lightgbm_provider = _persistence_provider("lightgbm")
+    mean_provider = _persistence_provider("gbdt_mean")
     catboost = ModelPlugin(
         CATBOOST_MODEL_SPEC,
         _schema(
@@ -309,9 +342,9 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
         ),
         _profile(CATBOOST_MODEL_SPEC, CATBOOST_PROFILE),
         CatBoostFactory(),
-        _capabilities(CATBOOST_MODEL_SPEC, local_explanation=True),
+        _capabilities(CATBOOST_MODEL_SPEC, catboost_provider, local_explanation=True),
         _input_contract(CATBOOST_MODEL_SPEC),
-        persistence_provider=_PERSISTENCE_PROVIDER,
+        persistence_provider=catboost_provider,
         local_explanation_provider=_CATBOOST_EXPLANATION_PROVIDER,
     )
     xgboost = ModelPlugin(
@@ -333,9 +366,9 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
         ),
         _profile(XGBOOST_MODEL_SPEC, XGBOOST_PROFILE),
         XGBoostFactory(),
-        _capabilities(XGBOOST_MODEL_SPEC, local_explanation=False),
+        _capabilities(XGBOOST_MODEL_SPEC, xgboost_provider, local_explanation=False),
         _input_contract(XGBOOST_MODEL_SPEC),
-        persistence_provider=_PERSISTENCE_PROVIDER,
+        persistence_provider=xgboost_provider,
     )
     lightgbm = ModelPlugin(
         LIGHTGBM_MODEL_SPEC,
@@ -358,9 +391,9 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
         ),
         _profile(LIGHTGBM_MODEL_SPEC, LIGHTGBM_PROFILE),
         LightGBMFactory(),
-        _capabilities(LIGHTGBM_MODEL_SPEC, local_explanation=False),
+        _capabilities(LIGHTGBM_MODEL_SPEC, lightgbm_provider, local_explanation=False),
         _input_contract(LIGHTGBM_MODEL_SPEC),
-        persistence_provider=_PERSISTENCE_PROVIDER,
+        persistence_provider=lightgbm_provider,
     )
     mean_factory = GBDTMeanFactory(
         {
@@ -374,15 +407,18 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
         _mean_schema(),
         _profile(GBDT_MEAN_MODEL_SPEC, GBDT_MEAN_PROFILE),
         mean_factory,
-        _capabilities(GBDT_MEAN_MODEL_SPEC, local_explanation=False),
+        _capabilities(GBDT_MEAN_MODEL_SPEC, mean_provider, local_explanation=False),
         _input_contract(GBDT_MEAN_MODEL_SPEC),
-        persistence_provider=_PERSISTENCE_PROVIDER,
+        persistence_provider=mean_provider,
     )
     return catboost, xgboost, lightgbm, mean
 
 
 def build_builtin_model_plugin_registry() -> ModelPluginRegistry:
-    registry = ModelPluginRegistry()
-    for plugin in builtin_model_plugins():
+    plugins = builtin_model_plugins()
+    registry = ModelPluginRegistry(
+        persistence_providers=builtin_gbdt_persistence_providers(plugins)
+    )
+    for plugin in plugins:
         registry.register(plugin)
     return registry

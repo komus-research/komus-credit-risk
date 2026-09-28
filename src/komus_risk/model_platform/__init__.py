@@ -3,6 +3,12 @@
 This package is intentionally not wired into the existing experiment path yet.
 """
 
+from .configuration import (
+    ModelConfigurationError,
+    ModelConfigurationMode,
+    ModelConfigurationService,
+    ResolvedModelConfiguration,
+)
 from .contracts import (
     CapabilityDeclaration,
     CapabilityDomain,
@@ -18,31 +24,54 @@ from .contracts import (
     RecommendedModelProfile,
     VisibilityCondition,
 )
+from .persistence import (
+    ModelPersistenceProvider,
+    ModelPersistenceProviderRegistry,
+    NativeGBDTPersistenceProvider,
+    builtin_gbdt_persistence_providers,
+)
 from .plugins import build_builtin_model_plugin_registry, builtin_model_plugins
-from .registry import ModelPluginRegistry
-from .configuration import ModelConfigurationError, ModelConfigurationMode, ModelConfigurationService, ResolvedModelConfiguration
 from .provenance import ModelConfigurationRecord
-from .smoke import DEFAULT_SMOKE_POLICY, ModelConfigurationSmokeTestService, SmokeError, SmokeEvidence, SmokePolicy, SmokeStatus
+from .registry import ModelPluginRegistry
+from .smoke import (
+    DEFAULT_SMOKE_POLICY,
+    ModelConfigurationSmokeTestService,
+    SmokeError,
+    SmokeEvidence,
+    SmokePolicy,
+    SmokeStatus,
+)
 
 __all__ = [
+    "DEFAULT_SMOKE_POLICY",
     "CapabilityDeclaration",
     "CapabilityDomain",
     "CapabilitySupport",
     "ModelCapabilityManifest",
+    "ModelConfigurationError",
+    "ModelConfigurationMode",
+    "ModelConfigurationRecord",
+    "ModelConfigurationService",
+    "ModelConfigurationSmokeTestService",
     "ModelInputContract",
     "ModelParameter",
     "ModelParameterSchema",
+    "ModelPersistenceProvider",
+    "ModelPersistenceProviderRegistry",
     "ModelPlugin",
     "ModelPluginRegistry",
-    "ModelConfigurationError", "ModelConfigurationMode", "ModelConfigurationService",
+    "NativeGBDTPersistenceProvider",
     "ParameterUiLevel",
     "ParameterValueType",
     "ProviderDescriptor",
     "RecommendedModelProfile",
     "ResolvedModelConfiguration",
-    "ModelConfigurationRecord", "DEFAULT_SMOKE_POLICY", "ModelConfigurationSmokeTestService",
-    "SmokeError", "SmokeEvidence", "SmokePolicy", "SmokeStatus",
+    "SmokeError",
+    "SmokeEvidence",
+    "SmokePolicy",
+    "SmokeStatus",
     "VisibilityCondition",
     "build_builtin_model_plugin_registry",
+    "builtin_gbdt_persistence_providers",
     "builtin_model_plugins",
 ]

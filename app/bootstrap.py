@@ -7,10 +7,10 @@ services; it never constructs backend contracts itself.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from hashlib import sha256
-import os
 from pathlib import Path
 from typing import Any
 
@@ -26,26 +26,24 @@ from komus_risk.application import (
     ResultInterpreterRuntimeConfiguration,
     ResultInterpreterService,
 )
-from komus_risk.integrations.openai_result_interpreter import OpenAIResultInterpreterClient
 from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
 from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
-from komus_risk.data import DatasetInspector, LoadedDataset, ReadyDatasetAdapter, TabularReader, TabularSnapshot
-from komus_risk.experiments import EvaluationPopulation
-from komus_risk.preparation import (
-    ConfirmedColumnDecision,
-    ConfirmedColumnStatus,
-    ConfirmedDatasetPreparation,
-    DatasetPreparationAnalyzer,
-    DatasetPreparationError,
-    DatasetPreparationManifest,
-    KomusDatasetPreparationService,
-    PreparedDatasetContextAuthority,
-    PopulationPolicyV1,
+from komus_risk.data import (
+    DatasetInspector,
+    LoadedDataset,
+    ReadyDatasetAdapter,
+    TabularReader,
+    TabularSnapshot,
 )
-from komus_risk.preparation.context import PreparedDatasetContext
-from komus_risk.preparation.materializer import inspection_report_hash, proposal_hash
-from komus_risk.preparation.predictor_compatibility import predictor_compatibility_error
+from komus_risk.experiments import EvaluationPopulation
+from komus_risk.integrations.openai_result_interpreter import (
+    OpenAIResultInterpreterClient,
+)
+from komus_risk.model_platform import (
+    build_builtin_model_plugin_registry,
+    builtin_gbdt_persistence_providers,
+)
 from komus_risk.models import (
     CATBOOST_MODEL_SPEC,
     GBDT_MEAN_MODEL_SPEC,
@@ -57,8 +55,21 @@ from komus_risk.models import (
     ModelAdapterFactory,
     XGBoostFactory,
 )
-from komus_risk.model_platform import build_builtin_model_plugin_registry
 from komus_risk.planning import ExperimentPlanningService
+from komus_risk.preparation import (
+    ConfirmedColumnDecision,
+    ConfirmedColumnStatus,
+    ConfirmedDatasetPreparation,
+    DatasetPreparationAnalyzer,
+    DatasetPreparationError,
+    DatasetPreparationManifest,
+    KomusDatasetPreparationService,
+    PopulationPolicyV1,
+    PreparedDatasetContextAuthority,
+)
+from komus_risk.preparation.context import PreparedDatasetContext
+from komus_risk.preparation.materializer import inspection_report_hash, proposal_hash
+from komus_risk.preparation.predictor_compatibility import predictor_compatibility_error
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 
@@ -88,9 +99,18 @@ class DatasetSourcePreparation:
     manifest: DatasetPreparationManifest | None = None
 
     def __post_init__(self) -> None:
-        if self.preparation_status == "context_not_prepared" and self.context is not None:
-            raise ValueError("Неподготовленный источник не может иметь dataset context.")
-        if self.preparation_status in {"historical_context_prepared", "confirmed_context_prepared"} and self.context is None:
+        if (
+            self.preparation_status == "context_not_prepared"
+            and self.context is not None
+        ):
+            raise ValueError(
+                "Неподготовленный источник не может иметь dataset context."
+            )
+        if (
+            self.preparation_status
+            in {"historical_context_prepared", "confirmed_context_prepared"}
+            and self.context is None
+        ):
             raise ValueError("Подготовленный источник должен иметь dataset context.")
 
     @property
@@ -126,19 +146,66 @@ class AcceptedWorkingSplit:
 
 
 _ACCEPTED_FEATURE_IDS = (
-    "Q_A1_norm", "Q_A2_norm", "Q_A3_norm", "Q_A4_norm", "Q_A5_norm", "Q_A6_norm", "Q_A7_norm",
-    "Q_B3_norm", "Q_B4_norm", "Q_B5_norm", "Q_C1_norm", "Q_D1_norm", "Q_D2_norm", "Q_D3_norm",
-    "Q_D4_norm", "Q_D5_norm", "Q_D6_norm", "A1_norm", "A2_norm", "A3_norm", "A4_norm", "A5_norm",
-    "A6_norm", "B1_norm", "B2_norm", "B3_norm", "C1_norm", "C2_norm", "C3_norm", "C4_norm",
-    "D1_norm", "D2_norm", "D3_norm", "D4_norm", "D5_norm", "E1_norm", "E2_norm", "E3_norm",
-    "F1_norm", "F2_norm", "F3_norm", "F4_norm", "G1_norm", "G2_norm", "G3_norm", "G4_norm", "G5_norm",
+    "Q_A1_norm",
+    "Q_A2_norm",
+    "Q_A3_norm",
+    "Q_A4_norm",
+    "Q_A5_norm",
+    "Q_A6_norm",
+    "Q_A7_norm",
+    "Q_B3_norm",
+    "Q_B4_norm",
+    "Q_B5_norm",
+    "Q_C1_norm",
+    "Q_D1_norm",
+    "Q_D2_norm",
+    "Q_D3_norm",
+    "Q_D4_norm",
+    "Q_D5_norm",
+    "Q_D6_norm",
+    "A1_norm",
+    "A2_norm",
+    "A3_norm",
+    "A4_norm",
+    "A5_norm",
+    "A6_norm",
+    "B1_norm",
+    "B2_norm",
+    "B3_norm",
+    "C1_norm",
+    "C2_norm",
+    "C3_norm",
+    "C4_norm",
+    "D1_norm",
+    "D2_norm",
+    "D3_norm",
+    "D4_norm",
+    "D5_norm",
+    "E1_norm",
+    "E2_norm",
+    "E3_norm",
+    "F1_norm",
+    "F2_norm",
+    "F3_norm",
+    "F4_norm",
+    "G1_norm",
+    "G2_norm",
+    "G3_norm",
+    "G4_norm",
+    "G5_norm",
 )
-_ACCEPTED_DATASET_SHA256 = "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930"
+_ACCEPTED_DATASET_SHA256 = (
+    "fc742be66d238c529daba52ccc755f774f836b7d052ed062cdf0b345080e7930"
+)
 _ACCEPTED_FULL_ROW_COUNT = 362_018
 _ACCEPTED_WORKING_ROW_COUNT = 289_614
 _ACCEPTED_FINAL_TEST_ROW_COUNT = 72_404
-_ACCEPTED_STAGE3_EVIDENCE_SHA256 = "faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac"
-_ACCEPTED_WORKING_INDEX_SHA256 = "80430ce6290d0982d3641621ba1ed62f6fb495e8d32f7d23d9fca00091aadb45"
+_ACCEPTED_STAGE3_EVIDENCE_SHA256 = (
+    "faa53a8aed86c2d445699c0fd1df6a5b83711c96d3a300f9a8860112ff4473ac"
+)
+_ACCEPTED_WORKING_INDEX_SHA256 = (
+    "80430ce6290d0982d3641621ba1ed62f6fb495e8d32f7d23d9fca00091aadb45"
+)
 _STAGE3_EVIDENCE_PATH = Path("reports/generated/stage3_oof_predictions_V1.npz")
 
 SUPPORTED_PROTOCOL = SupportedProtocol(
@@ -179,17 +246,23 @@ class LocalDatasetSourceResolver:
             display_name=f"Локальный файл: {Path(raw_path).name}",
         )
 
-    def _resolve(self, path: Path, *, source_kind: str, display_name: str) -> ResolvedDatasetSource:
+    def _resolve(
+        self, path: Path, *, source_kind: str, display_name: str
+    ) -> ResolvedDatasetSource:
         local_path = path.expanduser()
         if not local_path.exists():
             raise FileNotFoundError(f"Файл датасета не найден: «{local_path}».")
         if not local_path.is_file():
-            raise ValueError(f"Путь к датасету должен указывать на файл: «{local_path}».")
+            raise ValueError(
+                f"Путь к датасету должен указывать на файл: «{local_path}»."
+            )
         try:
             physical_format = self._FORMATS[local_path.suffix.lower()]
         except KeyError as error:
             supported = ", ".join(sorted(self._FORMATS))
-            raise ValueError(f"Неподдерживаемое расширение «{local_path.suffix}». Поддерживаются: {supported}.") from error
+            raise ValueError(
+                f"Неподдерживаемое расширение «{local_path.suffix}». Поддерживаются: {supported}."
+            ) from error
         resolved_path = local_path.resolve()
         return ResolvedDatasetSource(
             source_kind=source_kind,
@@ -206,6 +279,7 @@ class HistoricalDatasetProvider:
 
     context_id = "historical_data_final_v1"
     display_name = "Исторический Data_final — рабочая популяция"
+
     def __init__(
         self, context_authority: PreparedDatasetContextAuthority | None = None
     ) -> None:
@@ -261,21 +335,35 @@ class HistoricalDatasetProvider:
             raise ValueError("Файл не соответствует принятой identity Data_final.")
 
     @staticmethod
-    def _validate_loaded_dataset(loaded: LoadedDataset, working_split: AcceptedWorkingSplit) -> None:
+    def _validate_loaded_dataset(
+        loaded: LoadedDataset, working_split: AcceptedWorkingSplit
+    ) -> None:
         if loaded.source_file_sha256 != _ACCEPTED_DATASET_SHA256:
-            raise ValueError("Загруженный Data_final не соответствует принятой identity.")
+            raise ValueError(
+                "Загруженный Data_final не соответствует принятой identity."
+            )
         if loaded.contract.row_count != _ACCEPTED_FULL_ROW_COUNT:
-            raise ValueError("Data_final не соответствует принятому полному числу строк.")
+            raise ValueError(
+                "Data_final не соответствует принятому полному числу строк."
+            )
         positions = np.asarray(working_split.row_positions, dtype=np.int64)
-        if len(positions) != _ACCEPTED_WORKING_ROW_COUNT or len(positions) + _ACCEPTED_FINAL_TEST_ROW_COUNT != loaded.contract.row_count:
+        if (
+            len(positions) != _ACCEPTED_WORKING_ROW_COUNT
+            or len(positions) + _ACCEPTED_FINAL_TEST_ROW_COUNT
+            != loaded.contract.row_count
+        ):
             raise ValueError("Принятый working/final split имеет неверный размер.")
         in_working = np.zeros(loaded.contract.row_count, dtype=bool)
         in_working[positions] = True
         if int((~in_working).sum()) != _ACCEPTED_FINAL_TEST_ROW_COUNT:
             raise ValueError("Working population не должна включать final-test строки.")
-        actual_target = loaded.dataframe.iloc[positions]["DefMark"].to_numpy(dtype=np.int8)
+        actual_target = loaded.dataframe.iloc[positions]["DefMark"].to_numpy(
+            dtype=np.int8
+        )
         if not np.array_equal(actual_target, working_split.target):
-            raise ValueError("Working positions не согласованы с accepted Stage 3 evidence.")
+            raise ValueError(
+                "Working positions не согласованы с accepted Stage 3 evidence."
+            )
 
     @staticmethod
     def _feature_registry() -> FeatureRegistry:
@@ -299,29 +387,94 @@ class HistoricalDatasetProvider:
         )
         protected = (
             FeatureSpec(
-                "INN", "INN", "ИНН", "Идентификатор организации.", "protected_columns", "string", "identifier",
-                "historical_profile_v1", FeatureUsageStatus.IDENTIFIER, None, None, None, len(allowed),
+                "INN",
+                "INN",
+                "ИНН",
+                "Идентификатор организации.",
+                "protected_columns",
+                "string",
+                "identifier",
+                "historical_profile_v1",
+                FeatureUsageStatus.IDENTIFIER,
+                None,
+                None,
+                None,
+                len(allowed),
             ),
             FeatureSpec(
-                "DefMark", "DefMark", "Признак дефолта", "Целевая переменная.", "protected_columns", "int", "target",
-                "historical_profile_v1", FeatureUsageStatus.TARGET, None, None, None, len(allowed) + 1,
+                "DefMark",
+                "DefMark",
+                "Признак дефолта",
+                "Целевая переменная.",
+                "protected_columns",
+                "int",
+                "target",
+                "historical_profile_v1",
+                FeatureUsageStatus.TARGET,
+                None,
+                None,
+                None,
+                len(allowed) + 1,
             ),
             FeatureSpec(
-                "Q_B1_norm", "Q_B1_norm", "Q_B1_norm", "Закрытый reference-сигнал.", "restricted_signals", "float", "numeric",
-                "historical_profile_v1", FeatureUsageStatus.BLOCKED, "Сигнал запрещён для рабочей модели.", None, None, len(allowed) + 2,
+                "Q_B1_norm",
+                "Q_B1_norm",
+                "Q_B1_norm",
+                "Закрытый reference-сигнал.",
+                "restricted_signals",
+                "float",
+                "numeric",
+                "historical_profile_v1",
+                FeatureUsageStatus.BLOCKED,
+                "Сигнал запрещён для рабочей модели.",
+                None,
+                None,
+                len(allowed) + 2,
             ),
             FeatureSpec(
-                "Q_B2_norm", "Q_B2_norm", "Q_B2_norm", "Закрытый reference-сигнал.", "restricted_signals", "float", "numeric",
-                "historical_profile_v1", FeatureUsageStatus.BLOCKED, "Сигнал запрещён для рабочей модели.", None, None, len(allowed) + 3,
+                "Q_B2_norm",
+                "Q_B2_norm",
+                "Q_B2_norm",
+                "Закрытый reference-сигнал.",
+                "restricted_signals",
+                "float",
+                "numeric",
+                "historical_profile_v1",
+                FeatureUsageStatus.BLOCKED,
+                "Сигнал запрещён для рабочей модели.",
+                None,
+                None,
+                len(allowed) + 3,
             ),
         )
         return FeatureRegistry(
             "historical-data-final-v1",
             (*allowed, *protected),
             (
-                FeatureGroup("accepted_predictors", "Разрешённые показатели", "Признаки рабочего исторического профиля.", 0, "accepted_pipeline_v1", _ACCEPTED_FEATURE_IDS),
-                FeatureGroup("protected_columns", "Служебные столбцы", "Идентификатор и целевая переменная доступны только для чтения.", 1, "accepted_pipeline_v1", ("INN", "DefMark")),
-                FeatureGroup("restricted_signals", "Закрытые сигналы", "Сигналы не разрешены для рабочей модели.", 2, "accepted_pipeline_v1", ("Q_B1_norm", "Q_B2_norm")),
+                FeatureGroup(
+                    "accepted_predictors",
+                    "Разрешённые показатели",
+                    "Признаки рабочего исторического профиля.",
+                    0,
+                    "accepted_pipeline_v1",
+                    _ACCEPTED_FEATURE_IDS,
+                ),
+                FeatureGroup(
+                    "protected_columns",
+                    "Служебные столбцы",
+                    "Идентификатор и целевая переменная доступны только для чтения.",
+                    1,
+                    "accepted_pipeline_v1",
+                    ("INN", "DefMark"),
+                ),
+                FeatureGroup(
+                    "restricted_signals",
+                    "Закрытые сигналы",
+                    "Сигналы не разрешены для рабочей модели.",
+                    2,
+                    "accepted_pipeline_v1",
+                    ("Q_B1_norm", "Q_B2_norm"),
+                ),
             ),
         )
 
@@ -346,8 +499,12 @@ def prepare_resolved_source(
         _notify_data_progress(progress_listener, "analyzing_preparation")
         proposal = DatasetPreparationAnalyzer().analyze(report)
         return DatasetSourcePreparation(
-            source, "context_not_prepared", None,
-            snapshot=snapshot, inspection_report=report, proposal=proposal,
+            source,
+            "context_not_prepared",
+            None,
+            snapshot=snapshot,
+            inspection_report=report,
+            proposal=proposal,
         )
     provider = historical_provider or HistoricalDatasetProvider(context_authority)
     context = provider.prepare(source, progress_listener=progress_listener)
@@ -364,12 +521,17 @@ def default_preparation_draft(preparation: DatasetSourcePreparation) -> dict[str
     """Return proposal-backed UI defaults; this is not a confirmation."""
     if preparation.snapshot is None or preparation.proposal is None:
         raise ValueError("No source analysis is available for preparation.")
-    target = next((item.column_name for item in preparation.proposal.target_candidates), "")
-    identifier = next((item.column_name for item in preparation.proposal.identifier_candidates), "")
+    target = next(
+        (item.column_name for item in preparation.proposal.target_candidates), ""
+    )
+    identifier = next(
+        (item.column_name for item in preparation.proposal.identifier_candidates), ""
+    )
     statuses = {
         name: (
             ConfirmedColumnStatus.MODEL_ALLOWED.value
-            if predictor_compatibility_error(preparation.snapshot.dataframe[name]) is None
+            if predictor_compatibility_error(preparation.snapshot.dataframe[name])
+            is None
             else ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value
         )
         for name in preparation.snapshot.physical_headers
@@ -392,10 +554,14 @@ def default_preparation_draft(preparation: DatasetSourcePreparation) -> dict[str
             target_column=confirmation.target_column,
             positive_class=confirmation.positive_class,
             identifier_column=confirmation.identifier_column,
-            column_statuses={item.column_name: item.status.value for item in confirmation.column_decisions},
+            column_statuses={
+                item.column_name: item.status.value
+                for item in confirmation.column_decisions
+            },
             blocked_reasons={
                 item.column_name: item.blocked_reason
-                for item in confirmation.column_decisions if item.blocked_reason is not None
+                for item in confirmation.column_decisions
+                if item.blocked_reason is not None
             },
         )
     return draft
@@ -409,7 +575,11 @@ def confirm_dataset_preparation(
     context_authority: PreparedDatasetContextAuthority | None = None,
 ) -> DatasetSourcePreparation:
     """Materialize an immutable backend confirmation from the explicit UI draft."""
-    snapshot, report, proposal = preparation.snapshot, preparation.inspection_report, preparation.proposal
+    snapshot, report, proposal = (
+        preparation.snapshot,
+        preparation.inspection_report,
+        preparation.proposal,
+    )
     if snapshot is None or report is None or proposal is None:
         raise ValueError("No source analysis is available for confirmation.")
     if not draft.get("population_policy_acknowledged", False):
@@ -425,18 +595,38 @@ def confirm_dataset_preparation(
     reasons = dict(draft.get("blocked_reasons") or {})
     decisions = []
     for name in snapshot.physical_headers:
-        status = ConfirmedColumnStatus.TARGET if name == target else (
-            ConfirmedColumnStatus.IDENTIFIER if name == identifier else ConfirmedColumnStatus(
-                statuses.get(name, ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value)
+        status = (
+            ConfirmedColumnStatus.TARGET
+            if name == target
+            else (
+                ConfirmedColumnStatus.IDENTIFIER
+                if name == identifier
+                else ConfirmedColumnStatus(
+                    statuses.get(name, ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value)
+                )
             )
         )
-        decisions.append(ConfirmedColumnDecision(name, status, reasons.get(name) if status is ConfirmedColumnStatus.BLOCKED else None))
+        decisions.append(
+            ConfirmedColumnDecision(
+                name,
+                status,
+                reasons.get(name) if status is ConfirmedColumnStatus.BLOCKED else None,
+            )
+        )
     report_digest = inspection_report_hash(report)
     confirmation = ConfirmedDatasetPreparation(
-        "1", snapshot.fingerprint, report_digest, proposal_hash(proposal, report_digest),
-        proposal.policy_id, proposal.policy_version, proposal.policy_hash,
-        str(draft.get("dataset_name") or preparation.source.file_name), target,
-        draft.get("positive_class"), identifier, tuple(decisions),
+        "1",
+        snapshot.fingerprint,
+        report_digest,
+        proposal_hash(proposal, report_digest),
+        proposal.policy_id,
+        proposal.policy_version,
+        proposal.policy_hash,
+        str(draft.get("dataset_name") or preparation.source.file_name),
+        target,
+        draft.get("positive_class"),
+        identifier,
+        tuple(decisions),
         PopulationPolicyV1(draft.get("population_policy")),
     )
     _notify_data_progress(progress_listener, "materializing_dataset")
@@ -445,17 +635,29 @@ def confirm_dataset_preparation(
     ).prepare(snapshot, report, proposal, confirmation)
     _notify_data_progress(progress_listener, "prepared_context_ready")
     return DatasetSourcePreparation(
-        preparation.source, "confirmed_context_prepared", context,
-        snapshot=snapshot, inspection_report=report, proposal=proposal,
-        confirmation=confirmation, manifest=manifest,
+        preparation.source,
+        "confirmed_context_prepared",
+        context,
+        snapshot=snapshot,
+        inspection_report=report,
+        proposal=proposal,
+        confirmation=confirmation,
+        manifest=manifest,
     )
 
 
-def reopen_dataset_preparation(preparation: DatasetSourcePreparation) -> DatasetSourcePreparation:
+def reopen_dataset_preparation(
+    preparation: DatasetSourcePreparation,
+) -> DatasetSourcePreparation:
     """Drop an active arbitrary context before its confirmation is edited."""
     if preparation.preparation_status != "confirmed_context_prepared":
         raise ValueError("Only a confirmed preparation can be edited.")
-    return replace(preparation, preparation_status="context_not_prepared", context=None, manifest=None)
+    return replace(
+        preparation,
+        preparation_status="context_not_prepared",
+        context=None,
+        manifest=None,
+    )
 
 
 def create_runtime(
@@ -467,20 +669,46 @@ def create_runtime(
 ) -> PrototypeRuntime:
     """Wire existing model, planning, application, persistence and comparison services."""
     component_factories = (CatBoostFactory(), XGBoostFactory(), LightGBMFactory())
-    mean_factory = GBDTMeanFactory({factory.model_id: factory for factory in component_factories})
-    factories = {factory.model_id: factory for factory in (*component_factories, mean_factory)}
+    mean_factory = GBDTMeanFactory(
+        {factory.model_id: factory for factory in component_factories}
+    )
+    factories = {
+        factory.model_id: factory for factory in (*component_factories, mean_factory)
+    }
     registry = ModelRegistry()
-    for spec in (CATBOOST_MODEL_SPEC, XGBOOST_MODEL_SPEC, LIGHTGBM_MODEL_SPEC, GBDT_MEAN_MODEL_SPEC):
+    for spec in (
+        CATBOOST_MODEL_SPEC,
+        XGBOOST_MODEL_SPEC,
+        LIGHTGBM_MODEL_SPEC,
+        GBDT_MEAN_MODEL_SPEC,
+    ):
         registry.register(spec)
     plugin_registry = build_builtin_model_plugin_registry()
+    persistence_provider_registry = builtin_gbdt_persistence_providers(
+        plugin_registry.list()
+    )
     context_authority = PreparedDatasetContextAuthority()
-    store_root = Path(artifact_root) if artifact_root is not None else _repository_root() / ".streamlit-artifacts"
+    store_root = (
+        Path(artifact_root)
+        if artifact_root is not None
+        else _repository_root() / ".streamlit-artifacts"
+    )
     code_version = "streamlit-prototype-v1"
     artifact_store = ExperimentArtifactStore(store_root)
     model_version_store = ModelVersionStore(
         store_root / "model_versions",
         code_version=code_version,
-        model_specs={spec.model_id: spec for spec in (CATBOOST_MODEL_SPEC, XGBOOST_MODEL_SPEC, LIGHTGBM_MODEL_SPEC, GBDT_MEAN_MODEL_SPEC)},
+        model_specs={
+            spec.model_id: spec
+            for spec in (
+                CATBOOST_MODEL_SPEC,
+                XGBOOST_MODEL_SPEC,
+                LIGHTGBM_MODEL_SPEC,
+                GBDT_MEAN_MODEL_SPEC,
+            )
+        },
+        model_plugin_registry=plugin_registry,
+        persistence_provider_registry=persistence_provider_registry,
     )
     final_model_training_service = FinalModelTrainingService(
         experiment_artifact_store=artifact_store,
@@ -488,11 +716,14 @@ def create_runtime(
         model_registry=registry,
         model_factories=factories,
         code_version=code_version,
+        model_plugin_registry=plugin_registry,
     )
-    runtime_configuration, interpreter_client, outbound_policy = _result_interpreter_wiring(
-        environment=os.environ if environment is None else environment,
-        secrets=secrets,
-        factories=result_interpreter_factories,
+    runtime_configuration, interpreter_client, outbound_policy = (
+        _result_interpreter_wiring(
+            environment=os.environ if environment is None else environment,
+            secrets=secrets,
+            factories=result_interpreter_factories,
+        )
     )
     integration_workflow_service = IntegrationWorkflowService(
         final_model_training_service=final_model_training_service,
@@ -528,7 +759,9 @@ def _result_interpreter_wiring(
     environment: Mapping[str, str],
     secrets: Mapping[str, Any] | None,
     factories: Mapping[str, Callable[[str, str], Any]] | None,
-) -> tuple[ResultInterpreterRuntimeConfiguration, Any | None, RedactedV1OutboundPolicy | None]:
+) -> tuple[
+    ResultInterpreterRuntimeConfiguration, Any | None, RedactedV1OutboundPolicy | None
+]:
     """Resolve external interpretation exclusively in the composition root."""
     policy = str(environment.get("KOMUS_EXTERNAL_DATA_POLICY", "")).strip()
     if not policy or policy == "DISABLED":
@@ -539,28 +772,52 @@ def _result_interpreter_wiring(
     provider = str(environment.get("KOMUS_RESULT_INTERPRETER_PROVIDER", "")).strip()
     if not provider:
         return ResultInterpreterRuntimeConfiguration(policy_mode=policy), None, None
-    provider_registry = dict(factories or {"openai": _openai_result_interpreter_factory})
+    provider_registry = dict(
+        factories or {"openai": _openai_result_interpreter_factory}
+    )
     factory = provider_registry.get(provider)
     if factory is None:
-        return ResultInterpreterRuntimeConfiguration(
-            policy_mode=policy, provider_configured=True,
-        ), None, None
+        return (
+            ResultInterpreterRuntimeConfiguration(
+                policy_mode=policy,
+                provider_configured=True,
+            ),
+            None,
+            None,
+        )
 
     model = str(environment.get("KOMUS_RESULT_INTERPRETER_MODEL", "")).strip()
     if not model:
-        return ResultInterpreterRuntimeConfiguration(
-            policy_mode=policy, provider_configured=True, provider_registered=True,
-        ), None, None
-    credential = _runtime_secret("OPENAI_API_KEY", secrets=secrets, environment=environment)
+        return (
+            ResultInterpreterRuntimeConfiguration(
+                policy_mode=policy,
+                provider_configured=True,
+                provider_registered=True,
+            ),
+            None,
+            None,
+        )
+    credential = _runtime_secret(
+        "OPENAI_API_KEY", secrets=secrets, environment=environment
+    )
     if not credential:
-        return ResultInterpreterRuntimeConfiguration(
-            policy_mode=policy, provider_configured=True, provider_registered=True,
-            model_configured=True,
-        ), None, None
+        return (
+            ResultInterpreterRuntimeConfiguration(
+                policy_mode=policy,
+                provider_configured=True,
+                provider_registered=True,
+                model_configured=True,
+            ),
+            None,
+            None,
+        )
     return (
         ResultInterpreterRuntimeConfiguration(
-            policy_mode=policy, provider_configured=True, provider_registered=True,
-            model_configured=True, credentials_configured=True,
+            policy_mode=policy,
+            provider_configured=True,
+            provider_registered=True,
+            model_configured=True,
+            credentials_configured=True,
         ),
         factory(model, credential),
         RedactedV1OutboundPolicy(),
@@ -587,18 +844,23 @@ def _streamlit_secrets() -> Mapping[str, Any] | None:
     """Best-effort secrets access: a missing secrets file must not prevent launch."""
     try:
         import streamlit as st
+
         return st.secrets
     except Exception:
         return None
 
 
-def _openai_result_interpreter_factory(model: str, credential: str) -> OpenAIResultInterpreterClient:
+def _openai_result_interpreter_factory(
+    model: str, credential: str
+) -> OpenAIResultInterpreterClient:
     from openai import OpenAI
 
     return OpenAIResultInterpreterClient(model=model, client=OpenAI(api_key=credential))
 
 
-def validate_supported_protocol(values: Mapping[str, Any], protocol: SupportedProtocol = SUPPORTED_PROTOCOL) -> str | None:
+def validate_supported_protocol(
+    values: Mapping[str, Any], protocol: SupportedProtocol = SUPPORTED_PROTOCOL
+) -> str | None:
     """Return a user-facing validation message for the one supported Pipeline V1 protocol."""
     if (
         values.get("protocol_id") != protocol.protocol_id
@@ -622,7 +884,9 @@ def _load_accepted_working_split() -> AcceptedWorkingSplit:
             working_indices = np.asarray(evidence["working_indices"], dtype=np.int64)
             target = np.asarray(evidence["target"], dtype=np.int8)
     except (KeyError, OSError, ValueError) as error:
-        raise ValueError("Stage 3 evidence не содержит валидные working row positions.") from error
+        raise ValueError(
+            "Stage 3 evidence не содержит валидные working row positions."
+        ) from error
     if (
         working_indices.ndim != 1
         or len(working_indices) != _ACCEPTED_WORKING_ROW_COUNT
@@ -630,9 +894,13 @@ def _load_accepted_working_split() -> AcceptedWorkingSplit:
         or _sha256_int64(working_indices) != _ACCEPTED_WORKING_INDEX_SHA256
         or target.shape != working_indices.shape
     ):
-        raise ValueError("Working row positions не соответствуют принятой Stage 1 identity.")
+        raise ValueError(
+            "Working row positions не соответствуют принятой Stage 1 identity."
+        )
     if working_indices.min() < 0 or working_indices.max() >= _ACCEPTED_FULL_ROW_COUNT:
-        raise ValueError("Working row positions выходят за границы accepted Data_final.")
+        raise ValueError(
+            "Working row positions выходят за границы accepted Data_final."
+        )
     return AcceptedWorkingSplit(tuple(working_indices.tolist()), target)
 
 
