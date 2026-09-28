@@ -619,3 +619,84 @@ class ModelVersionTests(unittest.TestCase):
                 configuration_record=record,
             )
         self.assertFalse(store_root.exists() and any(store_root.iterdir()))
+
+    def test_v2_rejects_cryptographically_consistent_duplicate_identity_tampering(
+        self,
+    ) -> None:
+        for label, mutate in (
+            (
+                "feature-order",
+                lambda metadata: metadata.__setitem__("feature_ids", ["f_b", "f_a"]),
+            ),
+            (
+                "adapter",
+                lambda metadata: metadata.__setitem__("adapter_version", "wrong"),
+            ),
+            (
+                "partition",
+                lambda metadata: metadata.__setitem__("partition_role", "full"),
+            ),
+            ("model", lambda metadata: metadata.__setitem__("model_id", "wrong-model")),
+            (
+                "model-version",
+                lambda metadata: metadata.__setitem__("model_version", "wrong-version"),
+            ),
+        ):
+            with self.subTest(label=label):
+                store, saved = self._saved_v2_catboost(label)
+                tampered_id = self._rewrite_v2_metadata(
+                    store, saved.model_version_id, mutate
+                )
+                with self.assertRaisesRegex(ValueError, "metadata or manifest"):
+                    store.load(tampered_id)
+
+    def _saved_v2_catboost(self, suffix: str = ""):
+        plugins = build_builtin_model_plugin_registry()
+        resolved = ModelConfigurationService(plugins).resolve(
+            model_id="catboost",
+            mode="ADVANCED",
+            user_overrides={"/estimator_params/depth": 6},
+        )
+        record = ModelConfigurationRecord.from_resolved(
+            resolved, plugins.get("catboost")
+        )
+        config = replace(
+            self.config, model_parameters=resolved.resolved_parameters_dict()
+        )
+        store = ModelVersionStore(
+            Path(self.temp.name) / f"models-v2-tamper-{suffix}",
+            code_version="code-v1",
+            model_specs={"catboost": CATBOOST_MODEL_SPEC},
+            model_plugin_registry=plugins,
+        )
+        adapter = plugins.get("catboost").factory.create(
+            dict(config.model_parameters), config.seed
+        )
+        adapter.fit(self.frame.loc[:, ["f_a", "f_b"]], self.frame["target"])
+        saved = store.save(
+            experiment_artifact_id="v2-tamper",
+            dataset_contract=self.contract,
+            config=config,
+            feature_specs=self.registry.resolve(config.feature_ids),
+            feature_registry=self.registry,
+            population=self.population,
+            adapter=adapter,
+            source_file_sha256=self.loaded.source_file_sha256,
+            configuration_record=record,
+        )
+        return store, saved
+
+    @staticmethod
+    def _rewrite_v2_metadata(store, model_version_id, mutate):
+        directory = store.root / model_version_id
+        metadata = store._read_json(directory / "metadata.json")
+        mutate(metadata)
+        replacement_id = store._version_id(metadata)
+        store._write_json(directory / "metadata.json", metadata)
+        store._write_json(
+            directory / "manifest.json",
+            store._manifest_v2(replacement_id, directory, metadata),
+        )
+        replacement = store.root / replacement_id
+        directory.replace(replacement)
+        return replacement_id

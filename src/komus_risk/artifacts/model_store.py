@@ -722,11 +722,24 @@ class ModelVersionStore:
         config = ExperimentConfig.from_dict(value["config"])
         dataset = DatasetContract.from_dict(value["dataset_contract"])
         specs = tuple(FeatureSpec.from_dict(item) for item in value["feature_specs"])
+        record = ModelConfigurationRecord.from_dict(value["configuration_record"])
+        population_data = value["population"]
+        population = EvaluationPopulation(
+            tuple(population_data["row_positions"]),
+            population_data["population_id"],
+            population_data["population_fingerprint"],
+            population_data["partition_role"],
+        )
         if (
             value["dataset_fingerprint"] != dataset.dataset_fingerprint
             or value["config_hash"] != config.config_hash
             or value["model_id"] != config.model_id
             or value["model_version"] != config.model_version
+            or value["model_id"] != record.model_id
+            or value["model_version"] != record.model_version
+            or value["adapter_version"] != record.adapter_version
+            or value["feature_ids"] != list(config.feature_ids)
+            or value["feature_ids"] != [spec.feature_id for spec in specs]
             or value["feature_set_hash"] != config.feature_set_hash
             or value["feature_columns"] != [spec.column_name for spec in specs]
             or value["feature_registry"]
@@ -734,6 +747,7 @@ class ModelVersionStore:
                 "registry_id": dataset.feature_registry_id,
                 "registry_hash": dataset.feature_registry_hash,
             }
+            or value["partition_role"] != population.partition_role
         ):
             raise ValueError("ModelVersion V2 metadata is internally inconsistent.")
 
