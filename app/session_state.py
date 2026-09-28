@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, MutableMapping
+from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,8 +10,10 @@ from komus_risk.application import RESULT_INTERPRETER_ROLES, RunExperimentReques
 from komus_risk.contracts import FeatureUsageStatus
 from komus_risk.planning import ExperimentPlan, PlanningRequestMetadata
 
-
 _DEFAULTS = {
+    "presentation_surface": "HOME",
+    "analysis_started": False,
+    "new_analysis_confirmation_pending": False,
     "current_step": 0,
     "dataset_context": None,
     "dataset_source_preparation": None,
@@ -49,6 +51,22 @@ _DEFAULTS = {
     "result_interpreter_errors_by_role": None,
 }
 
+_ANALYSIS_WIDGET_KEY_PREFIXES = (
+    "prototype_",
+    "selected-prediction-row-widget",
+    "step-navigator",
+)
+_ANALYSIS_TRANSIENT_KEYS = {
+    "prototype_source_control_locator",
+    "prototype_source_kind",
+    "prototype_staged_dataset_upload",
+    "prototype_browser_dataset_upload",
+    "prototype_source_error",
+    "prototype_source_recheck_invalid",
+    "prototype_staged_inference_upload",
+    "prototype_browser_inference_upload",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class ResultInterpreterSessionResponse:
@@ -75,6 +93,112 @@ def initialize(state: MutableMapping[str, Any]) -> None:
         int(state.get("current_step", 0)),
         4 if state.get("loaded_artifact") is not None else 0,
     )
+
+
+def open_home(state: MutableMapping[str, Any]) -> None:
+    """Switch to the presentation Home without touching analysis state."""
+    state["presentation_surface"] = "HOME"
+    state["new_analysis_confirmation_pending"] = False
+
+
+def continue_current_analysis(state: MutableMapping[str, Any]) -> None:
+    """Return from Home to the exact in-session wizard position."""
+    state["presentation_surface"] = "ANALYSIS"
+    state["new_analysis_confirmation_pending"] = False
+
+
+def has_meaningful_analysis(state: Mapping[str, Any]) -> bool:
+    """Identify work that must never be discarded without confirmation."""
+    if state.get("prototype_staged_dataset_upload") is not None:
+        return True
+    locator = state.get("prototype_source_control_locator")
+    if isinstance(locator, tuple) and len(locator) == 2 and bool(locator[1]):
+        return True
+    if state.get("dataset_source_preparation") is not None or state.get("dataset_context") is not None:
+        return True
+    if any(
+        state.get(key) is not None
+        for key in (
+            "dataset_preparation_snapshot",
+            "dataset_preparation_report",
+            "dataset_preparation_proposal",
+            "dataset_preparation_confirmation",
+            "dataset_preparation_manifest",
+            "planning_request_snapshot",
+            "experiment_plan",
+            "loaded_artifact",
+            "comparison_result",
+            "last_successful_artifact_id",
+            "loaded_model_version",
+            "active_model_version_id",
+            "inference_snapshot",
+            "prediction_batch",
+            "selected_prediction_row_id",
+            "local_explanation_evidence",
+            "result_interpreter_request",
+            "result_interpreter_response",
+            "result_interpreter_dispatch_receipt",
+            "result_interpreter_error_code",
+        )
+    ):
+        return True
+    if int(state.get("current_step", 0)) > 0 or state.get("selected_model_id") is not None:
+        return True
+    if state.get("selected_feature_ids", ()) or state.get("experiment_inputs", {}):
+        return True
+    return any(
+        bool(state.get(key))
+        for key in (
+            "result_interpreter_requests_by_role",
+            "result_interpreter_responses_by_role",
+            "result_interpreter_receipts_by_role",
+            "result_interpreter_errors_by_role",
+        )
+    )
+
+
+def request_new_analysis(state: MutableMapping[str, Any]) -> bool:
+    """Request the sole destructive transition; return whether confirmation is needed."""
+    if has_meaningful_analysis(state):
+        state["new_analysis_confirmation_pending"] = True
+        return True
+    _start_new_analysis(state)
+    return False
+
+
+def cancel_new_analysis(state: MutableMapping[str, Any]) -> None:
+    """Dismiss the reset confirmation without modifying analysis work."""
+    state["new_analysis_confirmation_pending"] = False
+
+
+def confirm_new_analysis(state: MutableMapping[str, Any]) -> None:
+    """Clear only in-session analysis values, then open a clean Data step."""
+    _start_new_analysis(state)
+
+
+def _start_new_analysis(state: MutableMapping[str, Any]) -> None:
+    _cleanup_controlled_uploads(state)
+    for key, value in _DEFAULTS.items():
+        state[key] = {} if isinstance(value, dict) else value
+    for key in tuple(state):
+        if key in _ANALYSIS_TRANSIENT_KEYS or key.startswith(_ANALYSIS_WIDGET_KEY_PREFIXES):
+            state.pop(key, None)
+    state["presentation_surface"] = "ANALYSIS"
+    state["analysis_started"] = True
+    state["new_analysis_confirmation_pending"] = False
+
+
+def _cleanup_controlled_uploads(state: MutableMapping[str, Any]) -> None:
+    """Release only session-owned staged files, never a user-selected local path."""
+    from app.upload_staging import StagedUpload, cleanup_staged_upload
+
+    for key in (
+        "prototype_staged_dataset_upload",
+        "prototype_staged_inference_upload",
+    ):
+        staged = state.get(key)
+        if isinstance(staged, StagedUpload):
+            cleanup_staged_upload(staged)
 
 
 def navigate_to_step(state: MutableMapping[str, Any], step: int) -> None:

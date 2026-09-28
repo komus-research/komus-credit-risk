@@ -23,24 +23,30 @@ from app.session_state import (
     apply_feature_widget_selection,
     apply_group_widget_selection,
     can_run,
+    cancel_new_analysis,
+    confirm_new_analysis,
+    continue_current_analysis,
+    has_meaningful_analysis,
     initialize,
     navigate_to_step,
+    open_home,
+    request_new_analysis,
+    return_to_experiment,
     run_request_from_snapshot,
     save_artifact,
     save_plan,
+    set_dataset_source_preparation,
+    set_experiment_inputs,
+    set_inference_source_path,
     set_loaded_model_version,
     set_local_explanation_evidence,
+    set_prediction_batch,
     set_role_result_interpretation_error,
     set_role_result_interpretation_success,
     set_role_result_interpreter_request,
-    set_inference_source_path,
-    set_prediction_batch,
-    set_selected_prediction_row_id,
-    set_dataset_source_preparation,
-    set_experiment_inputs,
     set_selected_model_id,
+    set_selected_prediction_row_id,
     synchronize_feature_widgets,
-    return_to_experiment,
 )
 from app.upload_staging import (
     EmptyUploadError,
@@ -51,11 +57,10 @@ from app.upload_staging import (
     stage_browser_upload,
 )
 from komus_risk.application import RESULT_INTERPRETER_ROLES
+from komus_risk.data import TabularReader, TabularReadError
 from komus_risk.planning import PlanningRequestMetadata
-from komus_risk.data import TabularReadError, TabularReader
 from komus_risk.preparation import DatasetPreparationError
 from komus_risk.preparation.predictor_compatibility import predictor_compatibility_error
-
 
 _DATA_PROGRESS_LABELS = {
     "reading_source": "Чтение файла",
@@ -108,6 +113,10 @@ _STEP_NAVIGATION_LABELS = ("Данные", "Признаки", "Алгоритм
 _STEP_NAVIGATION_CONTAINER_KEY = "step-navigator"
 _STAGED_INFERENCE_UPLOAD_KEY = "prototype_staged_inference_upload"
 _BROWSER_INFERENCE_UPLOAD_WIDGET_KEY = "prototype_browser_inference_upload"
+_APP_ROOT = Path(__file__).resolve().parent
+_AXION_LOGO_PATH = _APP_ROOT / "assets" / "brand" / "logo-primary-dark.png"
+_AXION_APP_ICON_PATH = _APP_ROOT / "assets" / "brand" / "app-icon-1024.png"
+_HOME_HERO_PATH = _APP_ROOT / "assets" / "images" / "home-hero-banner.webp"
 
 
 @st.cache_resource
@@ -116,13 +125,164 @@ def _runtime():
 
 
 def main() -> None:
-    st.set_page_config(page_title="KOMUS · Prototype V1", layout="wide")
+    st.set_page_config(page_title="AXION", page_icon=str(_AXION_APP_ICON_PATH), layout="wide")
     initialize(st.session_state)
+    _apply_axion_shell_styles()
+    _render_axion_sidebar()
+    if st.session_state.presentation_surface == "HOME":
+        _render_home()
+        return
+    _render_analysis()
+
+
+def _apply_axion_shell_styles() -> None:
+    """Apply the approved dark AXION shell with Streamlit-native controls."""
+    st.html(
+        """
+        <style>
+        :root { --axion-emerald: #00e5c2; --axion-teal: #00b894; --axion-bg: #0b1417;
+                --axion-panel: #0e2025; --axion-border: #244147; --axion-text: #eaf6f4; --axion-muted: #9eb7b8; }
+        .stApp { background: radial-gradient(circle at 56% -12%, #103238 0, var(--axion-bg) 40%) !important;
+                 color: var(--axion-text); }
+        [data-testid="stHeader"] { background: transparent !important; }
+        [data-testid="stSidebar"] { background: linear-gradient(180deg, #07181c, #091519) !important;
+                                   border-right: 1px solid var(--axion-border); }
+        [data-testid="stSidebar"] [data-testid="stImage"] img { margin: .45rem 0 1.2rem; }
+        [data-testid="stSidebar"] .stButton > button { justify-content: flex-start; border: 0;
+            background: transparent; color: var(--axion-text); min-height: 2.75rem; }
+        [data-testid="stSidebar"] .stButton > button:hover { background: #103238; color: var(--axion-emerald); }
+        [data-testid="stSidebar"] .stButton > button[kind="primary"] { background: rgba(0, 229, 194, .12);
+            color: var(--axion-emerald); border-left: 3px solid var(--axion-emerald); border-radius: 0; }
+        .stButton > button[kind="primary"] { background: linear-gradient(90deg, var(--axion-teal), var(--axion-emerald));
+            border: 0; color: #06201e; font-weight: 700; }
+        .stButton > button { border-color: var(--axion-border); }
+        .stTextInput input { background: #0e2025; border-color: var(--axion-border); color: var(--axion-text); }
+        .stTextInput input:disabled { opacity: .72; }
+        .axion-kicker { color: var(--axion-emerald); font-size: .76rem; font-weight: 700; letter-spacing: .09em;
+            text-transform: uppercase; margin-bottom: .25rem; }
+        .axion-page-title { font-size: 2rem; font-weight: 700; color: var(--axion-text); margin: 0; }
+        .axion-subtitle, .axion-muted { color: var(--axion-muted); }
+        .axion-card { min-height: 6.1rem; background: linear-gradient(135deg, #10262b, #0c1d22);
+            border: 1px solid var(--axion-border); border-radius: .7rem; padding: .9rem 1rem; }
+        .axion-card-label { color: #bfd2d2; font-size: .86rem; }
+        .axion-card-value { color: var(--axion-text); font-size: 1.65rem; font-weight: 700; line-height: 1.1; margin-top: .35rem; }
+        .axion-card-note { color: var(--axion-muted); font-size: .76rem; margin-top: .3rem; }
+        .axion-panel { background: rgba(10, 30, 35, .88); border: 1px solid var(--axion-border);
+            border-radius: .75rem; padding: 1rem 1.1rem; margin: .55rem 0; }
+        .axion-panel-title { color: var(--axion-text); font-size: 1.05rem; font-weight: 650; margin-bottom: .3rem; }
+        .axion-empty { color: var(--axion-muted); font-size: .92rem; }
+        .axion-session-badge { color: var(--axion-emerald); font-size: .75rem; font-weight: 700; text-transform: uppercase; }
+        </style>
+        """
+    )
+
+
+def _render_axion_sidebar() -> None:
+    with st.sidebar:
+        st.image(str(_AXION_LOGO_PATH), use_container_width=True)
+        is_home = st.session_state.presentation_surface == "HOME"
+        st.button("⌂  Главная", key="axion-nav-home", type="primary" if is_home else "secondary", use_container_width=True, on_click=open_home, args=(st.session_state,))
+        st.button("⊕  Новый анализ", key="axion-nav-new-analysis", use_container_width=True, on_click=_request_new_analysis_from_ui)
+        st.button("▣  Модели", key="axion-nav-models", disabled=True, use_container_width=True)
+        st.button("▤  Проекты / История", key="axion-nav-projects", disabled=True, use_container_width=True)
+        st.divider()
+        st.button("⚙  Настройки", key="axion-nav-settings", disabled=True, use_container_width=True)
+        st.caption("Недоступные разделы будут доступны позже.")
+
+
+def _request_new_analysis_from_ui() -> None:
+    request_new_analysis(st.session_state)
+
+
+def _render_home() -> None:
+    header, search, action = st.columns((1.55, 1.55, .72), vertical_alignment="bottom")
+    with header:
+        st.html('<div class="axion-kicker">Аналитическая платформа</div><div class="axion-page-title">Главная</div><div class="axion-subtitle">Проекты, модели и последние действия</div>')
+    with search:
+        st.text_input("Поиск", placeholder="Поиск проектов и моделей...", disabled=True, label_visibility="collapsed")
+    with action:
+        st.button("＋  Новый анализ", key="axion-home-new-analysis", type="primary", use_container_width=True, on_click=_request_new_analysis_from_ui)
+    st.image(str(_HOME_HERO_PATH), use_container_width=True)
+    _render_home_summary_cards()
+    _render_quick_start()
+    _render_home_status_panels()
+    _render_recent_projects_empty_state()
+    _render_saved_session_model()
+    _render_new_analysis_confirmation()
+
+
+def _render_home_summary_cards() -> None:
+    labels = ("Проектов", "Сохранённых моделей", "Проектов в работе", "Завершённых проектов")
+    columns = st.columns(4)
+    for column, label in zip(columns, labels, strict=True):
+        with column:
+            st.html(f'<div class="axion-card"><div class="axion-card-label">{label}</div><div class="axion-card-value">—</div><div class="axion-card-note">Сводная история пока не подключена</div></div>')
+
+
+def _render_quick_start() -> None:
+    st.html('<div class="axion-panel"><div class="axion-panel-title">Быстрый старт</div>')
+    first, second, third = st.columns(3)
+    with first:
+        st.button("Новый анализ", key="axion-quick-start-new", type="primary", use_container_width=True, on_click=_request_new_analysis_from_ui)
+        st.caption("Загрузить данные и начать новый анализ")
+    with second:
+        st.button("Открыть модель", key="axion-quick-start-open-model", disabled=True, use_container_width=True)
+        st.caption("Каталог моделей будет доступен позже")
+    with third:
+        st.button("Продолжить последний проект", key="axion-quick-start-latest", disabled=True, use_container_width=True)
+        st.caption("История проектов пока не подключена")
+    if has_meaningful_analysis(st.session_state):
+        st.button("Продолжить текущий анализ", key="axion-continue-current", on_click=continue_current_analysis, args=(st.session_state,))
+        st.caption("Вернуться к текущему шагу анализа в этой сессии")
+    st.html("</div>")
+
+
+def _render_home_status_panels() -> None:
+    running, attention = st.columns(2)
+    with running:
+        st.html('<div class="axion-panel"><div class="axion-panel-title">Выполняется сейчас</div><div class="axion-empty">Сейчас нет фоновых операций</div></div>')
+    with attention:
+        st.html('<div class="axion-panel"><div class="axion-panel-title">Требует внимания</div><div class="axion-empty">Нет уведомлений, требующих внимания</div></div>')
+
+
+def _render_recent_projects_empty_state() -> None:
+    st.html('<div class="axion-panel"><div class="axion-panel-title">Последние проекты</div><div class="axion-empty">История проектов пока не подключена</div></div>')
+
+
+def _render_saved_session_model() -> None:
+    loaded = st.session_state.loaded_model_version
+    if loaded is None:
+        st.html('<div class="axion-panel"><div class="axion-panel-title">Сохранённые модели</div><div class="axion-empty">В текущей сессии нет загруженной модели</div></div>')
+        return
+    summary = loaded.summary
+    runtime = _runtime()
+    try:
+        display_name = runtime.model_registry.get(summary.model_id).display_name_ru
+    except KeyError:
+        display_name = "Загруженная модель"
+    st.html('<div class="axion-panel"><div class="axion-panel-title">Сохранённые модели</div><div class="axion-session-badge">Текущая сессия</div>' f'<div>{display_name} · версия {summary.model_version} · признаков: {len(summary.feature_ids)}</div>' f'<div class="axion-muted">ID версии: {summary.model_version_id}</div></div>')
+    artifact = st.session_state.loaded_artifact
+    if getattr(artifact, "artifact_id", None) == summary.experiment_artifact_id:
+        st.button("К результату", key="axion-session-model-result", on_click=navigate_to_step, args=(st.session_state, 4))
+
+
+def _render_new_analysis_confirmation() -> None:
+    if not st.session_state.new_analysis_confirmation_pending:
+        return
+    st.warning("Начать новый анализ? Текущие несохранённые данные и настройки этой сессии будут очищены.")
+    cancel, confirm = st.columns(2)
+    with cancel:
+        st.button("Отмена", key="axion-cancel-new-analysis", use_container_width=True, on_click=cancel_new_analysis, args=(st.session_state,))
+    with confirm:
+        st.button("Начать новый анализ", key="axion-confirm-new-analysis", type="primary", use_container_width=True, on_click=confirm_new_analysis, args=(st.session_state,))
+
+
+def _render_analysis() -> None:
+    """Keep the accepted wizard intact under the AXION navigation shell."""
     runtime = _runtime()
     step = st.session_state.current_step
-    st.title("KOMUS · Прототип кредитного скоринга")
+    st.title("Анализ")
     _render_step_navigation()
-
     if step == 0:
         _render_data_step(runtime)
     elif step == 1:
@@ -482,7 +642,6 @@ def _render_dataset_onboarding(
     preparation: Any, *, context_authority: Any | None = None
 ) -> None:
     """Render one explicit confirmation decision at a time for a checked source."""
-    snapshot = preparation.snapshot
     report = preparation.inspection_report
     state = st.session_state
     draft = _onboarding_draft(preparation)
