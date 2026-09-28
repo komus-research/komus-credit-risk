@@ -895,3 +895,9 @@ Review closure:
 - manual external E2E на synthetic/non-client input выполнен для `sales_manager` и `lawyer`; оба вызова успешны, ответы различаются при одном ML result, redacted payload не содержит identifier/row identity/raw values.
 
 Статус C2c: **ACCEPT Stage III-C2c**.
+
+## D-086 — нативная основа runtime AXION (N0)
+
+Будущий product runtime AXION: `React + TypeScript + Vite → FastAPI → native application/session layer → existing Python application/core`.
+
+Нативная миграция начата, но N0 — только foundation: канонический переход ещё не выполнен, а Home/N1 ещё не реализован. FastAPI остаётся только публичным HTTP adapter и не владеет semantics анализа. Native session state process-local и владеет только временным состоянием workflow; сохраняемые ExperimentArtifact и ModelVersion остаются вне него. Streamlit остаётся frozen compatibility frontend до достижения native functional parity; N0 его не удаляет и не изменяет.

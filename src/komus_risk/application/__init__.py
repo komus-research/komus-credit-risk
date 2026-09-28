@@ -22,6 +22,12 @@ from .local_explanation import (
 )
 from .model_inference import ModelInferenceService, PredictionBatch, PredictionRow
 from .model_training import FinalModelTrainingService
+from .native_session import (
+    NativeSessionSnapshot,
+    NativeSessionStore,
+    NewAnalysisResult,
+    NewAnalysisStatus,
+)
 from .result_interpreter import (
     RESULT_INTERPRETER_ROLES,
     InterpreterFeatureFact,
@@ -44,6 +50,10 @@ __all__ = [
     "LocalExplanationService",
     "LocalFeatureContribution",
     "ModelInferenceService",
+    "NativeSessionSnapshot",
+    "NativeSessionStore",
+    "NewAnalysisResult",
+    "NewAnalysisStatus",
     "OutboundInterpreterPolicy",
     "PolicyBoundResultInterpreterClient",
     "PredictionBatch",

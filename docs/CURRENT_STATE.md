@@ -1003,3 +1003,9 @@ Reviewer verdict: **ACCEPT Stage III-C2b**.
 Manual external E2E на synthetic/non-client input выполнен для `sales_manager` и `lawyer`: оба provider calls успешны, ответы различаются при неизменном ML result, identifier/row identity/raw values отсутствуют в provider-safe payload.
 
 Следующий отдельный product-pass: Result UX polish / final handoff; качество четырёх ролевых объяснений дополнительно проверяет Ярослав.
+
+## Нативная миграция frontend AXION — N0
+
+Начата нативная миграция frontend AXION. N0 создаёт только её фундамент: минимальный client на React/TypeScript/Vite, публичный HTTP adapter FastAPI и framework-neutral process-local native session layer. Реализованы только endpoints health, session и explicit reset для new analysis.
+
+Канонический переход ещё не выполнен: Home/N1 ещё не реализован, а существующий Streamlit frontend не удалён и остаётся frozen compatibility frontend и каноническим compatibility launch path, пока native functional parity не будет разработан на последующих этапах. Нативная session владеет только временным состоянием workflow; сохраняемые ExperimentArtifact и ModelVersion остаются за её пределами.

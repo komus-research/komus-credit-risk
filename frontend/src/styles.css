@@ -1,0 +1,4 @@
+:root { font-family: system-ui, sans-serif; color: #182230; background: #f7f9fc; }
+body { margin: 0; }
+main { max-width: 42rem; margin: 12vh auto; padding: 2rem; }
+button { padding: 0.6rem 0.9rem; }

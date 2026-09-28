@@ -674,3 +674,13 @@ Persistence исследовательской истории является �
 Физическое хранилище пока не фиксируется.
 
 Production DB, MLflow/DVC, orchestration и другая тяжёлая инфраструктура не вводятся без отдельной необходимости.
+
+## Нативная основа AXION (N0)
+
+Начата нативная миграция AXION. N0 — только фундамент; канонический переход ещё не выполнен, а Home/N1 ещё не реализован.
+
+Направление зависимостей product runtime:
+
+`React + TypeScript + Vite → FastAPI HTTP adapter → framework-neutral native session/use-case layer → existing application/core`.
+
+React — presentation client, а не авторитетное научное состояние. FastAPI — только публичный HTTP adapter: он валидирует HTTP-ввод и сериализует типизированные DTO. Нативный session layer владеет только временным состоянием workflow анализа; сохраняемые семантики ExperimentArtifact и ModelVersion остаются в существующих application/persistence boundaries. На время миграции Streamlit изолирован как frozen compatibility frontend: он не удалён и остаётся до достижения native functional parity.
