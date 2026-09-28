@@ -30,6 +30,7 @@ from app.session_state import (
     initialize,
     navigate_to_step,
     open_home,
+    open_result,
     request_new_analysis,
     return_to_experiment,
     run_request_from_snapshot,
@@ -129,6 +130,7 @@ def main() -> None:
     initialize(st.session_state)
     _apply_axion_shell_styles()
     _render_axion_sidebar()
+    _render_new_analysis_confirmation()
     if st.session_state.presentation_surface == "HOME":
         _render_home()
         return
@@ -208,7 +210,6 @@ def _render_home() -> None:
     _render_home_status_panels()
     _render_recent_projects_empty_state()
     _render_saved_session_model()
-    _render_new_analysis_confirmation()
 
 
 def _render_home_summary_cards() -> None:
@@ -263,7 +264,7 @@ def _render_saved_session_model() -> None:
     st.html('<div class="axion-panel"><div class="axion-panel-title">Сохранённые модели</div><div class="axion-session-badge">Текущая сессия</div>' f'<div>{display_name} · версия {summary.model_version} · признаков: {len(summary.feature_ids)}</div>' f'<div class="axion-muted">ID версии: {summary.model_version_id}</div></div>')
     artifact = st.session_state.loaded_artifact
     if getattr(artifact, "artifact_id", None) == summary.experiment_artifact_id:
-        st.button("К результату", key="axion-session-model-result", on_click=navigate_to_step, args=(st.session_state, 4))
+        st.button("К результату", key="axion-session-model-result", on_click=open_result, args=(st.session_state,))
 
 
 def _render_new_analysis_confirmation() -> None:

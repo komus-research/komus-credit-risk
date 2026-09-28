@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
+import app.streamlit_app as prototype
 from app.session_state import (
     cancel_new_analysis,
     confirm_new_analysis,
@@ -12,6 +14,7 @@ from app.session_state import (
     has_meaningful_analysis,
     initialize,
     open_home,
+    open_result,
     request_new_analysis,
 )
 
@@ -110,6 +113,74 @@ class HomeSessionNavigationTests(unittest.TestCase):
         self.assertIs(self.state["experiment_plan"], model)
         self.assertIs(self.state["loaded_artifact"], artifact)
 
+    def test_analysis_confirmation_is_rendered_and_cancel_keeps_exact_analysis_position(
+        self,
+    ) -> None:
+        self.state.update(
+            presentation_surface="ANALYSIS",
+            current_step=3,
+            highest_reached_step=3,
+            selected_model_id="catboost",
+        )
+        self.assertTrue(request_new_analysis(self.state))
+        streamlit = _ConfirmationStreamlit(self.state)
+
+        with (
+            patch.object(prototype, "st", streamlit),
+            patch.object(prototype, "_render_analysis"),
+        ):
+            prototype.main()
+
+        self.assertEqual(len(streamlit.warnings), 1)
+        cancel_new_analysis(self.state)
+        self.assertEqual(self.state["presentation_surface"], "ANALYSIS")
+        self.assertEqual(self.state["current_step"], 3)
+        self.assertEqual(self.state["highest_reached_step"], 3)
+
+    def test_confirm_from_analysis_opens_clean_data_step(self) -> None:
+        self.state.update(
+            presentation_surface="ANALYSIS",
+            current_step=2,
+            highest_reached_step=2,
+            selected_model_id="catboost",
+            experiment_plan=object(),
+        )
+        request_new_analysis(self.state)
+
+        confirm_new_analysis(self.state)
+
+        self.assertEqual(self.state["presentation_surface"], "ANALYSIS")
+        self.assertEqual(self.state["current_step"], 0)
+        self.assertEqual(self.state["highest_reached_step"], 0)
+        self.assertIsNone(self.state["selected_model_id"])
+        self.assertIsNone(self.state["experiment_plan"])
+
+    def test_session_model_result_navigation_opens_analysis_and_preserves_state(
+        self,
+    ) -> None:
+        dataset = object()
+        artifact = SimpleNamespace(artifact_id="artifact-1")
+        model = SimpleNamespace(
+            summary=SimpleNamespace(experiment_artifact_id="artifact-1")
+        )
+        self.state.update(
+            presentation_surface="HOME",
+            current_step=1,
+            highest_reached_step=3,
+            dataset_context=dataset,
+            loaded_artifact=artifact,
+            loaded_model_version=model,
+        )
+
+        open_result(self.state)
+
+        self.assertEqual(self.state["presentation_surface"], "ANALYSIS")
+        self.assertEqual(self.state["current_step"], 4)
+        self.assertEqual(self.state["highest_reached_step"], 4)
+        self.assertIs(self.state["dataset_context"], dataset)
+        self.assertIs(self.state["loaded_artifact"], artifact)
+        self.assertIs(self.state["loaded_model_version"], model)
+
     def test_confirmed_reset_clears_only_session_analysis_state(self) -> None:
         persistent_marker = object()
         self.state.update(
@@ -177,6 +248,53 @@ class HomeSessionNavigationTests(unittest.TestCase):
         self.assertNotIn('"8"', source)
         self.assertNotIn('"3"', source)
         self.assertNotIn('"7"', source)
+
+
+class _SessionState(dict):
+    def __getattr__(self, key: str):
+        return self[key]
+
+
+class _ConfirmationColumn:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def button(self, *_args, **_kwargs):
+        return False
+
+
+class _ConfirmationStreamlit:
+    def __init__(self, state: dict[str, object]) -> None:
+        self.session_state = _SessionState(state)
+        self.sidebar = _ConfirmationColumn()
+        self.warnings: list[str] = []
+
+    def set_page_config(self, **_kwargs) -> None:
+        return None
+
+    def html(self, _body: str) -> None:
+        return None
+
+    def image(self, *_args, **_kwargs) -> None:
+        return None
+
+    def button(self, *_args, **_kwargs) -> bool:
+        return False
+
+    def divider(self) -> None:
+        return None
+
+    def caption(self, _body: str) -> None:
+        return None
+
+    def warning(self, body: str) -> None:
+        self.warnings.append(body)
+
+    def columns(self, _specification, **_kwargs):
+        return _ConfirmationColumn(), _ConfirmationColumn()
 
 
 if __name__ == "__main__":

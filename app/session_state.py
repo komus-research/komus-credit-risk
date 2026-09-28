@@ -107,6 +107,12 @@ def continue_current_analysis(state: MutableMapping[str, Any]) -> None:
     state["new_analysis_confirmation_pending"] = False
 
 
+def open_result(state: MutableMapping[str, Any]) -> None:
+    """Open the current session result without rebuilding analysis state."""
+    navigate_to_step(state, 4)
+    state["presentation_surface"] = "ANALYSIS"
+
+
 def has_meaningful_analysis(state: Mapping[str, Any]) -> bool:
     """Identify work that must never be discarded without confirmation."""
     if state.get("prototype_staged_dataset_upload") is not None:
