@@ -677,7 +677,7 @@ Implementation stages:
 2. **MP-B — Configuration Resolver + Configurable GBDT — ACCEPTED**
 3. **MP-C — Provenance + mandatory Smoke — ACCEPTED**
 4. **MP-D — Persistence Provider Boundary — ACCEPTED**
-5. **MP-E — Catalog DTO + Integration Regression — NEXT**
+5. **MP-E — Catalog DTO + Integration Regression — ACCEPTED**
 
 Owner decisions:
 
@@ -728,9 +728,9 @@ Source:
 
 ### Order
 
-1. Configurable Model Platform V1: MP-A + MP-B + MP-C + MP-D ACCEPTED; реализовать/review MP-E.
+1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
 2. Architect-lock and implement/review Feature Grouping Propagation V1.
-3. Только после ACCEPT обеих backend-задач вернуться к UX экрана «Алгоритм».
+3. После ACCEPT Feature Grouping Propagation V1 вернуться к UX экрана «Алгоритм».
 4. Затем продолжить «Проверка качества → Результат» и финальный product E2E.
 
 ---

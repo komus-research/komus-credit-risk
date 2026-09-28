@@ -1,6 +1,6 @@
 # Configurable Model Platform V1 — STATUS
 
-Phase: **MP-A ACCEPTED / MP-B ACCEPTED / MP-C ACCEPTED / MP-D ACCEPTED / MP-E IMPLEMENTATION COMPLETE / READY FOR REVIEW**
+Phase: **CLOSED — MP-A / MP-B / MP-C / MP-D / MP-E ACCEPTED**
 
 Architecture: **ACCEPTED**
 
@@ -56,12 +56,12 @@ artifacts. V1 artifacts remain readable without rewrite or manufactured provenan
 MP-D is implemented and **ACCEPTED**. Provider-based ModelVersion V2 persistence now
 supports exact Recommended/Advanced configuration provenance for CatBoost, XGBoost,
 LightGBM and GBDT Mean while legacy ModelVersion V1 remains readable unchanged.
-MP-E is implementation-complete and ready for review. It adds a deterministic,
-read-only catalog projection from the trusted plugin registry, generic runtime
-package/version availability resolution, and makes planning/UI model discovery use
-that same registry rather than caller-supplied model maps. A test-only fifth plugin
-proves the generic catalog → configuration → smoke → planning → runner → V2 artifact
-path without production registration or model-id branches.
+MP-E is implemented and **ACCEPTED**. It adds a deterministic, read-only catalog
+projection from the trusted plugin registry, generic runtime package/version
+availability resolution, and makes planning/UI model discovery use that same registry
+rather than caller-supplied model maps. A test-only fifth plugin proves the generic
+catalog → configuration → smoke → planning → runner → V2 artifact flow without
+production registration or model-id branches.
 
 Corrective review fixes bind smoke matching to the exact ordered population rows,
 require an authoritative prepared context for locked final-test data, remove the
@@ -121,6 +121,18 @@ Final MP-D verification evidence includes:
 - legacy V1 ModelVersion compatibility preserved;
 - Advanced CatBoost/XGBoost/LightGBM/GBDT Mean V2 save/load confirmed with prediction parity.
 
-## Next implementation stage
+Final MP-E Reviewer verdict: **ACCEPT**.
 
-**MP-E — Catalog DTO + Integration Regression**
+Accepted MP-E head: `0622d944dd0dd4a194fce1dd12c037bf9ad0a0af`.
+
+Final MP-E verification evidence:
+
+- focused regression set: 95 passed, 38 subtests;
+- full suite: 305 passed, 133 subtests;
+- `compileall src app tests`: PASS;
+- `git diff --check`: PASS;
+- changed-file Ruff/format checks: PASS.
+
+## Workstream result
+
+**Configurable Model Platform V1 — CLOSED / ACCEPTED.**
