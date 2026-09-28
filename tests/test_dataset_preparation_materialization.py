@@ -1,21 +1,27 @@
 from __future__ import annotations
 
+import json
+import unittest
 from dataclasses import FrozenInstanceError, replace
 from decimal import Decimal
-import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
-import unittest
 
 import numpy as np
 
 from komus_risk.data import DatasetInspector, TabularReader
+from komus_risk.hashing import stable_hash
 from komus_risk.preparation import (
-    ConfirmedColumnDecision, ConfirmedDatasetPreparation, KomusDatasetPreparationService,
-    PreparedDatasetContextAuthority,
+    ConfirmedColumnDecision,
+    ConfirmedDatasetPreparation,
+    KomusDatasetPreparationService,
     PopulationPolicyV1,
+    PreparedDatasetContextAuthority,
 )
-from komus_risk.preparation.contracts import ConfirmedColumnStatus, DatasetPreparationError
+from komus_risk.preparation.contracts import (
+    ConfirmedColumnStatus,
+    DatasetPreparationError,
+)
 from komus_risk.preparation.identity import identity_hash
 from komus_risk.preparation.materializer import inspection_report_hash, proposal_hash
 from komus_risk.preparation.service import DatasetPreparationAnalyzer
@@ -31,19 +37,34 @@ class DatasetPreparationMaterializationTests(unittest.TestCase):
         directory = TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         path = Path(directory.name) / "dataset.csv"
-        path.write_text(f"entity_id,target,{predictor_name},diagnostic\n{rows}\n", encoding="utf-8")
+        path.write_text(
+            f"entity_id,target,{predictor_name},diagnostic\n{rows}\n", encoding="utf-8"
+        )
         snapshot = TabularReader().read(path)
         report = DatasetInspector().inspect(snapshot)
         proposal = DatasetPreparationAnalyzer().analyze(report)
         report_hash = inspection_report_hash(report)
         confirmation = ConfirmedDatasetPreparation(
-            "1", snapshot.fingerprint, report_hash, proposal_hash(proposal, report_hash), proposal.policy_id,
-            proposal.policy_version, proposal.policy_hash, "Test dataset", "target", positive_class, "entity_id",
+            "1",
+            snapshot.fingerprint,
+            report_hash,
+            proposal_hash(proposal, report_hash),
+            proposal.policy_id,
+            proposal.policy_version,
+            proposal.policy_hash,
+            "Test dataset",
+            "target",
+            positive_class,
+            "entity_id",
             (
                 ConfirmedColumnDecision("entity_id", ConfirmedColumnStatus.IDENTIFIER),
                 ConfirmedColumnDecision("target", ConfirmedColumnStatus.TARGET),
-                ConfirmedColumnDecision(predictor_name, ConfirmedColumnStatus.MODEL_ALLOWED),
-                ConfirmedColumnDecision("diagnostic", ConfirmedColumnStatus.DIAGNOSTIC_ONLY),
+                ConfirmedColumnDecision(
+                    predictor_name, ConfirmedColumnStatus.MODEL_ALLOWED
+                ),
+                ConfirmedColumnDecision(
+                    "diagnostic", ConfirmedColumnStatus.DIAGNOSTIC_ONLY
+                ),
             ),
             PopulationPolicyV1.FULL_OOF_NO_PROTECTED_FINAL_TEST,
         )
@@ -55,9 +76,13 @@ class DatasetPreparationMaterializationTests(unittest.TestCase):
         self.assertFalse(context.loaded_dataset.contract.final_test_locked)
         self.assertEqual("target", context.loaded_dataset.contract.target_column)
         self.assertEqual(manifest.context_id, context.context_id)
-        self.assertEqual("MODEL_ALLOWED", manifest.confirmed_preparation.column_decisions[2].status)
+        self.assertEqual(
+            "MODEL_ALLOWED", manifest.confirmed_preparation.column_decisions[2].status
+        )
 
-    def test_accepted_materialization_publishes_its_exact_context_to_authority(self) -> None:
+    def test_accepted_materialization_publishes_its_exact_context_to_authority(
+        self,
+    ) -> None:
         authority = PreparedDatasetContextAuthority()
         context, _manifest = KomusDatasetPreparationService(
             context_authority=authority
@@ -68,8 +93,12 @@ class DatasetPreparationMaterializationTests(unittest.TestCase):
         self.assertEqual(identity_hash(Decimal("1.0")), identity_hash(Decimal("1.00")))
         self.assertEqual(identity_hash(Decimal("100")), identity_hash(Decimal("1E+2")))
 
-    def test_numpy_positive_class_becomes_python_int_in_runtime_and_manifest(self) -> None:
-        context, manifest = KomusDatasetPreparationService().prepare(*self._parts(positive_class=np.int64(1)))
+    def test_numpy_positive_class_becomes_python_int_in_runtime_and_manifest(
+        self,
+    ) -> None:
+        context, manifest = KomusDatasetPreparationService().prepare(
+            *self._parts(positive_class=np.int64(1))
+        )
         self.assertIs(type(context.loaded_dataset.contract.positive_class), int)
         self.assertEqual(1, context.loaded_dataset.contract.positive_class)
         self.assertIs(type(manifest.confirmed_preparation.positive_class), int)
@@ -77,30 +106,46 @@ class DatasetPreparationMaterializationTests(unittest.TestCase):
 
     def test_second_target_decision_is_rejected(self) -> None:
         snapshot, report, proposal, confirmation = self._parts()
-        invalid = replace(confirmation, column_decisions=confirmation.column_decisions[:-1] + (
-            ConfirmedColumnDecision("diagnostic", ConfirmedColumnStatus.TARGET),
-        ))
+        invalid = replace(
+            confirmation,
+            column_decisions=confirmation.column_decisions[:-1]
+            + (ConfirmedColumnDecision("diagnostic", ConfirmedColumnStatus.TARGET),),
+        )
         with self.assertRaises(DatasetPreparationError) as error:
-            KomusDatasetPreparationService().prepare(snapshot, report, proposal, invalid)
+            KomusDatasetPreparationService().prepare(
+                snapshot, report, proposal, invalid
+            )
         self.assertEqual("INCOMPLETE_CONFIRMATION", error.exception.code)
 
     def test_second_identifier_decision_is_rejected(self) -> None:
         snapshot, report, proposal, confirmation = self._parts()
-        invalid = replace(confirmation, column_decisions=confirmation.column_decisions[:-1] + (
-            ConfirmedColumnDecision("diagnostic", ConfirmedColumnStatus.IDENTIFIER),
-        ))
+        invalid = replace(
+            confirmation,
+            column_decisions=confirmation.column_decisions[:-1]
+            + (
+                ConfirmedColumnDecision("diagnostic", ConfirmedColumnStatus.IDENTIFIER),
+            ),
+        )
         with self.assertRaises(DatasetPreparationError) as error:
-            KomusDatasetPreparationService().prepare(snapshot, report, proposal, invalid)
+            KomusDatasetPreparationService().prepare(
+                snapshot, report, proposal, invalid
+            )
         self.assertEqual("INCOMPLETE_CONFIRMATION", error.exception.code)
 
     def test_mutated_snapshot_cannot_hide_non_finite_source_predictor(self) -> None:
-        rows = "\n".join(
-            f"entity-{index},{index % 2},{float(index + 1)},1" for index in range(51)
-        ) + "\nentity-51,1,inf,1"
+        rows = (
+            "\n".join(
+                f"entity-{index},{index % 2},{float(index + 1)},1"
+                for index in range(51)
+            )
+            + "\nentity-51,1,inf,1"
+        )
         snapshot, report, proposal, confirmation = self._parts(rows=rows)
         snapshot.dataframe.loc[51, "score"] = 0.5
         with self.assertRaises(DatasetPreparationError) as error:
-            KomusDatasetPreparationService().prepare(snapshot, report, proposal, confirmation)
+            KomusDatasetPreparationService().prepare(
+                snapshot, report, proposal, confirmation
+            )
         self.assertEqual("NON_FINITE_PREDICTOR", error.exception.code)
 
     def test_mutated_snapshot_cannot_hide_three_class_source_target(self) -> None:
@@ -108,7 +153,9 @@ class DatasetPreparationMaterializationTests(unittest.TestCase):
         snapshot, report, proposal, confirmation = self._parts(rows=rows)
         snapshot.dataframe.loc[snapshot.dataframe["target"] == 2, "target"] = 1
         with self.assertRaises(DatasetPreparationError) as error:
-            KomusDatasetPreparationService().prepare(snapshot, report, proposal, confirmation)
+            KomusDatasetPreparationService().prepare(
+                snapshot, report, proposal, confirmation
+            )
         self.assertEqual("INVALID_TARGET", error.exception.code)
 
     def test_manifest_delta_is_immutable_and_to_dict_is_detached(self) -> None:
@@ -119,19 +166,28 @@ class DatasetPreparationMaterializationTests(unittest.TestCase):
         with self.assertRaises(FrozenInstanceError):
             delta.column_decisions[0].confirmed_usage_status = "changed"
         serialized = manifest.to_dict()
-        serialized["proposal_confirmation_delta"]["confirmed_target"]["column_name"] = "changed"
+        serialized["proposal_confirmation_delta"]["confirmed_target"]["column_name"] = (
+            "changed"
+        )
         self.assertEqual("target", delta.confirmed_target.column_name)
         self.assertEqual(
-            identity_hash({
-                "context_id": manifest.context_id,
-                "confirmation_hash": manifest.confirmation_hash,
-                "delta": delta.to_dict(),
-            }),
+            stable_hash(
+                {
+                    "manifest_version": "2",
+                    "materializer_version": "2",
+                    "context_id": manifest.context_id,
+                    "confirmation_hash": manifest.confirmation_hash,
+                    "proposal_hash": manifest.proposal_hash,
+                    "delta": delta.to_dict(),
+                }
+            ),
             manifest.materialization_identity,
         )
 
     def test_numeric_q_b1_norm_can_be_explicitly_model_allowed(self) -> None:
-        context, _manifest = KomusDatasetPreparationService().prepare(*self._parts("Q_B1_norm"))
+        context, _manifest = KomusDatasetPreparationService().prepare(
+            *self._parts("Q_B1_norm")
+        )
         self.assertEqual(
             ConfirmedColumnStatus.MODEL_ALLOWED.value.lower(),
             context.feature_registry.get("Q_B1_norm").usage_status,

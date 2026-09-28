@@ -1,10 +1,10 @@
 # Feature Grouping Propagation V1 — STATUS
 
-Phase: **READY_FOR_IMPLEMENTATION**
+Phase: **READY_FOR_REVIEW**
 
 Architecture: **ACCEPTED**
 
-Implementation: **NOT STARTED**
+Implementation: **COMPLETE / READY FOR REVIEW**
 
 ## READ FIRST
 
@@ -22,9 +22,11 @@ Already implemented:
 - grouping cascade remains structural stem → repeated token → logical type → fallback;
 - Feature Selection is contractually group-first and consumes downstream groups from `FeatureRegistry`.
 
-Not yet implemented:
+Implemented:
 
-- propagation of Analyzer technical groups through generic materialization into the final `FeatureRegistry → FeatureGroup`.
+- fail-closed validation and V2 projection of trusted Analyzer technical groups into final generic `FeatureRegistry → FeatureGroup`;
+- MODEL_ALLOWED-only technical/fallback grouping, status-group projection for non-model columns, and V2 materialization identities;
+- focused propagation acceptance coverage plus unchanged selection/planning regression coverage.
 
 ## Locked architecture
 
@@ -42,10 +44,8 @@ The Architect Lock now defines:
 - exact acceptance tests and narrow implementation scope;
 - fail-closed validation of malformed technical-group structure, including duplicate `(group_kind, group_key)` identities and multiple proposed fallback groups, using the stable code `INVALID_TECHNICAL_GROUP_STRUCTURE`.
 
-Reviewer FIX was incorporated and the corrected Architect Lock received final Reviewer **ACCEPT**. Architecture is **ACCEPTED**; implementation has not started.
+Reviewer FIX was incorporated and the corrected Architect Lock received final Reviewer **ACCEPT**. Architecture is **ACCEPTED**; implementation is complete and ready for review.
 
 ## Next action
 
-Technical Coordinator → Backend / Codex implementation → Reviewer.
-
-Implementation must follow [ARCHITECT_LOCK.md](ARCHITECT_LOCK.md) exactly.
+Reviewer handoff. Implementation follows [ARCHITECT_LOCK.md](ARCHITECT_LOCK.md).
