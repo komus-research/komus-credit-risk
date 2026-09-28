@@ -140,7 +140,7 @@ Final MP-E verification evidence:
 
 Status: **ARCHITECTURE ACCEPTED / READY_FOR_IMPLEMENTATION**
 
-Implementation: **NOT STARTED**
+Implementation: **COMPLETE / READY FOR REVIEW**
 
 The accepted MP-A..MP-E workstream remains CLOSED / ACCEPTED.
 This narrow prerequisite does not reopen model-platform behavior.
@@ -171,7 +171,11 @@ Final corrective architecture Reviewer verdict: **ACCEPT**.
 
 Accepted architecture head: `6ccad971882901ff779c82a08b22a2699e24f70e`.
 
-Next: Backend / Codex implementation → Reviewer. Implementation remains **NOT STARTED**.
+Verification: focused presentation/catalog/model-platform and historical regressions
+passed (74 tests, 42 subtests); full suite passed (331 tests, 145 subtests).
+`compileall`, `git diff --check`, Ruff F/I checks and changed-file formatting passed.
+
+Next: Reviewer.
 
 Source:
 

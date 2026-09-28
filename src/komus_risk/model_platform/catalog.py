@@ -15,7 +15,10 @@ from importlib.metadata import version as installed_version
 from types import MappingProxyType
 from typing import Any
 
-from .contracts import ModelParameter
+from .presentation import (
+    ModelCatalogComposition,
+    ModelPresentationRegistry,
+)
 from .registry import ModelPluginRegistry
 
 PackageVersionResolver = Callable[[str], str | None]
@@ -121,11 +124,11 @@ class CatalogParameter:
     visibility_condition: Mapping[str, Any] | None
 
     @classmethod
-    def from_parameter(cls, parameter: ModelParameter) -> CatalogParameter:
+    def from_parameter(cls, parameter, presentation) -> CatalogParameter:
         return cls(
             parameter.parameter_path,
-            parameter.display_name_ru,
-            parameter.description_ru,
+            presentation.display_name_ru,
+            presentation.description_ru,
             parameter.value_type.value,
             parameter.required,
             parameter.nullable,
@@ -244,12 +247,20 @@ class ModelCatalogService:
     def __init__(
         self,
         registry: ModelPluginRegistry,
+        presentation_registry: ModelPresentationRegistry,
         *,
         package_version_resolver: PackageVersionResolver | None = None,
     ) -> None:
         if not isinstance(registry, ModelPluginRegistry):
             raise TypeError("registry must be a ModelPluginRegistry.")
+        if not isinstance(presentation_registry, ModelPresentationRegistry):
+            raise TypeError(
+                "presentation_registry must be a ModelPresentationRegistry."
+            )
         self._registry = registry
+        self._composition = ModelCatalogComposition.compose(
+            registry, presentation_registry
+        )
         self._package_version_resolver = (
             package_version_resolver or _default_package_version
         )
@@ -284,7 +295,10 @@ class ModelCatalogService:
             )
         )
         parameters = tuple(
-            CatalogParameter.from_parameter(parameter)
+            CatalogParameter.from_parameter(
+                parameter,
+                self._composition.parameter(spec.model_id, parameter.parameter_path),
+            )
             for parameter in sorted(
                 schema.parameters,
                 key=lambda item: (item.display_order, item.parameter_path),

@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from komus_risk.application import ExperimentApplicationService, RunExperimentRequest
 from komus_risk.application.service import to_planning_request_metadata
@@ -32,13 +33,18 @@ from komus_risk.model_platform import (
     ModelConfigurationService,
     ModelInputContract,
     ModelParameter,
+    ModelParameterPresentation,
     ModelParameterSchema,
     ModelPlugin,
     ModelPluginRegistry,
+    ModelPresentationError,
+    ModelPresentationProfile,
+    ModelPresentationRegistry,
     ParameterValueType,
     RecommendedModelProfile,
     RuntimeAvailabilityState,
     build_builtin_model_plugin_registry,
+    builtin_model_presentation_registry,
 )
 from komus_risk.models import BinaryClassifierAdapter, ModelAdapterFactory
 from komus_risk.planning import ExperimentPlanningService
@@ -135,11 +141,50 @@ def _registry_with_dummy() -> ModelPluginRegistry:
     return registry
 
 
+def _presentation_registry(registry: ModelPluginRegistry) -> ModelPresentationRegistry:
+    registered_ids = {plugin.spec.model_id for plugin in registry.list()}
+    profiles = [
+        profile
+        for profile in builtin_model_presentation_registry(
+            build_builtin_model_plugin_registry()
+        ).list()
+        if profile.model_id in registered_ids
+    ]
+    for plugin in registry.list():
+        if plugin.spec.model_id in {profile.model_id for profile in profiles}:
+            continue
+        schema = plugin.parameter_schema
+        entries = tuple(
+            ModelParameterPresentation(
+                item.parameter_path, "Тестовый параметр", "Тестовое описание параметра."
+            )
+            for item in schema.parameters
+        )
+        profiles.append(
+            ModelPresentationProfile(
+                "1",
+                f"{plugin.spec.model_id}_ru",
+                "1",
+                "ru",
+                plugin.spec.model_id,
+                plugin.spec.version,
+                plugin.spec.adapter_version,
+                schema.schema_id,
+                schema.schema_version,
+                schema.schema_hash,
+                entries,
+            )
+        )
+    return ModelPresentationRegistry(profiles)
+
+
 class TestModelCatalog:
     def test_catalog_is_deterministic_safe_and_manifest_truthful(self) -> None:
         registry = _registry_with_dummy()
         catalog = ModelCatalogService(
-            registry, package_version_resolver=lambda _: "unused"
+            registry,
+            _presentation_registry(registry),
+            package_version_resolver=lambda _: "unused",
         )
         first, second = catalog.list_models(), catalog.list_models()
         assert [item.model_id for item in first] == sorted(
@@ -184,14 +229,18 @@ class TestModelCatalog:
         registry = ModelPluginRegistry()
         registry.register(plugin)
         missing = ModelCatalogService(
-            registry, package_version_resolver=lambda _: None
+            registry,
+            _presentation_registry(registry),
+            package_version_resolver=lambda _: None,
         ).get("dummy_catalog")
         assert (missing.state, missing.reason_code) == (
             RuntimeAvailabilityState.UNAVAILABLE,
             "RUNTIME_PACKAGE_MISSING",
         )
         wrong = ModelCatalogService(
-            registry, package_version_resolver=lambda _: "wrong"
+            registry,
+            _presentation_registry(registry),
+            package_version_resolver=lambda _: "wrong",
         ).get("dummy_catalog")
         assert (wrong.state, wrong.reason_code) == (
             RuntimeAvailabilityState.MISCONFIGURED,
@@ -199,6 +248,7 @@ class TestModelCatalog:
         )
         ready = ModelCatalogService(
             registry,
+            _presentation_registry(registry),
             package_version_resolver=lambda name: {"one": "1", "two": "2"}[name],
         ).get("dummy_catalog")
         assert (ready.state, ready.reason_code) == (
@@ -218,7 +268,9 @@ class TestModelCatalog:
         invalid_registry = ModelPluginRegistry()
         invalid_registry.register(duplicate)
         invalid = ModelCatalogService(
-            invalid_registry, package_version_resolver=lambda _: "1"
+            invalid_registry,
+            _presentation_registry(invalid_registry),
+            package_version_resolver=lambda _: "1",
         ).get("dummy_catalog")
         assert (invalid.state, invalid.reason_code) == (
             RuntimeAvailabilityState.MISCONFIGURED,
@@ -229,6 +281,7 @@ class TestModelCatalog:
         registry = build_builtin_model_plugin_registry()
         ready = ModelCatalogService(
             registry,
+            _presentation_registry(registry),
             package_version_resolver=lambda name: {
                 "catboost": "1.2.10",
                 "xgboost": "3.4.1",
@@ -241,6 +294,7 @@ class TestModelCatalog:
         )
         missing_component = ModelCatalogService(
             registry,
+            _presentation_registry(registry),
             package_version_resolver=lambda name: (
                 None
                 if name == "lightgbm"
@@ -268,7 +322,10 @@ class TestModelCatalog:
         assert recommended.resolved_parameters_dict()["estimator_params"]["rounds"] == 3
         assert advanced.resolved_parameters_dict()["estimator_params"]["rounds"] == 5
         dataset, features, population = _dataset()
-        planner = ExperimentPlanningService(model_plugin_registry=registry)
+        planner = ExperimentPlanningService(
+            model_plugin_registry=registry,
+            model_presentation_registry=_presentation_registry(registry),
+        )
         plan = planner.build_plan(
             to_planning_request_metadata(_request()),
             loaded_dataset=dataset,
@@ -277,6 +334,7 @@ class TestModelCatalog:
         )
         assert plan.is_valid
         assert plan.model is not None and plan.model.model_id == "dummy_catalog"
+        assert plan.model.parameters[0].display_name_ru == "Тестовый параметр"
         models = ModelRegistry()
         models.register(registry.get("dummy_catalog").spec)
         with TemporaryDirectory() as root:
@@ -316,6 +374,22 @@ class TestModelCatalog:
         assert artifact.smoke_evidence is not None
         assert artifact.configuration_record.model_id == "dummy_catalog"
         assert artifact.smoke_evidence.smoke_identity == smoke.smoke_identity
+
+    def test_missing_fifth_plugin_presentation_blocks_catalog_only(self) -> None:
+        registry = _registry_with_dummy()
+        with pytest.raises(
+            ModelPresentationError,
+            match="INVALID_MODEL_PRESENTATION_COMPOSITION",
+        ):
+            ModelCatalogService(
+                registry,
+                builtin_model_presentation_registry(registry),
+                package_version_resolver=lambda _: "unused",
+            )
+        resolved = ModelConfigurationService(registry).resolve(
+            model_id="dummy_catalog", mode=ModelConfigurationMode.RECOMMENDED
+        )
+        assert resolved.resolved_parameters_dict()["estimator_params"]["rounds"] == 3
 
 
 def _request() -> RunExperimentRequest:

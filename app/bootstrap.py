@@ -40,7 +40,10 @@ from komus_risk.experiments import EvaluationPopulation
 from komus_risk.integrations.openai_result_interpreter import (
     OpenAIResultInterpreterClient,
 )
-from komus_risk.model_platform import build_builtin_model_plugin_registry
+from komus_risk.model_platform import (
+    build_builtin_model_plugin_registry,
+    builtin_model_presentation_registry,
+)
 from komus_risk.models import (
     ModelAdapterFactory,
 )
@@ -707,7 +710,12 @@ def create_runtime(
         result_interpreter_runtime=runtime_configuration,
     )
     return PrototypeRuntime(
-        ExperimentPlanningService(model_plugin_registry=plugin_registry),
+        ExperimentPlanningService(
+            model_plugin_registry=plugin_registry,
+            model_presentation_registry=builtin_model_presentation_registry(
+                plugin_registry
+            ),
+        ),
         ExperimentApplicationService(
             model_registry=registry,
             model_factories=factories,

@@ -27,12 +27,16 @@ from komus_risk.experiments import EvaluationPopulation
 from komus_risk.model_platform import (
     CapabilityDomain,
     CapabilitySupport,
+    ModelCatalogService,
+    ModelConfigurationMode,
     ModelConfigurationRecord,
     ModelConfigurationService,
     ModelPluginRegistry,
+    ModelPresentationRegistry,
     SmokeStatus,
     build_builtin_model_plugin_registry,
     builtin_gbdt_persistence_providers,
+    builtin_model_presentation_registry,
 )
 from komus_risk.models import BinaryClassifierAdapter, ModelAdapterFactory
 from komus_risk.preparation import (
@@ -243,6 +247,68 @@ def test_configuration_record_is_deterministic_and_deep_immutable():
         pass
     else:
         raise AssertionError("record must deep-freeze resolved parameters")
+
+
+def test_frozen_pre_presentation_smoke_identity_remains_current_after_copy_edit():
+    with TemporaryDirectory() as root:
+        service = _service(root)
+        dataset, features, population = _dataset()
+        context = _register_context(service, dataset, features, population)
+        request = _request()
+        smoke = service.run_configuration_smoke(
+            loaded_dataset=dataset,
+            feature_registry=features,
+            population=population,
+            request=request,
+            prepared_context=context,
+        )
+        assert smoke.status is SmokeStatus.PASS
+        assert (
+            smoke.smoke_identity
+            == "8db54ca256cdfc4ca9bf9b48f3660aad358014067103b8b52bcdb4d7aebc384a"
+        )
+
+        plugins = build_builtin_model_plugin_registry()
+        profiles = builtin_model_presentation_registry(plugins).list()
+        catboost = profiles[0]
+        edited = replace(
+            catboost,
+            presentation_profile_version="2",
+            parameters=(
+                replace(catboost.parameters[0], display_name_ru="Изменённая подпись"),
+                *catboost.parameters[1:],
+            ),
+        )
+        catalog = ModelCatalogService(
+            plugins,
+            ModelPresentationRegistry((edited, *profiles[1:])),
+            package_version_resolver=lambda _: "unused",
+        )
+        assert (
+            catalog.get("catboost").parameters[0].display_name_ru
+            == "Изменённая подпись"
+        )
+
+        resolved = ModelConfigurationService(plugins).resolve(
+            model_id="catboost", mode=ModelConfigurationMode.RECOMMENDED
+        )
+        record = ModelConfigurationRecord.from_resolved(
+            resolved, plugins.get("catboost")
+        )
+        assert (
+            service._smoke_service.expected_identity(
+                context, request.selected_feature_ids, record, request.seed
+            )
+            == smoke.smoke_identity
+        )
+        artifact = service.run_experiment(
+            loaded_dataset=dataset,
+            feature_registry=features,
+            population=population,
+            request=request,
+            prepared_context=context,
+        )
+        assert artifact.smoke_evidence.smoke_identity == smoke.smoke_identity
 
 
 def test_smoke_gate_and_v2_provenance_round_trip():

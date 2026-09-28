@@ -38,6 +38,14 @@ from .persistence import (
     builtin_gbdt_persistence_providers,
 )
 from .plugins import build_builtin_model_plugin_registry, builtin_model_plugins
+from .presentation import (
+    ModelCatalogComposition,
+    ModelParameterPresentation,
+    ModelPresentationError,
+    ModelPresentationProfile,
+    ModelPresentationRegistry,
+    builtin_model_presentation_registry,
+)
 from .provenance import ModelConfigurationRecord
 from .registry import ModelPluginRegistry
 from .smoke import (
@@ -59,6 +67,7 @@ __all__ = [
     "ModelCapabilityManifest",
     "ModelCatalogEntry",
     "ModelCatalogService",
+    "ModelCatalogComposition",
     "ModelConfigurationError",
     "ModelConfigurationMode",
     "ModelConfigurationRecord",
@@ -66,11 +75,15 @@ __all__ = [
     "ModelConfigurationSmokeTestService",
     "ModelInputContract",
     "ModelParameter",
+    "ModelParameterPresentation",
     "ModelParameterSchema",
     "ModelPersistenceProvider",
     "ModelPersistenceProviderRegistry",
     "ModelPlugin",
     "ModelPluginRegistry",
+    "ModelPresentationError",
+    "ModelPresentationProfile",
+    "ModelPresentationRegistry",
     "NativeGBDTPersistenceProvider",
     "ParameterUiLevel",
     "ParameterValueType",
@@ -86,4 +99,5 @@ __all__ = [
     "build_builtin_model_plugin_registry",
     "builtin_gbdt_persistence_providers",
     "builtin_model_plugins",
+    "builtin_model_presentation_registry",
 ]

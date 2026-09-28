@@ -26,6 +26,7 @@ from komus_risk.model_platform import (
     ModelConfigurationMode,
     ModelConfigurationRecord,
     ModelConfigurationService,
+    ModelConfigurationSmokeTestService,
     build_builtin_model_plugin_registry,
 )
 from komus_risk.models.gbdt import (
@@ -46,6 +47,7 @@ from komus_risk.models.gbdt.native import (
     save_native_model,
     validate_fitted_adapter_recipe,
 )
+from komus_risk.preparation import PreparedDatasetContext
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 
@@ -576,6 +578,78 @@ class ModelVersionTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "exact persisted"):
             loaded.predictor.predict_positive_proba(X.loc[:, ["f_b", "f_a"]])
+
+    def test_frozen_pre_presentation_v2_artifact_continues_through_final_fit_and_save(
+        self,
+    ) -> None:
+        plugins = build_builtin_model_plugin_registry()
+        plugin = plugins.get("catboost")
+        resolved = ModelConfigurationService(plugins).resolve(
+            model_id="catboost", mode=ModelConfigurationMode.RECOMMENDED
+        )
+        record = ModelConfigurationRecord.from_resolved(resolved, plugin)
+        self.assertEqual(
+            record.configuration_record_id,
+            "e3af3d84c0ace1caac083a8b737c54e49be603c4e5f44507a49548dc7a467b3d",
+        )
+        context = PreparedDatasetContext(
+            "frozen-pre-presentation-context",
+            "Synthetic",
+            self.loaded,
+            self.registry,
+            self.population,
+        )
+        smoke = ModelConfigurationSmokeTestService().run(
+            context,
+            self.config.feature_ids,
+            resolved,
+            self.config.seed,
+            plugin,
+        )
+        self.assertEqual(smoke.status.value, "PASS")
+        config = replace(
+            self.config, model_parameters=resolved.resolved_parameters_dict()
+        )
+        historical_artifact = self.experiments.save(
+            config=config,
+            dataset_contract=self.contract,
+            population=self.population,
+            run_output=self.output,
+            configuration_record=record,
+            smoke_evidence=smoke,
+        )
+        loaded_artifact = self.experiments.load(historical_artifact.artifact_id)
+        self.assertEqual(loaded_artifact.manifest["artifact_schema_version"], "2")
+        self.assertEqual(
+            loaded_artifact.configuration_record.configuration_record_id,
+            record.configuration_record_id,
+        )
+
+        model_registry = ModelRegistry()
+        model_registry.register(plugin.spec)
+        versions = ModelVersionStore(
+            Path(self.temp.name) / "continued-v2-models",
+            code_version="code-v1",
+            model_specs={"catboost": plugin.spec},
+            model_plugin_registry=plugins,
+        )
+        final_fit = FinalModelTrainingService(
+            experiment_artifact_store=self.experiments,
+            model_version_store=versions,
+            model_registry=model_registry,
+            model_factories={"catboost": plugin.factory},
+            code_version="code-v1",
+            model_plugin_registry=plugins,
+        )
+        saved = final_fit.train(
+            experiment_artifact_id=historical_artifact.artifact_id,
+            loaded_dataset=self.loaded,
+            feature_registry=self.registry,
+            population=self.population,
+        )
+        self.assertEqual(
+            versions.load(saved.model_version_id).metadata["schema_version"], 2
+        )
 
     def test_v2_rejects_configuration_provenance_mismatch_before_publication(
         self,

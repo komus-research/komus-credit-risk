@@ -11,6 +11,8 @@ from komus_risk.model_platform import (
     ModelConfigurationError,
     ModelConfigurationService,
     ModelPluginRegistry,
+    ModelPresentationRegistry,
+    builtin_model_presentation_registry,
 )
 from komus_risk.registries import FeatureRegistry
 
@@ -27,8 +29,19 @@ from .contracts import (
 class ExperimentPlanningService:
     """Produces immutable plans from feature contracts and the trusted plugin catalog."""
 
-    def __init__(self, *, model_plugin_registry: ModelPluginRegistry) -> None:
-        self._model_catalog_service = ModelCatalogService(model_plugin_registry)
+    def __init__(
+        self,
+        *,
+        model_plugin_registry: ModelPluginRegistry,
+        model_presentation_registry: ModelPresentationRegistry | None = None,
+    ) -> None:
+        presentations = (
+            model_presentation_registry
+            or builtin_model_presentation_registry(model_plugin_registry)
+        )
+        self._model_catalog_service = ModelCatalogService(
+            model_plugin_registry, presentations
+        )
         self._model_configuration_service = ModelConfigurationService(
             model_plugin_registry
         )
