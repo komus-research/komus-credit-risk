@@ -1,0 +1,415 @@
+"""MP-E catalog safety, runtime availability and generic fifth-plugin regression."""
+
+from __future__ import annotations
+
+from dataclasses import replace
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from komus_risk.application import ExperimentApplicationService, RunExperimentRequest
+from komus_risk.application.service import to_planning_request_metadata
+from komus_risk.artifacts import ExperimentArtifactStore
+from komus_risk.comparison import ExperimentComparisonService
+from komus_risk.contracts import (
+    DatasetContract,
+    FeatureGroup,
+    FeatureSpec,
+    FeatureUsageStatus,
+)
+from komus_risk.data import LoadedDataset
+from komus_risk.experiments import EvaluationPopulation
+from komus_risk.model_platform import (
+    CapabilityDeclaration,
+    CapabilityDomain,
+    CapabilitySupport,
+    ModelCapabilityManifest,
+    ModelCatalogService,
+    ModelConfigurationMode,
+    ModelConfigurationService,
+    ModelInputContract,
+    ModelParameter,
+    ModelParameterSchema,
+    ModelPlugin,
+    ModelPluginRegistry,
+    ParameterValueType,
+    RecommendedModelProfile,
+    RuntimeAvailabilityState,
+    build_builtin_model_plugin_registry,
+)
+from komus_risk.models import BinaryClassifierAdapter, ModelAdapterFactory
+from komus_risk.planning import ExperimentPlanningService
+from komus_risk.preparation import (
+    PreparedDatasetContext,
+    PreparedDatasetContextAuthority,
+)
+from komus_risk.registries import FeatureRegistry, ModelRegistry, ModelSpec
+
+
+class DummyCatalogAdapter(BinaryClassifierAdapter):
+    def fit(self, X_train, y_train) -> None:
+        self.probability = float(np.asarray(y_train, dtype=float).mean())
+
+    def predict_positive_proba(self, X_valid):
+        return np.full(len(X_valid), self.probability, dtype=float)
+
+
+class DummyCatalogFactory(ModelAdapterFactory):
+    model_id = "dummy_catalog"
+    model_version = "1"
+    adapter_version = "1"
+
+    def create(self, parameters, seed):
+        return DummyCatalogAdapter()
+
+
+def dummy_plugin(runtime_requirements: dict[str, Any] | None = None) -> ModelPlugin:
+    spec = ModelSpec(
+        "dummy_catalog",
+        "Тестовая пятая модель",
+        "1",
+        ("binary",),
+        "Детерминированная тестовая интеграция MP-E.",
+        {"estimator_params": {"rounds": 3}},
+        runtime_requirements or {"device": "cpu"},
+        "1",
+    )
+    parameter = ModelParameter(
+        "/estimator_params/rounds",
+        "Количество итераций",
+        "Безопасный редактируемый тестовый параметр.",
+        ParameterValueType.INTEGER,
+        True,
+        False,
+        True,
+        3,
+        3,
+        minimum=1,
+        maximum=20,
+        display_order=4,
+    )
+    schema = ModelParameterSchema(
+        "dummy_catalog_schema", "1", "dummy_catalog", "1", "1", (parameter,)
+    )
+    profile = RecommendedModelProfile(
+        "dummy_catalog_profile", "1", "dummy_catalog", "1", "1", spec.default_profile
+    )
+    manifest = ModelCapabilityManifest(
+        "dummy_catalog",
+        "1",
+        "1",
+        tuple(
+            CapabilityDeclaration(
+                domain,
+                CapabilitySupport.SUPPORTED
+                if domain
+                in {
+                    CapabilityDomain.TRAINING,
+                    CapabilityDomain.CONFIGURATION,
+                    CapabilityDomain.TARGETLESS_INFERENCE,
+                    CapabilityDomain.SMOKE_TEST,
+                }
+                else CapabilitySupport.UNSUPPORTED,
+            )
+            for domain in CapabilityDomain
+        ),
+    )
+    return ModelPlugin(
+        spec,
+        schema,
+        profile,
+        DummyCatalogFactory(),
+        manifest,
+        ModelInputContract(
+            "dummy_catalog", "1", "1", ("numeric",), "float32", False, "disabled", "cpu"
+        ),
+    )
+
+
+def _registry_with_dummy() -> ModelPluginRegistry:
+    registry = build_builtin_model_plugin_registry()
+    registry.register(dummy_plugin())
+    return registry
+
+
+class TestModelCatalog:
+    def test_catalog_is_deterministic_safe_and_manifest_truthful(self) -> None:
+        registry = _registry_with_dummy()
+        catalog = ModelCatalogService(
+            registry, package_version_resolver=lambda _: "unused"
+        )
+        first, second = catalog.list_models(), catalog.list_models()
+        assert [item.model_id for item in first] == sorted(
+            item.model_id for item in first
+        )
+        assert first == second
+        dummy = catalog.get("dummy_catalog")
+        payload = dummy.to_dict()
+        _assert_declarative(payload)
+        payload["default_profile"]["estimator_params"]["rounds"] = 19
+        assert (
+            registry.get("dummy_catalog").recommended_profile.payload[
+                "estimator_params"
+            ]["rounds"]
+            == 3
+        )
+        expected = registry.get("dummy_catalog").capability_manifest.to_dict()[
+            "capabilities"
+        ]
+        assert payload["capabilities"] == expected
+        assert [item.display_order for item in dummy.parameters] == [4]
+        assert dummy.state == RuntimeAvailabilityState.AVAILABLE
+        assert dummy.reason_code == "MODEL_RUNTIME_READY"
+        try:
+            catalog.get("unregistered")
+        except KeyError:
+            pass
+        else:  # pragma: no cover - assertion boundary
+            raise AssertionError("Unregistered plugin appeared in catalog.")
+
+    def test_runtime_availability_is_generic_and_checks_nested_requirements(
+        self,
+    ) -> None:
+        plugin = dummy_plugin(
+            {
+                "components": {
+                    "one": {"package": "one", "version": "1"},
+                    "two": {"package": "two", "version": "2"},
+                }
+            }
+        )
+        registry = ModelPluginRegistry()
+        registry.register(plugin)
+        missing = ModelCatalogService(
+            registry, package_version_resolver=lambda _: None
+        ).get("dummy_catalog")
+        assert (missing.state, missing.reason_code) == (
+            RuntimeAvailabilityState.UNAVAILABLE,
+            "RUNTIME_PACKAGE_MISSING",
+        )
+        wrong = ModelCatalogService(
+            registry, package_version_resolver=lambda _: "wrong"
+        ).get("dummy_catalog")
+        assert (wrong.state, wrong.reason_code) == (
+            RuntimeAvailabilityState.MISCONFIGURED,
+            "RUNTIME_VERSION_MISMATCH",
+        )
+        ready = ModelCatalogService(
+            registry,
+            package_version_resolver=lambda name: {"one": "1", "two": "2"}[name],
+        ).get("dummy_catalog")
+        assert (ready.state, ready.reason_code) == (
+            RuntimeAvailabilityState.AVAILABLE,
+            "MODEL_RUNTIME_READY",
+        )
+        duplicate = replace(
+            plugin,
+            spec=replace(
+                plugin.spec,
+                runtime_requirements={
+                    "a": {"package": "one", "version": "1"},
+                    "b": {"package": "one", "version": "1"},
+                },
+            ),
+        )
+        invalid_registry = ModelPluginRegistry()
+        invalid_registry.register(duplicate)
+        invalid = ModelCatalogService(
+            invalid_registry, package_version_resolver=lambda _: "1"
+        ).get("dummy_catalog")
+        assert (invalid.state, invalid.reason_code) == (
+            RuntimeAvailabilityState.MISCONFIGURED,
+            "RUNTIME_REQUIREMENTS_INVALID",
+        )
+
+    def test_gbdt_mean_nested_component_requirements_are_all_checked(self) -> None:
+        registry = build_builtin_model_plugin_registry()
+        ready = ModelCatalogService(
+            registry,
+            package_version_resolver=lambda name: {
+                "catboost": "1.2.10",
+                "xgboost": "3.4.1",
+                "lightgbm": "4.7.0",
+            }[name],
+        ).get("gbdt_mean")
+        assert (ready.state, ready.reason_code) == (
+            RuntimeAvailabilityState.AVAILABLE,
+            "MODEL_RUNTIME_READY",
+        )
+        missing_component = ModelCatalogService(
+            registry,
+            package_version_resolver=lambda name: (
+                None
+                if name == "lightgbm"
+                else {"catboost": "1.2.10", "xgboost": "3.4.1"}[name]
+            ),
+        ).get("gbdt_mean")
+        assert (missing_component.state, missing_component.reason_code) == (
+            RuntimeAvailabilityState.UNAVAILABLE,
+            "RUNTIME_PACKAGE_MISSING",
+        )
+
+    def test_dummy_plugin_full_generic_chain_to_v2_artifact(self) -> None:
+        registry = _registry_with_dummy()
+        configuration = ModelConfigurationService(registry)
+        recommended = configuration.resolve(
+            model_id="dummy_catalog",
+            mode=ModelConfigurationMode.RECOMMENDED,
+            user_overrides={},
+        )
+        advanced = configuration.resolve(
+            model_id="dummy_catalog",
+            mode=ModelConfigurationMode.ADVANCED,
+            user_overrides={"/estimator_params/rounds": 5},
+        )
+        assert recommended.resolved_parameters_dict()["estimator_params"]["rounds"] == 3
+        assert advanced.resolved_parameters_dict()["estimator_params"]["rounds"] == 5
+        dataset, features, population = _dataset()
+        planner = ExperimentPlanningService(model_plugin_registry=registry)
+        plan = planner.build_plan(
+            to_planning_request_metadata(_request()),
+            loaded_dataset=dataset,
+            feature_registry=features,
+            population=population,
+        )
+        assert plan.is_valid
+        assert plan.model is not None and plan.model.model_id == "dummy_catalog"
+        models = ModelRegistry()
+        models.register(registry.get("dummy_catalog").spec)
+        with TemporaryDirectory() as root:
+            authority = PreparedDatasetContextAuthority()
+            context = authority.register(
+                PreparedDatasetContext(
+                    "dummy-context", "Dummy", dataset, features, population
+                )
+            )
+            service = ExperimentApplicationService(
+                model_registry=models,
+                model_factories={
+                    "dummy_catalog": registry.get("dummy_catalog").factory
+                },
+                artifact_store=ExperimentArtifactStore(root),
+                comparison_service=ExperimentComparisonService(),
+                code_version="test",
+                model_plugin_registry=registry,
+                prepared_context_authority=authority,
+            )
+            smoke = service.run_configuration_smoke(
+                loaded_dataset=dataset,
+                feature_registry=features,
+                population=population,
+                request=_request(),
+                prepared_context_id=context.context_id,
+            )
+            assert smoke.status.value == "PASS"
+            artifact = service.run_experiment(
+                loaded_dataset=dataset,
+                feature_registry=features,
+                population=population,
+                request=_request(),
+                prepared_context_id=context.context_id,
+            )
+        assert artifact.configuration_record is not None
+        assert artifact.smoke_evidence is not None
+        assert artifact.configuration_record.model_id == "dummy_catalog"
+        assert artifact.smoke_evidence.smoke_identity == smoke.smoke_identity
+
+
+def _request() -> RunExperimentRequest:
+    return RunExperimentRequest(
+        ("a", "b"),
+        "dummy_catalog",
+        "stratified_kfold_oof",
+        "1",
+        17,
+        2,
+        "oof",
+        None,
+        None,
+        (),
+        "ADVANCED",
+        {"/estimator_params/rounds": 5},
+    )
+
+
+def _dataset() -> tuple[LoadedDataset, FeatureRegistry, EvaluationPopulation]:
+    dataframe = pd.DataFrame(
+        {
+            "id": range(20),
+            "target": [0, 1] * 10,
+            "a": np.linspace(0.1, 0.9, 20),
+            "b": np.linspace(0.9, 0.1, 20),
+        }
+    )
+    specs = (
+        FeatureSpec(
+            "a",
+            "a",
+            "A",
+            "A",
+            "g",
+            "float",
+            "numeric",
+            "test",
+            FeatureUsageStatus.MODEL_ALLOWED,
+            None,
+            None,
+            None,
+            1,
+        ),
+        FeatureSpec(
+            "b",
+            "b",
+            "B",
+            "B",
+            "g",
+            "float",
+            "numeric",
+            "test",
+            FeatureUsageStatus.MODEL_ALLOWED,
+            None,
+            None,
+            None,
+            2,
+        ),
+    )
+    features = FeatureRegistry(
+        "dummy-features", specs, (FeatureGroup("g", "G", "G", 1, "test", ("a", "b")),)
+    )
+    contract = DatasetContract(
+        "dummy-dataset",
+        "1",
+        "Dummy",
+        "ready_csv",
+        "dummy-fp",
+        20,
+        4,
+        "target",
+        1,
+        "id",
+        features.registry_id,
+        features.registry_hash,
+        "validated",
+        False,
+    )
+    return (
+        LoadedDataset(dataframe, contract, Path("dummy.csv"), "csv", "dummy"),
+        features,
+        EvaluationPopulation(
+            tuple(range(20)), "working", "dummy-population", "working"
+        ),
+    )
+
+
+def _assert_declarative(value: Any) -> None:
+    assert not callable(value)
+    assert not isinstance(value, type)
+    if isinstance(value, dict):
+        for item in value.values():
+            _assert_declarative(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            _assert_declarative(item)

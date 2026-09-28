@@ -40,20 +40,9 @@ from komus_risk.experiments import EvaluationPopulation
 from komus_risk.integrations.openai_result_interpreter import (
     OpenAIResultInterpreterClient,
 )
-from komus_risk.model_platform import (
-    build_builtin_model_plugin_registry,
-    builtin_gbdt_persistence_providers,
-)
+from komus_risk.model_platform import build_builtin_model_plugin_registry
 from komus_risk.models import (
-    CATBOOST_MODEL_SPEC,
-    GBDT_MEAN_MODEL_SPEC,
-    LIGHTGBM_MODEL_SPEC,
-    XGBOOST_MODEL_SPEC,
-    CatBoostFactory,
-    GBDTMeanFactory,
-    LightGBMFactory,
     ModelAdapterFactory,
-    XGBoostFactory,
 )
 from komus_risk.planning import ExperimentPlanningService
 from komus_risk.preparation import (
@@ -668,25 +657,15 @@ def create_runtime(
     result_interpreter_factories: Mapping[str, Callable[[str, str], Any]] | None = None,
 ) -> PrototypeRuntime:
     """Wire existing model, planning, application, persistence and comparison services."""
-    component_factories = (CatBoostFactory(), XGBoostFactory(), LightGBMFactory())
-    mean_factory = GBDTMeanFactory(
-        {factory.model_id: factory for factory in component_factories}
-    )
-    factories = {
-        factory.model_id: factory for factory in (*component_factories, mean_factory)
-    }
-    registry = ModelRegistry()
-    for spec in (
-        CATBOOST_MODEL_SPEC,
-        XGBOOST_MODEL_SPEC,
-        LIGHTGBM_MODEL_SPEC,
-        GBDT_MEAN_MODEL_SPEC,
-    ):
-        registry.register(spec)
     plugin_registry = build_builtin_model_plugin_registry()
-    persistence_provider_registry = builtin_gbdt_persistence_providers(
-        plugin_registry.list()
-    )
+    plugins = plugin_registry.list()
+    factories = {plugin.spec.model_id: plugin.factory for plugin in plugins}
+    registry = ModelRegistry()
+    for plugin in plugins:
+        registry.register(plugin.spec)
+    persistence_provider_registry = plugin_registry.persistence_providers
+    if persistence_provider_registry is None:  # pragma: no cover - builtin invariant
+        raise RuntimeError("Builtin model plugins require persistence providers.")
     context_authority = PreparedDatasetContextAuthority()
     store_root = (
         Path(artifact_root)
@@ -698,15 +677,7 @@ def create_runtime(
     model_version_store = ModelVersionStore(
         store_root / "model_versions",
         code_version=code_version,
-        model_specs={
-            spec.model_id: spec
-            for spec in (
-                CATBOOST_MODEL_SPEC,
-                XGBOOST_MODEL_SPEC,
-                LIGHTGBM_MODEL_SPEC,
-                GBDT_MEAN_MODEL_SPEC,
-            )
-        },
+        model_specs={plugin.spec.model_id: plugin.spec for plugin in plugins},
         model_plugin_registry=plugin_registry,
         persistence_provider_registry=persistence_provider_registry,
     )

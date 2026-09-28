@@ -3,6 +3,13 @@
 This package is intentionally not wired into the existing experiment path yet.
 """
 
+from .catalog import (
+    CatalogCapability,
+    CatalogParameter,
+    ModelCatalogEntry,
+    ModelCatalogService,
+    RuntimeAvailabilityState,
+)
 from .configuration import (
     ModelConfigurationError,
     ModelConfigurationMode,
@@ -47,7 +54,11 @@ __all__ = [
     "CapabilityDeclaration",
     "CapabilityDomain",
     "CapabilitySupport",
+    "CatalogCapability",
+    "CatalogParameter",
     "ModelCapabilityManifest",
+    "ModelCatalogEntry",
+    "ModelCatalogService",
     "ModelConfigurationError",
     "ModelConfigurationMode",
     "ModelConfigurationRecord",
@@ -66,6 +77,7 @@ __all__ = [
     "ProviderDescriptor",
     "RecommendedModelProfile",
     "ResolvedModelConfiguration",
+    "RuntimeAvailabilityState",
     "SmokeError",
     "SmokeEvidence",
     "SmokePolicy",

@@ -2,58 +2,70 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from copy import deepcopy
-
 from komus_risk.contracts import FeatureUsageStatus
 from komus_risk.data import LoadedDataset
 from komus_risk.experiments import EvaluationPopulation
-from komus_risk.models import ModelAdapterFactory
-from komus_risk.model_platform import ModelConfigurationError, ModelConfigurationService, ModelPluginRegistry
-from komus_risk.registries import FeatureRegistry, ModelRegistry
+from komus_risk.model_platform import (
+    ModelCatalogEntry,
+    ModelCatalogService,
+    ModelConfigurationError,
+    ModelConfigurationService,
+    ModelPluginRegistry,
+)
+from komus_risk.registries import FeatureRegistry
 
 from .contracts import (
     DatasetPassport,
     ExperimentPlan,
     FeatureGroupView,
     FeatureView,
-    ModelView,
     PlanningRequestMetadata,
     PopulationSummary,
-    freeze_value,
 )
 
 
 class ExperimentPlanningService:
-    """Produces immutable planning DTOs from trusted contracts and metadata."""
+    """Produces immutable plans from feature contracts and the trusted plugin catalog."""
 
-    def __init__(self, *, model_plugin_registry: ModelPluginRegistry | None = None) -> None:
-        self._model_configuration_service = (
-            ModelConfigurationService(model_plugin_registry)
-            if model_plugin_registry is not None
-            else None
+    def __init__(self, *, model_plugin_registry: ModelPluginRegistry) -> None:
+        self._model_catalog_service = ModelCatalogService(model_plugin_registry)
+        self._model_configuration_service = ModelConfigurationService(
+            model_plugin_registry
         )
 
     def describe_dataset(self, loaded_dataset: LoadedDataset) -> DatasetPassport:
         return DatasetPassport.from_contract(loaded_dataset.contract)
 
-    def list_features(self, feature_registry: FeatureRegistry) -> tuple[FeatureView, ...]:
+    def list_features(
+        self, feature_registry: FeatureRegistry
+    ) -> tuple[FeatureView, ...]:
         return tuple(
             self._feature_view(spec)
-            for spec in sorted(feature_registry._features.values(), key=lambda item: (item.display_order, item.feature_id))
-        )
-    def list_feature_groups(self, feature_registry: FeatureRegistry) -> tuple[FeatureGroupView, ...]:
-        """Expose group presentation metadata without leaking registry internals to callers."""
-        return tuple(
-            FeatureGroupView(group.group_id, group.name_ru, group.description_ru, group.display_order)
-            for group in sorted(feature_registry._groups.values(), key=lambda item: (item.display_order, item.group_id))
+            for spec in sorted(
+                feature_registry._features.values(),
+                key=lambda item: (item.display_order, item.feature_id),
+            )
         )
 
-    def list_models(
-        self, model_registry: ModelRegistry, model_factories: Mapping[str, ModelAdapterFactory],
-    ) -> tuple[ModelView, ...]:
-        factories = self._validated_factories(model_registry, model_factories)
-        return tuple(self._model_view(spec, factories.get(spec.model_id)) for spec in model_registry.list())
+    def list_feature_groups(
+        self, feature_registry: FeatureRegistry
+    ) -> tuple[FeatureGroupView, ...]:
+        return tuple(
+            FeatureGroupView(
+                group.group_id,
+                group.name_ru,
+                group.description_ru,
+                group.display_order,
+            )
+            for group in sorted(
+                feature_registry._groups.values(),
+                key=lambda item: (item.display_order, item.group_id),
+            )
+        )
+
+    def list_models(self) -> tuple[ModelCatalogEntry, ...]:
+        """Return catalog entries without caller-supplied registries or factories."""
+        return self._model_catalog_service.list_models()
 
     def build_plan(
         self,
@@ -61,19 +73,22 @@ class ExperimentPlanningService:
         *,
         loaded_dataset: LoadedDataset,
         feature_registry: FeatureRegistry,
-        model_registry: ModelRegistry,
-        model_factories: Mapping[str, ModelAdapterFactory],
         population: EvaluationPopulation,
     ) -> ExperimentPlan:
         if not isinstance(request, PlanningRequestMetadata):
             raise TypeError("request must be PlanningRequestMetadata.")
         contract = loaded_dataset.contract
-        if contract.feature_registry_id != feature_registry.registry_id or contract.feature_registry_hash != feature_registry.registry_hash:
+        if (
+            contract.feature_registry_id != feature_registry.registry_id
+            or contract.feature_registry_hash != feature_registry.registry_hash
+        ):
             raise ValueError("DatasetContract is inconsistent with FeatureRegistry.")
-        factories = self._validated_factories(model_registry, model_factories)
         dataset = self.describe_dataset(loaded_dataset)
         population_summary = PopulationSummary(
-            population.population_id, population.population_fingerprint, population.partition_role, len(population.row_positions)
+            population.population_id,
+            population.population_fingerprint,
+            population.partition_role,
+            len(population.row_positions),
         )
         selected_specs = []
         errors: list[str] = []
@@ -88,28 +103,23 @@ class ExperimentPlanningService:
                 continue
             selected_specs.append(spec)
         try:
-            model_spec = model_registry.get(request.model_id)
+            model = self._model_catalog_service.get(request.model_id)
         except KeyError:
             model = None
             errors.append(f"unknown_model:{request.model_id}")
         else:
-            model = self._model_view(model_spec, factories.get(model_spec.model_id))
             if not model.runnable:
                 errors.append(f"non_runnable_model:{request.model_id}")
         resolved_configuration = None
         if model is not None:
-            if self._model_configuration_service is None:
-                if request.configuration_mode != "RECOMMENDED" or request.user_overrides:
-                    errors.append("model_configuration:PLUGIN_CONFIGURATION_INVALID")
-            else:
-                try:
-                    resolved_configuration = self._model_configuration_service.resolve(
-                        model_id=request.model_id,
-                        mode=request.configuration_mode,
-                        user_overrides=request.user_overrides,
-                    )
-                except ModelConfigurationError as error:
-                    errors.append(f"model_configuration:{error.code}")
+            try:
+                resolved_configuration = self._model_configuration_service.resolve(
+                    model_id=request.model_id,
+                    mode=request.configuration_mode,
+                    user_overrides=request.user_overrides,
+                )
+            except ModelConfigurationError as error:
+                errors.append(f"model_configuration:{error.code}")
         selected_features = tuple(self._feature_view(spec) for spec in selected_specs)
         return ExperimentPlan(
             request=request,
@@ -125,30 +135,15 @@ class ExperimentPlanningService:
         )
 
     @staticmethod
-    def _validated_factories(
-        model_registry: ModelRegistry, model_factories: Mapping[str, ModelAdapterFactory],
-    ) -> dict[str, ModelAdapterFactory]:
-        factories = dict(model_factories)
-        for key, factory in factories.items():
-            if key != getattr(factory, "model_id", None):
-                raise ValueError("Model factory mapping key must match factory.model_id.")
-            spec = model_registry.get(factory.model_id)
-            if factory.model_version != spec.version or factory.adapter_version != spec.adapter_version:
-                raise ValueError("Model factory identity is inconsistent with ModelRegistry.")
-        return factories
-
-    @staticmethod
     def _feature_view(spec) -> FeatureView:
         return FeatureView(
-            spec.feature_id, spec.column_name, spec.display_name_ru, spec.description_ru, spec.group_id,
-            spec.usage_status, spec.usage_status is FeatureUsageStatus.MODEL_ALLOWED, spec.blocked_reason,
+            spec.feature_id,
+            spec.column_name,
+            spec.display_name_ru,
+            spec.description_ru,
+            spec.group_id,
+            spec.usage_status,
+            spec.usage_status is FeatureUsageStatus.MODEL_ALLOWED,
+            spec.blocked_reason,
             spec.display_order,
-        )
-
-    @staticmethod
-    def _model_view(spec, factory: ModelAdapterFactory | None) -> ModelView:
-        return ModelView(
-            spec.model_id, spec.display_name_ru, spec.version, spec.task_types, spec.description_ru,
-            freeze_value(deepcopy(spec.default_profile)), freeze_value(deepcopy(spec.runtime_requirements)),
-            spec.adapter_version, factory is not None,
         )

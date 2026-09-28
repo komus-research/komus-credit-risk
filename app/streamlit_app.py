@@ -1090,9 +1090,7 @@ def _render_models_step(runtime) -> None:
     if context is None:
         return
     st.header("3. Алгоритм")
-    models = tuple(
-        model for model in runtime.planning_service.list_models(runtime.model_registry, runtime.model_factories) if model.runnable
-    )
+    models = tuple(model for model in runtime.planning_service.list_models() if model.runnable)
     if not models:
         st.error("Нет доступного алгоритма для выбранной конфигурации.")
         return
@@ -1231,8 +1229,6 @@ def _render_experiment_step(runtime) -> None:
                 snapshot,
                 loaded_dataset=context.loaded_dataset,
                 feature_registry=context.feature_registry,
-                model_registry=runtime.model_registry,
-                model_factories=runtime.model_factories,
                 population=context.population,
             )
         except (TypeError, ValueError):
