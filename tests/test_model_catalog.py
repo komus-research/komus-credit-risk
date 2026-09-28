@@ -179,6 +179,37 @@ def _presentation_registry(registry: ModelPluginRegistry) -> ModelPresentationRe
 
 
 class TestModelCatalog:
+    def test_catalog_keeps_the_exact_plugin_snapshot_validated_at_construction(
+        self,
+    ) -> None:
+        registry = build_builtin_model_plugin_registry()
+        original_ids = {plugin.spec.model_id for plugin in registry.list()}
+        presentations = builtin_model_presentation_registry(registry)
+        catalog = ModelCatalogService(
+            registry, presentations, package_version_resolver=lambda _: "unused"
+        )
+        assert {item.model_id for item in catalog.list_models()} == original_ids
+
+        fifth_plugin = dummy_plugin()
+        registry.register(fifth_plugin)
+        assert "dummy_catalog" in {item.spec.model_id for item in registry.list()}
+        assert {item.model_id for item in catalog.list_models()} == original_ids
+        with pytest.raises(KeyError):
+            catalog.get("dummy_catalog")
+
+        expanded_catalog = ModelCatalogService(
+            registry,
+            _presentation_registry(registry),
+            package_version_resolver=lambda _: "unused",
+        )
+        assert {item.model_id for item in expanded_catalog.list_models()} == (
+            original_ids | {"dummy_catalog"}
+        )
+        assert (
+            expanded_catalog.get("dummy_catalog").parameters[0].display_name_ru
+            == "Тестовый параметр"
+        )
+
     def test_catalog_is_deterministic_safe_and_manifest_truthful(self) -> None:
         registry = _registry_with_dummy()
         catalog = ModelCatalogService(

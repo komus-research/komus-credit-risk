@@ -9,6 +9,7 @@ from typing import Any
 
 from komus_risk.hashing import stable_hash
 
+from .contracts import ModelPlugin
 from .registry import ModelPluginRegistry
 
 
@@ -86,6 +87,9 @@ class ModelPresentationProfile:
             )
         except (TypeError, ValueError) as error:
             raise ModelPresentationError() from error
+        paths = [item.parameter_path for item in parameters]
+        if len(paths) != len(set(paths)):
+            raise ModelPresentationError()
         object.__setattr__(self, "parameters", parameters)
         object.__setattr__(
             self, "presentation_hash", stable_hash(self.canonical_payload())
@@ -145,10 +149,19 @@ class ModelCatalogComposition:
 
     @classmethod
     def compose(
-        cls, plugins: ModelPluginRegistry, presentations: ModelPresentationRegistry
+        cls,
+        plugins: ModelPluginRegistry | Sequence[ModelPlugin],
+        presentations: ModelPresentationRegistry,
     ) -> ModelCatalogComposition:
         try:
-            plugin_by_id = {plugin.spec.model_id: plugin for plugin in plugins.list()}
+            plugin_snapshot = (
+                tuple(plugins.list())
+                if isinstance(plugins, ModelPluginRegistry)
+                else tuple(plugins)
+            )
+            if any(not isinstance(plugin, ModelPlugin) for plugin in plugin_snapshot):
+                raise ValueError
+            plugin_by_id = {plugin.spec.model_id: plugin for plugin in plugin_snapshot}
             profiles = presentations.list()
             bound: dict[str, ModelPresentationProfile] = {}
             for profile in profiles:

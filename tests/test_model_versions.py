@@ -5,6 +5,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
+from shutil import copytree
 from tempfile import TemporaryDirectory
 
 import numpy as np
@@ -578,6 +579,42 @@ class ModelVersionTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "exact persisted"):
             loaded.predictor.predict_positive_proba(X.loc[:, ["f_b", "f_a"]])
+
+    def test_pre_presentation_model_version_v2_fixture_loads_with_current_validation(
+        self,
+    ) -> None:
+        model_version_id = (
+            "2662c2c69ce8a9740582e75bb9bf0a04079d9dfb920779fbbff375a0bf939815"
+        )
+        fixture = (
+            Path(__file__).parent
+            / "fixtures"
+            / "model_version_v2_pre_presentation"
+            / model_version_id
+        )
+        with TemporaryDirectory() as root:
+            copytree(fixture, Path(root) / model_version_id)
+            plugins = build_builtin_model_plugin_registry()
+            plugin = plugins.get("catboost")
+            store = ModelVersionStore(
+                root,
+                code_version="code-v1",
+                model_specs={"catboost": plugin.spec},
+                model_plugin_registry=plugins,
+            )
+            loaded = store.load(model_version_id)
+
+        self.assertEqual(loaded.metadata["schema_version"], 2)
+        self.assertEqual(loaded.metadata["model_id"], "catboost")
+        self.assertEqual(
+            loaded.metadata["configuration_record"]["plugin_contract_hash"],
+            plugin.plugin_contract_hash,
+        )
+        self.assertEqual(
+            loaded.metadata["configuration_record"]["configuration_record_id"],
+            "84b5eacfa236f53faa61956069e277da4508c6ced4b9de3c8682c7a527c8195f",
+        )
+        self.assertEqual(loaded.manifest["model_version_id"], model_version_id)
 
     def test_frozen_pre_presentation_v2_artifact_continues_through_final_fit_and_save(
         self,

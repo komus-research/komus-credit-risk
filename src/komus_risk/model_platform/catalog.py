@@ -257,9 +257,12 @@ class ModelCatalogService:
             raise TypeError(
                 "presentation_registry must be a ModelPresentationRegistry."
             )
-        self._registry = registry
+        self._plugins = tuple(registry.list())
+        self._plugins_by_id = MappingProxyType(
+            {plugin.spec.model_id: plugin for plugin in self._plugins}
+        )
         self._composition = ModelCatalogComposition.compose(
-            registry, presentation_registry
+            self._plugins, presentation_registry
         )
         self._package_version_resolver = (
             package_version_resolver or _default_package_version
@@ -268,13 +271,19 @@ class ModelCatalogService:
     def list_models(self) -> tuple[ModelCatalogEntry, ...]:
         return tuple(
             self._entry(plugin)
-            for plugin in sorted(
-                self._registry.list(), key=lambda item: item.spec.model_id
-            )
+            for plugin in sorted(self._plugins, key=lambda item: item.spec.model_id)
         )
 
     def get(self, model_id: str) -> ModelCatalogEntry:
-        return self._entry(self._registry.get(model_id))
+        if not isinstance(model_id, str) or not model_id.strip():
+            raise ValueError("model_id must be a non-empty string.")
+        try:
+            plugin = self._plugins_by_id[model_id]
+        except KeyError as error:
+            raise KeyError(
+                f"model plugin '{model_id}' is not registered in this catalog."
+            ) from error
+        return self._entry(plugin)
 
     def _entry(self, plugin) -> ModelCatalogEntry:
         spec = plugin.spec
