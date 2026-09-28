@@ -2,7 +2,9 @@
 
 Status: **READY_FOR_REVIEW**
 
-Base main: `49c208a003a910054f54a67fddc5051d7a1ad3ab`
+Original architecture base: 49c208a003a910054f54a67fddc5051d7a1ad3ab
+
+Corrective review base: 112e10a8911523a496303dc733c2e49a2869b60e
 
 This is a narrow prerequisite for Algorithm UX V1.
 It does not reopen accepted MP-A..MP-E architecture and does not implement UI.
@@ -105,7 +107,62 @@ CatalogParameter
 Frontend continues to consume only `ModelCatalogEntry / CatalogParameter`.
 No frontend translation dictionary is allowed.
 
+### Atomic presentation composition
+
+Presentation composition is **atomic**.
+
+There is one explicit trusted binding/composition step:
+
+~~~text
+ModelPluginRegistry
+        +
+ModelPresentationRegistry
+        ↓
+ModelCatalogComposition
+        ↓
+ModelCatalogService
+~~~
+
+Before ModelCatalogService.list_models() or get() may expose any user-facing
+catalog entry, the complete trusted plugin/presentation set must validate.
+
+If any registered binding is malformed or incomplete:
+
+- no partial user-facing catalog is produced;
+- valid models are not silently published while the bad model is omitted;
+- there is no fallback to legacy ModelParameter.display_name_ru;
+- there is no frontend fallback copy;
+- no merge or silent deduplication is allowed;
+- no best-effort catalog is allowed.
+
+The composition fails closed with one stable V1 error family:
+
+~~~text
+ModelPresentationError("INVALID_MODEL_PRESENTATION_COMPOSITION")
+~~~
+
+Do not reuse runtime states such as UNAVAILABLE or MISCONFIGURED for broken
+trusted presentation metadata. Those states describe model/runtime readiness,
+not catalog-composition correctness.
+
+Presentation failure does **not** invalidate or mutate ModelPluginRegistry.
+
+These paths remain presentation-independent:
+
+- ModelConfigurationService;
+- configuration resolver;
+- smoke execution/matching;
+- ExperimentRunner;
+- FinalModelTrainingService;
+- ModelVersionStore;
+- inference;
+- local explanation;
+- historical artifact reading.
+
+Presentation failure blocks only the user-facing catalog composition.
+
 ---
+
 
 ## 3. Why this boundary
 
@@ -130,32 +187,65 @@ human-facing metadata without introducing `model_id` branches in Streamlit.
 ## 4. Exact source of Russian presentation metadata
 
 For Algorithm UX V1, authoritative parameter copy comes from
-`ModelPresentationProfile`, not from legacy identity-bearing
-`ModelParameter.display_name_ru / description_ru`.
+ModelPresentationProfile, not from legacy identity-bearing
+ModelParameter.display_name_ru / description_ru.
 
 Lookup key:
 
-```text
+~~~text
 (model_id, model_version, adapter_version,
  schema_id, schema_version, schema_hash,
  parameter_path, locale="ru")
-```
+~~~
 
-V1 may implement locale as an explicit fixed `ru` profile rather than a
-general localization platform.
+V1 uses the explicit supported locale ru rather than building a general i18n
+platform.
 
 For every catalog-visible trusted plugin, the Russian presentation profile
 must have exact one-to-one coverage of the current parameter schema:
 
-- every schema `parameter_path` has exactly one presentation entry;
+- every schema parameter_path has exactly one presentation entry;
 - no presentation entry references an unknown path;
 - no duplicate path is allowed;
-- `display_name_ru` is non-empty;
-- `description_ru` is non-empty;
+- display_name_ru is non-empty;
+- description_ru is non-empty;
 - profile model/schema identity exactly matches the trusted plugin schema.
 
-Missing or mismatched presentation metadata is a trusted catalog-composition
-error. It must not silently fall back to a frontend dictionary.
+Validation order is locked:
+
+1. construct and validate each ModelPresentationProfile internal structure:
+   required text, supported locale ru, unique parameter_path, deterministic
+   immutable representation;
+2. bind ModelPluginRegistry ↔ ModelPresentationRegistry;
+3. validate the complete composition:
+   exactly one matching Russian profile per catalog-visible plugin, exact
+   model_id/model_version/adapter_version/schema_id/schema_version/schema_hash,
+   exact one-to-one parameter-path coverage, and no orphan profiles;
+4. only after the complete set passes may ModelCatalogService.list_models()
+   or get() expose catalog entries.
+
+All malformed structural/binding cases use:
+
+~~~text
+ModelPresentationError("INVALID_MODEL_PRESENTATION_COMPOSITION")
+~~~
+
+This includes:
+
+- missing parameter presentation;
+- unknown presentation parameter_path;
+- duplicate path inside one profile;
+- wrong schema_hash;
+- mismatch in any model/schema binding field;
+- missing whole profile for a catalog-visible trusted plugin;
+- more than one profile for the same binding/locale;
+- orphan profile not bound to any trusted plugin/schema;
+- several valid pairs plus one malformed pair.
+
+The last case still yields **no partial catalog**.
+
+Missing or mismatched presentation metadata must never fall back to legacy
+ModelParameter copy or frontend text.
 
 ---
 
@@ -231,6 +321,11 @@ factory/provider dispatch.
 A new fifth/sixth plugin therefore requires no frontend branch.
 It provides its own schema and matching presentation profile.
 
+If the new trusted plugin has malformed or missing presentation metadata,
+user-facing catalog composition fails atomically with
+INVALID_MODEL_PRESENTATION_COMPOSITION, while the behavioral plugin remains
+otherwise valid/trusted for backend paths.
+
 Historical/backend operations that resolve a model artifact by trusted plugin
 identity do not depend on presentation metadata.
 
@@ -265,25 +360,76 @@ migration and is explicitly out of scope.
 
 ### Presentation identity
 
-`ModelPresentationProfile` has its own independent identity:
+ModelPresentationProfile has its own independent identity.
 
-```text
-presentation_hash =
-stable_hash(
-    presentation_schema_version
-    + presentation_profile_id/version
-    + bound model/schema identity
-    + exact parameter_path → Russian copy
-)
-```
+Exact canonical contract:
 
-A copy edit changes only:
+~~~text
+presentation_hash = stable_hash({
+    "presentation_schema_version": <value>,
+    "presentation_profile_id": <value>,
+    "presentation_profile_version": <value>,
+    "locale": "ru",
+    "model_id": <value>,
+    "model_version": <value>,
+    "adapter_version": <value>,
+    "schema_id": <value>,
+    "schema_version": <value>,
+    "schema_hash": <value>,
+    "parameters": [
+        {
+            "parameter_path": <path>,
+            "display_name_ru": <text>,
+            "description_ru": <text>
+        },
+        ...
+    ]
+})
+~~~
 
-- presentation profile version, when intentionally released;
-- `presentation_hash`;
-- catalog-visible text.
+Before hashing, parameters MUST be canonicalized by ascending exact
+parameter_path.
 
-It does not change executable/configuration identity.
+Registration/insertion order must not affect presentation_hash. No repr(),
+object identity, memory address, or incidental dict/list iteration order may
+participate in presentation identity.
+
+presentation_profile_version is a release version for presentation
+content/binding only.
+
+It MUST change when an intentionally released presentation payload changes,
+including display_name_ru, description_ru, or the bound schema identity.
+
+It MUST NOT be bumped when canonical content/binding is unchanged merely to
+manufacture a new identity.
+
+For identical canonical payload + identical version, presentation_hash must be
+identical regardless of construction order. If version changes, the hash
+changes because version is part of the canonical payload.
+
+Built-in presentation declarations must have a frozen regression pairing of
+canonical content/binding to expected presentation_profile_version. A
+version-only change with unchanged content therefore fails regression.
+
+presentation_profile_version is not a scientific/model version.
+
+Presentation identity remains backend/debug-only in V1.
+
+Do NOT add presentation_profile_id, presentation_profile_version, or
+presentation_hash to ModelCatalogEntry.
+
+They are not persisted into:
+
+- ExperimentArtifact V2;
+- ModelConfigurationRecord;
+- SmokeEvidence;
+- ModelVersion V2.
+
+CatalogParameter already carries the resolved safe user-facing copy, so
+frontend does not need presentation provenance.
+
+A copy edit changes only presentation profile content/version/hash and
+catalog-visible text. It does not change executable/configuration identity.
 
 ---
 
@@ -414,6 +560,14 @@ The presentation registry is not consulted by:
 
 Therefore missing/changing copy cannot create a scientific compatibility bypass.
 
+Presentation composition is intentionally not consulted by those services.
+If catalog composition is invalid, user-facing model discovery fails closed,
+while otherwise trusted historical/backend operations continue with unchanged
+behavioral plugin identities and exact existing validation rules.
+
+No allowlist, hash alias, compatibility exception, or
+presentation-compatible bypass is introduced.
+
 ---
 
 ## 12. Required historical regression tests
@@ -500,6 +654,67 @@ works without frontend/model-id branches.
 Missing or mismatched presentation coverage fails the trusted catalog
 composition instead of falling back to hardcoded UI copy.
 
+### H1. Missing path / no partial catalog
+
+Several valid profiles plus one plugin profile missing one schema path.
+
+Expected:
+
+~~~text
+INVALID_MODEL_PRESENTATION_COMPOSITION
+~~~
+
+and no partial catalog result.
+
+### H2. Wrong schema hash
+
+One profile is bound to the wrong schema_hash.
+Expected the same stable error and no partial catalog.
+
+### H3. Duplicate presentation path
+
+Expected the same stable error.
+
+### H4. Unknown/orphan profile
+
+A presentation profile references a plugin/schema absent from the trusted
+plugin registry. Expected the same stable error.
+
+### H5. Missing whole profile
+
+One catalog-visible trusted plugin has no Russian profile.
+Expected the same stable error and no partial catalog.
+
+### H6. Multiple profiles for one binding/locale
+
+Expected the same stable error.
+
+### I1. Hash insertion-order independence
+
+Two profiles with identical canonical content but reverse registration /
+parameter-entry order produce the same presentation_hash.
+
+### I2. Copy edit
+
+Only display_name_ru or description_ru changes and the presentation release
+version is intentionally bumped.
+
+Expected: presentation_hash changes while all behavioral hashes remain
+identical.
+
+### I3. Identical canonical profile
+
+Same profile identity/version/content constructed twice in different input
+order produces the same presentation_hash.
+
+### I4. No version-only churn
+
+Built-in regression binds canonical presentation content/binding to its
+expected presentation_profile_version. If content/binding is unchanged while
+only the version changes, the regression fails.
+
+This is presentation release discipline, not a scientific compatibility rule.
+
 ---
 
 ## 13. Minimal implementation scope
@@ -507,6 +722,12 @@ composition instead of falling back to hardcoded UI copy.
 Expected narrow scope:
 
 ### New / changed backend presentation boundary
+
+The implementation must include the stable
+INVALID_MODEL_PRESENTATION_COMPOSITION error family and one explicit immutable
+atomic ModelCatalogComposition (or equivalently named validated composition
+object) before ModelCatalogService publishes any catalog entry.
+
 
 - new small module, preferably:
   `src/komus_risk/model_platform/presentation.py`;
@@ -520,6 +741,11 @@ Expected narrow scope:
 ### Tests
 
 Focused tests for:
+
+- atomic whole-set composition and no partial catalog;
+- stable presentation-composition error family;
+- canonical presentation_hash and insertion-order independence;
+- presentation release-version discipline;
 
 - presentation registry/profile validation;
 - catalog Russian projection;

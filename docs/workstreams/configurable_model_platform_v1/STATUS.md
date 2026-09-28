@@ -157,6 +157,18 @@ Architect decision:
 - keep presentation identity independent from behavioral/scientific identity;
 - require historical V2 read + final-fit/save continuation regression before ACCEPT.
 
+Reviewer corrective FIX incorporated:
+
+- atomic fail-closed composition of the complete trusted plugin/presentation set;
+- stable INVALID_MODEL_PRESENTATION_COMPOSITION error contract;
+- presentation failure blocks only the user-facing catalog, not behavioral services;
+- exact canonical presentation_hash payload with parameters sorted by exact parameter_path;
+- explicit presentation_profile_version release semantics and no version-only churn;
+- presentation identity remains backend/debug-only and is not added to catalog/scientific artifacts;
+- negative composition and hash-determinism acceptance tests are explicit.
+
+Status remains **READY_FOR_REVIEW** / **NOT STARTED**.
+
 Source:
 
 `PARAMETER_PRESENTATION_IDENTITY_V1.md`
