@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -18,6 +21,7 @@ from app.session_state import (
     open_result,
     request_new_analysis,
 )
+from app.upload_staging import StagedUpload
 
 
 class HomeSessionNavigationTests(unittest.TestCase):
@@ -219,9 +223,35 @@ class HomeSessionNavigationTests(unittest.TestCase):
 
     def test_confirmed_reset_clears_only_session_analysis_state(self) -> None:
         persistent_marker = object()
+        staging_root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, staging_root, ignore_errors=True)
+        dataset_upload = staging_root / "upload-dataset"
+        inference_upload = staging_root / "upload-inference"
+        dataset_upload.mkdir()
+        inference_upload.mkdir()
+        dataset_path = dataset_upload / "dataset.csv"
+        inference_path = inference_upload / "inference.csv"
+        dataset_path.write_text("dataset", encoding="utf-8")
+        inference_path.write_text("inference", encoding="utf-8")
+        staged_dataset = StagedUpload(
+            dataset_path, "dataset.csv", "dataset", staging_root
+        )
+        staged_inference = StagedUpload(
+            inference_path, "inference.csv", "inference", staging_root
+        )
+        old_target_key = prototype._preparation_form_key(
+            1, "same-fingerprint", "target"
+        )
+        old_identifier_key = prototype._preparation_form_key(
+            1, "same-fingerprint", "identifier"
+        )
+        old_positive_key = prototype._preparation_form_key(
+            1, "same-fingerprint", "positive"
+        )
         self.state.update(
             current_step=4,
             highest_reached_step=4,
+            context_revision=1,
             dataset_context=object(),
             dataset_source_preparation=object(),
             dataset_preparation_snapshot=object(),
@@ -236,11 +266,17 @@ class HomeSessionNavigationTests(unittest.TestCase):
             inference_snapshot=object(),
             prediction_batch=object(),
             result_interpreter_response=object(),
-            prototype_staged_dataset_upload=object(),
-            prototype_staged_inference_upload=object(),
+            prototype_staged_dataset_upload=staged_dataset,
+            prototype_staged_inference_upload=staged_inference,
             prototype_source_control_locator=("explicit_local", "C:/selected.csv"),
             prototype_source_error="error",
             prototype_7_feature="selected",
+            **{
+                old_target_key: "DefMark",
+                old_identifier_key: "INN",
+                old_positive_key: "1",
+                "preparation_1_same-fingerprint_blocked-reason:score": "old reason",
+            },
             external_persisted_store_marker=persistent_marker,
         )
 
@@ -263,9 +299,23 @@ class HomeSessionNavigationTests(unittest.TestCase):
         self.assertEqual(self.state["experiment_inputs"], {})
         self.assertNotIn("prototype_staged_dataset_upload", self.state)
         self.assertNotIn("prototype_staged_inference_upload", self.state)
+        self.assertFalse(dataset_path.exists())
+        self.assertFalse(inference_path.exists())
         self.assertNotIn("prototype_source_control_locator", self.state)
         self.assertNotIn("prototype_source_error", self.state)
         self.assertNotIn("prototype_7_feature", self.state)
+        self.assertFalse(any(key.startswith("preparation_") for key in self.state))
+        self.assertGreater(self.state["context_revision"], 1)
+        next_target_key = prototype._preparation_form_key(
+            self.state["context_revision"], "same-fingerprint", "target"
+        )
+        self.assertNotEqual(next_target_key, old_target_key)
+        self.assertNotIn(next_target_key, self.state)
+        for old_key in (old_target_key, old_identifier_key, old_positive_key):
+            self.assertNotIn(old_key, self.state)
+        self.assertNotIn("DefMark", self.state.values())
+        self.assertNotIn("INN", self.state.values())
+        self.assertNotIn("1", self.state.values())
         self.assertIs(self.state["external_persisted_store_marker"], persistent_marker)
         self.assertEqual(self.state["presentation_surface"], "ANALYSIS")
         self.assertEqual(self.state["current_step"], 0)

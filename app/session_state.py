@@ -53,6 +53,7 @@ _DEFAULTS = {
 
 _ANALYSIS_WIDGET_KEY_PREFIXES = (
     "prototype_",
+    "preparation_",
     "selected-prediction-row-widget",
     "step-navigator",
 )
@@ -188,12 +189,14 @@ def confirm_new_analysis(state: MutableMapping[str, Any]) -> None:
 
 
 def _start_new_analysis(state: MutableMapping[str, Any]) -> None:
+    next_context_revision = int(state.get("context_revision", 0)) + 1
     _cleanup_controlled_uploads(state)
     for key, value in _DEFAULTS.items():
         state[key] = {} if isinstance(value, dict) else value
     for key in tuple(state):
         if key in _ANALYSIS_TRANSIENT_KEYS or key.startswith(_ANALYSIS_WIDGET_KEY_PREFIXES):
             state.pop(key, None)
+    state["context_revision"] = next_context_revision
     state["presentation_surface"] = "ANALYSIS"
     state["analysis_started"] = True
     state["new_analysis_confirmation_pending"] = False
