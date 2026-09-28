@@ -136,3 +136,27 @@ Final MP-E verification evidence:
 ## Workstream result
 
 **Configurable Model Platform V1 — CLOSED / ACCEPTED.**
+## Narrow follow-up prerequisite — Parameter Presentation / Identity V1
+
+Status: **READY_FOR_REVIEW**
+
+Implementation: **NOT STARTED**
+
+The accepted MP-A..MP-E workstream remains CLOSED / ACCEPTED.
+This narrow prerequisite does not reopen model-platform behavior.
+
+Reason: current `ModelParameter.display_name_ru / description_ru` participate in
+`schema_hash` and `plugin_contract_hash`, so editing them directly for Russian UI copy
+would incorrectly change configuration provenance and could break continuing operations
+from existing ExperimentArtifact V2 / ModelVersion V2 state.
+
+Architect decision:
+
+- keep current behavioral schema/plugin identities unchanged;
+- introduce separate trusted backend parameter-presentation metadata for catalog copy;
+- keep presentation identity independent from behavioral/scientific identity;
+- require historical V2 read + final-fit/save continuation regression before ACCEPT.
+
+Source:
+
+`PARAMETER_PRESENTATION_IDENTITY_V1.md`
