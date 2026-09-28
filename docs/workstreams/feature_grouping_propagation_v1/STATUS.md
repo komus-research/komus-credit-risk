@@ -1,8 +1,8 @@
 # Feature Grouping Propagation V1 — STATUS
 
-Phase: **DESIGN**
+Phase: **READY_FOR_IMPLEMENTATION**
 
-Architecture: **READY_FOR_REVIEW**
+Architecture: **ACCEPTED**
 
 Implementation: **NOT STARTED**
 
@@ -42,19 +42,10 @@ The Architect Lock now defines:
 - exact acceptance tests and narrow implementation scope;
 - fail-closed validation of malformed technical-group structure, including duplicate `(group_kind, group_key)` identities and multiple proposed fallback groups, using the stable code `INVALID_TECHNICAL_GROUP_STRUCTURE`.
 
-Reviewer FIX has been incorporated into the architecture document. Architecture remains **READY_FOR_REVIEW**; implementation has not started.
+Reviewer FIX was incorporated and the corrected Architect Lock received final Reviewer **ACCEPT**. Architecture is **ACCEPTED**; implementation has not started.
 
 ## Next action
 
-Reviewer checks [ARCHITECT_LOCK.md](ARCHITECT_LOCK.md).
+Technical Coordinator → Backend / Codex implementation → Reviewer.
 
-If accepted:
-
-```text
-Architect
-→ Technical Coordinator
-→ Backend / Codex implementation
-→ Reviewer
-```
-
-Do not start implementation from STATUS alone.
+Implementation must follow [ARCHITECT_LOCK.md](ARCHITECT_LOCK.md) exactly.

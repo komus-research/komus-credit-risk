@@ -1,6 +1,6 @@
 # Feature Grouping Propagation V1 — ARCHITECT LOCK
 
-Architecture: **READY_FOR_REVIEW**
+Architecture: **ACCEPTED**
 
 Base main: `0888fc6accdcd2519fc460e8dd1408329b298813`
 

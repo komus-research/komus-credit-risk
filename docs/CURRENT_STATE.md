@@ -777,7 +777,7 @@ Matching technical smoke PASS обязателен перед каждым full 
 
 **Текущий порядок product backend work:**
 
-1. Feature Grouping Propagation V1 — отдельный narrow Architect Lock → Developer → Reviewer.
+1. Feature Grouping Propagation V1 — **архитектура ACCEPTED**, следующий шаг Developer → Reviewer.
 2. После ACCEPT этого backend-направления — продолжение UX с экраном «Алгоритм».
 3. Затем «Проверка качества → Результат» и финальный product E2E.
 

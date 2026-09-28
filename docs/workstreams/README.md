@@ -100,7 +100,7 @@ Status:
 
 Status:
 
-**DESIGN / ARCHITECT LOCK REQUIRED BEFORE CODE**
+**ARCHITECTURE ACCEPTED / READY FOR IMPLEMENTATION**
 
 Документы:
 
@@ -116,7 +116,7 @@ Status:
 ## Current order
 
 1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
-2. Feature Grouping Propagation V1 — narrow Architect Lock → Developer → Reviewer.
+2. Feature Grouping Propagation V1 — **ARCHITECTURE ACCEPTED**, далее Developer → Reviewer.
 3. После ACCEPT Feature Grouping Propagation V1 — продолжить UX с экраном «Алгоритм».
 4. Затем «Проверка качества → Результат» и финальный product E2E.
 

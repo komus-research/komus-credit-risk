@@ -729,7 +729,7 @@ Source:
 ### Order
 
 1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
-2. Architect-lock and implement/review Feature Grouping Propagation V1.
+2. Feature Grouping Propagation V1 — **ARCHITECTURE ACCEPTED**; implement/review.
 3. После ACCEPT Feature Grouping Propagation V1 вернуться к UX экрана «Алгоритм».
 4. Затем продолжить «Проверка качества → Результат» и финальный product E2E.
 
