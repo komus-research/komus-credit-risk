@@ -25,17 +25,13 @@ from komus_risk.application import (
     RedactedV1OutboundPolicy,
     ResultInterpreterRuntimeConfiguration,
     ResultInterpreterService,
+    NativeDatasetOnboardingService,
 )
+from komus_risk.application.dataset_onboarding import proposal_backed_initial_draft
 from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
 from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
-from komus_risk.data import (
-    DatasetInspector,
-    LoadedDataset,
-    ReadyDatasetAdapter,
-    TabularReader,
-    TabularSnapshot,
-)
+from komus_risk.data import LoadedDataset, ReadyDatasetAdapter, TabularSnapshot
 from komus_risk.experiments import EvaluationPopulation
 from komus_risk.integrations.openai_result_interpreter import (
     OpenAIResultInterpreterClient,
@@ -52,7 +48,6 @@ from komus_risk.preparation import (
     ConfirmedColumnDecision,
     ConfirmedColumnStatus,
     ConfirmedDatasetPreparation,
-    DatasetPreparationAnalyzer,
     DatasetPreparationError,
     DatasetPreparationManifest,
     KomusDatasetPreparationService,
@@ -61,7 +56,6 @@ from komus_risk.preparation import (
 )
 from komus_risk.preparation.context import PreparedDatasetContext
 from komus_risk.preparation.materializer import inspection_report_hash, proposal_hash
-from komus_risk.preparation.predictor_compatibility import predictor_compatibility_error
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 
@@ -484,19 +478,19 @@ def prepare_resolved_source(
         # a vanished source preserves the resolver's user-facing error boundary.
         if not source.local_runtime_path.is_file():
             return DatasetSourcePreparation(source, "context_not_prepared", None)
-        _notify_data_progress(progress_listener, "reading_source")
-        snapshot = TabularReader().read(source.local_runtime_path)
-        _notify_data_progress(progress_listener, "inspecting_dataset")
-        report = DatasetInspector().inspect(snapshot)
-        _notify_data_progress(progress_listener, "analyzing_preparation")
-        proposal = DatasetPreparationAnalyzer().analyze(report)
+        inspected = NativeDatasetOnboardingService().inspect(
+            source.local_runtime_path,
+            display_name=source.file_name,
+            size=source.file_size,
+            progress_listener=progress_listener,
+        )
         return DatasetSourcePreparation(
             source,
             "context_not_prepared",
             None,
-            snapshot=snapshot,
-            inspection_report=report,
-            proposal=proposal,
+            snapshot=inspected.snapshot,
+            inspection_report=inspected.report,
+            proposal=inspected.proposal,
         )
     provider = historical_provider or HistoricalDatasetProvider(context_authority)
     context = provider.prepare(source, progress_listener=progress_listener)
@@ -513,31 +507,19 @@ def default_preparation_draft(preparation: DatasetSourcePreparation) -> dict[str
     """Return proposal-backed UI defaults; this is not a confirmation."""
     if preparation.snapshot is None or preparation.proposal is None:
         raise ValueError("No source analysis is available for preparation.")
-    target = next(
-        (item.column_name for item in preparation.proposal.target_candidates), ""
+    initial = proposal_backed_initial_draft(
+        preparation.snapshot, preparation.proposal
     )
-    identifier = next(
-        (item.column_name for item in preparation.proposal.identifier_candidates), ""
-    )
-    statuses = {
-        name: (
-            ConfirmedColumnStatus.MODEL_ALLOWED.value
-            if predictor_compatibility_error(preparation.snapshot.dataframe[name])
-            is None
-            else ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value
-        )
-        for name in preparation.snapshot.physical_headers
-    }
     draft = {
         "snapshot_fingerprint": preparation.snapshot.fingerprint,
         "dataset_name": preparation.source.file_name,
-        "target_column": target,
-        "positive_class": None,
-        "identifier_column": identifier,
-        "column_statuses": statuses,
+        "target_column": initial.target_column or "",
+        "positive_class": initial.positive_class,
+        "identifier_column": initial.identifier_column or "",
+        "column_statuses": dict(initial.column_statuses),
         "blocked_reasons": {},
-        "population_policy": PopulationPolicyV1.FULL_OOF_NO_PROTECTED_FINAL_TEST.value,
-        "population_policy_acknowledged": False,
+        "population_policy": initial.population_policy,
+        "population_policy_acknowledged": initial.population_policy_acknowledged,
     }
     if preparation.confirmation is not None:
         confirmation = preparation.confirmation

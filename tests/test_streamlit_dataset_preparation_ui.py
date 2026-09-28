@@ -16,6 +16,11 @@ from app.bootstrap import (
     reopen_dataset_preparation,
 )
 from app.session_state import initialize, set_dataset_source_preparation
+from komus_risk.application.dataset_onboarding import (
+    InspectedDataset,
+    NativeDatasetOnboardingService,
+    proposal_backed_initial_draft,
+)
 
 
 class DatasetPreparationUiTests(unittest.TestCase):
@@ -114,6 +119,32 @@ class DatasetPreparationUiTests(unittest.TestCase):
         self.assertEqual(draft["column_statuses"]["entity_id"], "DIAGNOSTIC_ONLY")
         self.assertEqual(draft["column_statuses"]["target"], "MODEL_ALLOWED")
         self.assertEqual(draft["column_statuses"]["score"], "MODEL_ALLOWED")
+
+    def test_native_and_compatibility_defaults_share_proposal_backed_source(self) -> None:
+        preparation = self._checked_source()
+        assert preparation.snapshot is not None
+        assert preparation.proposal is not None
+        shared = proposal_backed_initial_draft(preparation.snapshot, preparation.proposal)
+        native = NativeDatasetOnboardingService().default_draft(
+            InspectedDataset(
+                preparation.source.local_runtime_path,
+                preparation.source.file_name,
+                preparation.source.physical_format,
+                preparation.source.file_size,
+                preparation.snapshot,
+                preparation.inspection_report,
+                preparation.proposal,
+            )
+        )
+        compatibility = default_preparation_draft(preparation)
+
+        self.assertEqual(native.target_column, shared.target_column)
+        self.assertEqual(native.identifier_column, shared.identifier_column)
+        self.assertEqual(native.positive_class, shared.positive_class)
+        self.assertEqual(compatibility["target_column"], shared.target_column)
+        self.assertEqual(compatibility["identifier_column"], shared.identifier_column)
+        self.assertEqual(compatibility["positive_class"], shared.positive_class)
+        self.assertEqual(compatibility["column_statuses"], shared.column_statuses)
 
     def test_generic_default_marks_non_finite_numeric_columns_diagnostic_only(self) -> None:
         directory = TemporaryDirectory()
