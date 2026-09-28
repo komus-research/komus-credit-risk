@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Literal
 
 from fastapi import Cookie, FastAPI, Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict
 
 from komus_risk.application import NativeSessionSnapshot, NativeSessionStore
 
 SESSION_COOKIE_NAME = "axion_session"
+ASSETS_DIRECTORY = Path(__file__).resolve().parent.parent / "assets"
 
 
 class SessionResponse(BaseModel):
@@ -42,6 +45,7 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
     """Create the native HTTP adapter without constructing ML or Streamlit runtime."""
     store = session_store or NativeSessionStore()
     api = FastAPI(title="AXION Native API", version="0.0.1")
+    api.mount("/native-assets", StaticFiles(directory=ASSETS_DIRECTORY), name="native-assets")
 
     def resolve_session(
         response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None
