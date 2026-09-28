@@ -113,6 +113,11 @@ def open_result(state: MutableMapping[str, Any]) -> None:
     state["presentation_surface"] = "ANALYSIS"
 
 
+def has_current_analysis(state: Mapping[str, Any]) -> bool:
+    """Recognize an analysis that can be resumed without changing reset safety."""
+    return bool(state.get("analysis_started")) or has_meaningful_analysis(state)
+
+
 def has_meaningful_analysis(state: Mapping[str, Any]) -> bool:
     """Identify work that must never be discarded without confirmation."""
     if state.get("prototype_staged_dataset_upload") is not None:

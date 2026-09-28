@@ -26,7 +26,7 @@ from app.session_state import (
     cancel_new_analysis,
     confirm_new_analysis,
     continue_current_analysis,
-    has_meaningful_analysis,
+    has_current_analysis,
     initialize,
     navigate_to_step,
     open_home,
@@ -232,7 +232,7 @@ def _render_quick_start() -> None:
     with third:
         st.button("Продолжить последний проект", key="axion-quick-start-latest", disabled=True, use_container_width=True)
         st.caption("История проектов пока не подключена")
-    if has_meaningful_analysis(st.session_state):
+    if has_current_analysis(st.session_state):
         st.button("Продолжить текущий анализ", key="axion-continue-current", on_click=continue_current_analysis, args=(st.session_state,))
         st.caption("Вернуться к текущему шагу анализа в этой сессии")
     st.html("</div>")

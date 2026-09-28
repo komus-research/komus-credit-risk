@@ -11,6 +11,7 @@ from app.session_state import (
     cancel_new_analysis,
     confirm_new_analysis,
     continue_current_analysis,
+    has_current_analysis,
     has_meaningful_analysis,
     initialize,
     open_home,
@@ -26,6 +27,8 @@ class HomeSessionNavigationTests(unittest.TestCase):
 
     def test_fresh_session_opens_home_without_changing_wizard_step(self) -> None:
         self.assertEqual(self.state["presentation_surface"], "HOME")
+        self.assertFalse(self.state["analysis_started"])
+        self.assertFalse(has_current_analysis(self.state))
         self.assertEqual(self.state["current_step"], 0)
         self.assertEqual(self.state["highest_reached_step"], 0)
 
@@ -67,8 +70,41 @@ class HomeSessionNavigationTests(unittest.TestCase):
         self.assertFalse(confirmation_needed)
         self.assertEqual(self.state["presentation_surface"], "ANALYSIS")
         self.assertTrue(self.state["analysis_started"])
+        self.assertFalse(has_meaningful_analysis(self.state))
+        self.assertTrue(has_current_analysis(self.state))
         self.assertEqual(self.state["current_step"], 0)
         self.assertEqual(self.state["highest_reached_step"], 0)
+
+    def test_clean_started_analysis_is_resumable_from_home_without_reset_confirmation(
+        self,
+    ) -> None:
+        self.assertFalse(request_new_analysis(self.state))
+        open_home(self.state)
+        streamlit = _QuickStartStreamlit(self.state)
+
+        with patch.object(prototype, "st", streamlit):
+            prototype._render_quick_start()
+
+        self.assertIn("Продолжить текущий анализ", streamlit.button_labels)
+        continue_current_analysis(self.state)
+        self.assertEqual(self.state["presentation_surface"], "ANALYSIS")
+        self.assertEqual(self.state["current_step"], 0)
+        self.assertEqual(self.state["highest_reached_step"], 0)
+
+    def test_meaningful_legacy_state_is_current_analysis_without_started_marker(
+        self,
+    ) -> None:
+        self.state.update(selected_model_id="catboost", analysis_started=False)
+
+        self.assertTrue(has_meaningful_analysis(self.state))
+        self.assertTrue(has_current_analysis(self.state))
+
+    def test_started_empty_analysis_does_not_require_reset_confirmation(self) -> None:
+        self.state["analysis_started"] = True
+
+        self.assertFalse(has_meaningful_analysis(self.state))
+        self.assertFalse(request_new_analysis(self.state))
+        self.assertFalse(self.state["new_analysis_confirmation_pending"])
 
     def test_staged_upload_and_selected_source_each_require_confirmation(self) -> None:
         self.state["prototype_staged_dataset_upload"] = object()
@@ -295,6 +331,37 @@ class _ConfirmationStreamlit:
 
     def columns(self, _specification, **_kwargs):
         return _ConfirmationColumn(), _ConfirmationColumn()
+
+
+class _QuickStartColumn(_ConfirmationColumn):
+    def __init__(self, button_labels: list[str]) -> None:
+        self._button_labels = button_labels
+
+    def button(self, label: str, **_kwargs) -> bool:
+        self._button_labels.append(label)
+        return False
+
+    def caption(self, _body: str) -> None:
+        return None
+
+
+class _QuickStartStreamlit:
+    def __init__(self, state: dict[str, object]) -> None:
+        self.session_state = _SessionState(state)
+        self.button_labels: list[str] = []
+
+    def html(self, _body: str) -> None:
+        return None
+
+    def columns(self, _specification, **_kwargs):
+        return tuple(_QuickStartColumn(self.button_labels) for _ in range(3))
+
+    def button(self, label: str, **_kwargs) -> bool:
+        self.button_labels.append(label)
+        return False
+
+    def caption(self, _body: str) -> None:
+        return None
 
 
 if __name__ == "__main__":
