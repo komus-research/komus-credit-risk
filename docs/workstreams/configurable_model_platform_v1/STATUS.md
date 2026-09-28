@@ -138,7 +138,7 @@ Final MP-E verification evidence:
 **Configurable Model Platform V1 — CLOSED / ACCEPTED.**
 ## Narrow follow-up prerequisite — Parameter Presentation / Identity V1
 
-Status: **READY_FOR_REVIEW**
+Status: **ARCHITECTURE ACCEPTED / READY_FOR_IMPLEMENTATION**
 
 Implementation: **NOT STARTED**
 
@@ -167,7 +167,11 @@ Reviewer corrective FIX incorporated:
 - presentation identity remains backend/debug-only and is not added to catalog/scientific artifacts;
 - negative composition and hash-determinism acceptance tests are explicit.
 
-Status remains **READY_FOR_REVIEW** / **NOT STARTED**.
+Final corrective architecture Reviewer verdict: **ACCEPT**.
+
+Accepted architecture head: `6ccad971882901ff779c82a08b22a2699e24f70e`.
+
+Next: Backend / Codex implementation → Reviewer. Implementation remains **NOT STARTED**.
 
 Source:
 
