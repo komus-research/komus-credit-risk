@@ -1,10 +1,10 @@
 # Feature Grouping Propagation V1 — STATUS
 
-Phase: **READY_FOR_REVIEW**
+Phase: **CLOSED**
 
 Architecture: **ACCEPTED**
 
-Implementation: **COMPLETE / READY FOR REVIEW**
+Implementation: **ACCEPTED**
 
 ## READ FIRST
 
@@ -44,8 +44,20 @@ The Architect Lock now defines:
 - exact acceptance tests and narrow implementation scope;
 - fail-closed validation of malformed technical-group structure, including duplicate `(group_kind, group_key)` identities and multiple proposed fallback groups, using the stable code `INVALID_TECHNICAL_GROUP_STRUCTURE`.
 
-Reviewer FIX was incorporated and the corrected Architect Lock received final Reviewer **ACCEPT**. Architecture is **ACCEPTED**; implementation is complete and ready for review.
+Reviewer FIX was incorporated and the corrected Architect Lock received final Reviewer **ACCEPT**. The implementation also received final Reviewer **ACCEPT** and the workstream is closed.
 
-## Next action
+Final implementation Reviewer verdict: **ACCEPT**.
 
-Reviewer handoff. Implementation follows [ARCHITECT_LOCK.md](ARCHITECT_LOCK.md).
+Accepted implementation head: `20b1c211eab479f673d1c18e00b03d1e96b4d63b`.
+
+Verification evidence:
+
+- focused + downstream: 60 passed, 12 subtests passed;
+- full suite: 313 passed, 145 subtests passed;
+- `compileall src app tests`: PASS;
+- `git diff --check`: PASS;
+- Ruff import/unused and format checks: PASS.
+
+## Workstream result
+
+**Feature Grouping Propagation V1 — CLOSED / ACCEPTED.**

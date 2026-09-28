@@ -100,7 +100,7 @@ Status:
 
 Status:
 
-**ARCHITECTURE ACCEPTED / READY FOR IMPLEMENTATION**
+**CLOSED / ACCEPTED**
 
 Документы:
 
@@ -111,13 +111,13 @@ Status:
 
 `structural stem → repeated name token → logical type → fallback`.
 
-Открытый gap — перенести эту grouping metadata через generic materialization в downstream `FeatureRegistry → FeatureGroup`, не меняя permissions/selection semantics.
+Gap закрыт: Materializer V2 переносит trusted Analyzer technical groups в downstream `FeatureRegistry → FeatureGroup`, не меняя permissions/selection semantics.
 
 ## Current order
 
 1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
-2. Feature Grouping Propagation V1 — **ARCHITECTURE ACCEPTED**, далее Developer → Reviewer.
-3. После ACCEPT Feature Grouping Propagation V1 — продолжить UX с экраном «Алгоритм».
+2. Feature Grouping Propagation V1 — **CLOSED / ACCEPTED**.
+3. Текущий следующий шаг — UX экрана «Алгоритм».
 4. Затем «Проверка качества → Результат» и финальный product E2E.
 
 ## Later

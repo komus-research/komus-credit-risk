@@ -728,17 +728,13 @@ Product UX и backend теперь разделяются явно.
 
 Accepted main после corrective fix: `93823becde40d70a5e6dc189a3a127141128726f`.
 
-**Feature Selection grouping — UX contract accepted, backend propagation gap open.**
+**Feature Selection grouping — backend propagation CLOSED / ACCEPTED.**
 
 `DatasetPreparationAnalyzer` уже детерминированно строит `DatasetPreparationProposal.technical_groups` каскадом:
 
 `structural stem → repeated name token → logical type → fallback`.
 
-Однако generic materializer сейчас строит downstream `FeatureRegistry → FeatureGroup` в основном по confirmed usage status и не переносит richer Analyzer technical groups. Поэтому group-first UX принят, но end-to-end grouping ещё не завершён.
-
-Открыт workstream:
-
-`Feature Grouping Propagation V1`.
+Generic materializer V2 теперь переносит trusted Analyzer technical groups в downstream `FeatureRegistry → FeatureGroup`, сохраняя MODEL_ALLOWED-only selectable semantics, status isolation и deterministic V2 identity. Workstream `Feature Grouping Propagation V1` закрыт и принят.
 
 Инвариант остаётся прежним: downstream UI читает только `FeatureRegistry → FeatureGroup`; Proposal/Analyzer state не становится frontend dependency, а grouping не меняет `FeatureUsageStatus` или `selected_feature_ids`.
 
@@ -777,13 +773,13 @@ Matching technical smoke PASS обязателен перед каждым full 
 
 **Текущий порядок product backend work:**
 
-1. Feature Grouping Propagation V1 — **архитектура ACCEPTED**, следующий шаг Developer → Reviewer.
-2. После ACCEPT этого backend-направления — продолжение UX с экраном «Алгоритм».
-3. Затем «Проверка качества → Результат» и финальный product E2E.
+1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
+2. Feature Grouping Propagation V1 — **CLOSED / ACCEPTED**.
+3. Текущий следующий шаг — продолжение UX экрана «Алгоритм».
+4. Затем «Проверка качества → Результат» и финальный product E2E.
 
 ### Future / not implemented
 
-- end-to-end Feature Grouping Propagation V1;
 - production React/Next.js + thin FastAPI frontend/backend boundary;
 - Dataset History / Persistence V1 как пользовательская история проектов/экспериментов;
 - semantic business taxonomy для features поверх безопасной technical grouping, если появится trusted source;

@@ -703,16 +703,16 @@ structural stem
 
 и сохраняет результат в `DatasetPreparationProposal.technical_groups`.
 
-Открытый gap:
+Gap **CLOSED / ACCEPTED**:
 
 ```text
 Analyzer technical_groups
-→ materialization
+→ Materializer V2
 → FeatureRegistry / FeatureGroup
 → group-first Feature Selection UI
 ```
 
-Сейчас richer grouping теряется при generic materialization, где FeatureRegistry в основном группируется по usage status.
+Trusted Analyzer grouping теперь детерминированно переносится в generic materialization без изменения permissions или selected_feature_ids semantics.
 
 Нужно сохранить downstream invariant:
 
@@ -724,13 +724,13 @@ Analyzer technical_groups
 
 Source:
 
-`docs/workstreams/feature_grouping_propagation_v1/SPEC.md`.
+`docs/workstreams/feature_grouping_propagation_v1/ARCHITECT_LOCK.md`.
 
 ### Order
 
 1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
-2. Feature Grouping Propagation V1 — **ARCHITECTURE ACCEPTED**; implement/review.
-3. После ACCEPT Feature Grouping Propagation V1 вернуться к UX экрана «Алгоритм».
+2. Feature Grouping Propagation V1 — **CLOSED / ACCEPTED**.
+3. Текущий следующий шаг — UX экрана «Алгоритм».
 4. Затем продолжить «Проверка качества → Результат» и финальный product E2E.
 
 ---
