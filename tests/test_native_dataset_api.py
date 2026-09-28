@@ -65,7 +65,8 @@ def test_upload_finishes_with_ready_progress() -> None:
 
 
 def test_upload_rejects_empty_and_unsupported_files_without_traceback() -> None:
-    client = TestClient(create_app())
+    store = NativeSessionStore()
+    client = TestClient(create_app(session_store=store))
     for name, content in (("bad.exe", b"x"), ("empty.csv", b"")):
         response = client.post("/api/v1/dataset/upload", files={"file": (name, content)})
         assert response.status_code == 422
@@ -77,6 +78,68 @@ def test_upload_rejects_empty_and_unsupported_files_without_traceback() -> None:
     assert progress["stage"] == "ERROR"
     assert "traceback" not in str(progress).lower()
     assert "path" not in str(progress).lower()
+    session_id = client.cookies.get(SESSION_COOKIE_NAME)
+    assert session_id is not None
+    assert not store.snapshot(session_id).has_meaningful_temporary_work
+
+
+def test_failed_replacement_preserves_previous_dataset_and_meaningful_work() -> None:
+    store = NativeSessionStore()
+    client = TestClient(create_app(session_store=store))
+    previous = _upload(client)
+    session_id = client.cookies.get(SESSION_COOKIE_NAME)
+    assert session_id is not None
+
+    failed = client.post(
+        "/api/v1/dataset/upload",
+        files={"file": ("replacement.csv", b"", "text/csv")},
+    )
+
+    assert failed.status_code == 422
+    assert client.get("/api/v1/dataset/preparation").json() == previous
+    assert store.snapshot(session_id).has_meaningful_temporary_work
+
+
+def test_confirmed_reset_cleans_staged_upload_during_inspection(monkeypatch) -> None:
+    entered, release = Event(), Event()
+    original = NativeDatasetOnboardingService.inspect
+
+    def slow_inspect(self, *args, progress_listener=None, **kwargs):
+        entered.set()
+        assert release.wait(timeout=5)
+        return original(self, *args, progress_listener=progress_listener, **kwargs)
+
+    monkeypatch.setattr(NativeDatasetOnboardingService, "inspect", slow_inspect)
+    store = NativeSessionStore()
+    with TestClient(create_app(session_store=store)) as client:
+        client.get("/api/v1/session")
+        response: dict[str, object] = {}
+
+        def upload() -> None:
+            response["value"] = client.post(
+                "/api/v1/dataset/upload",
+                files={"file": ("customer.csv", _dataset(), "text/csv")},
+            )
+
+        worker = Thread(target=upload)
+        worker.start()
+        assert entered.wait(timeout=5)
+        session_id = client.cookies.get(SESSION_COOKIE_NAME)
+        assert session_id is not None
+        staged = store._sessions[session_id].inspection_upload
+        assert staged is not None and staged.local_path.is_file()
+
+        confirmation = client.post("/api/v1/analysis/new", json={"confirm_reset": False})
+        assert confirmation.json()["status"] == "CONFIRMATION_REQUIRED"
+        reset = client.post("/api/v1/analysis/new", json={"confirm_reset": True})
+        assert reset.json()["status"] == "STARTED"
+        assert not staged.local_path.exists()
+        release.set()
+        worker.join(timeout=5)
+
+    assert response["value"].status_code == 422
+    assert store.dataset_inspection_progress(session_id).status.value == "IDLE"
+    assert not store.snapshot(session_id).has_meaningful_temporary_work
 
 
 def test_progress_endpoint_is_responsive_while_inspection_runs(monkeypatch) -> None:

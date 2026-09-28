@@ -79,11 +79,11 @@ export function DataPage() {
       <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index === 0 ? 'active' : ''}><span>{index + 1}</span>{name}</li>)}</ol></div>
       <header className="data-header"><h1>Подготовка данных</h1><p>Загрузите набор данных и проверьте, как система определила роли его колонок.</p></header>
       <ol className="data-stepper" aria-label="Этапы подготовки данных">{['Файл', 'Роли колонок', 'Подтверждение'].map((name, index) => {
-        const state = preparation ? (index === 0 ? 'completed' : index === 1 ? 'active' : '') : (index === 0 ? 'active' : '')
+        const state = inspecting ? (index === 0 ? 'active' : '') : preparation ? (index === 0 ? 'completed' : index === 1 ? 'active' : '') : (index === 0 ? 'active' : '')
         return <li key={name} className={state}><span>{state === 'completed' ? '✓' : index + 1}</span>{name}</li>
       })}</ol>
 
-      {!preparation ? <section className="upload-panel panel">{inspecting ? <InspectionProgress progress={progress} now={now} /> : <><Icon name="folder" size={42} /><h2>Загрузите файл датасета</h2><p>Поддерживаются CSV, XLSX, XLSB и Parquet. Файл обрабатывается на сервере и не раскрывает путь к нему в браузер.</p><input ref={input} type="file" accept=".csv,.xlsx,.xlsb,.parquet" onChange={event => selectFile(event.target.files?.[0])} /><button className="primary-action" disabled={busy} onClick={() => input.current?.click()}><Icon name="plus" size={20} />Выбрать файл</button></>}</section> : <>
+      {inspecting ? <section className="upload-panel panel"><InspectionProgress progress={progress} now={now} /></section> : !preparation ? <section className="upload-panel panel"><><Icon name="folder" size={42} /><h2>Загрузите файл датасета</h2><p>Поддерживаются CSV, XLSX, XLSB и Parquet. Файл обрабатывается на сервере и не раскрывает путь к нему в браузер.</p><input ref={input} type="file" accept=".csv,.xlsx,.xlsb,.parquet" onChange={event => selectFile(event.target.files?.[0])} /><button className="primary-action" disabled={busy} onClick={() => input.current?.click()}><Icon name="plus" size={20} />Выбрать файл</button></></section> : <>
         <section className="file-summary panel">
           <div className="file-identity"><span className="file-icon"><Icon name="box" size={38} /></span><div><h2>{preparation.source.display_name}</h2><p className="file-ready"><Icon name="check" size={17} />Файл успешно проверен</p><p className="muted">Размер: {formatSize(preparation.source.size)}</p></div></div>
           <button className="secondary-action choose-file" disabled={busy} onClick={() => input.current?.click()}>Выбрать другой файл</button>
@@ -110,7 +110,7 @@ function InspectionProgress({ progress, now }: { progress: DatasetInspectionProg
   const elapsed = progress?.started_at ? formatElapsed(now - Date.parse(progress.started_at)) : null
   return <div className="inspection-progress" aria-live="polite">
     <Icon name="settings" size={35} />
-    <div><h2>{progress?.stage_label ?? 'Проверка запускается'}</h2>{elapsed && <p className="inspection-elapsed">Прошло {elapsed}</p>}</div>
+    <div><h2>{progress?.stage_label ?? 'Проверка запускается'}</h2>{elapsed && <p className="inspection-elapsed">Прошло {elapsed}</p>}<p className="inspection-heartbeat"><span aria-hidden="true" />Проверка активна</p></div>
     <ol>{inspectionStages.map((stage, index) => <li key={stage} className={index < activeIndex ? 'done' : index === activeIndex ? 'current' : ''}><span>{index < activeIndex ? '✓' : index === activeIndex ? '●' : '○'}</span>{stageLabel(stage)}</li>)}</ol>
     <p className="inspection-note">Проверка продолжается, приложение работает. Для больших XLSB это может занять несколько минут.</p>
   </div>

@@ -89,6 +89,7 @@ class _NativeAnalysisSession:
     current_step: int = 0
     has_meaningful_temporary_work: bool = False
     staged_upload: Any | None = None
+    inspection_upload: Any | None = None
     inspected_dataset: InspectedDataset | None = None
     preparation_draft: PreparationDraft | None = None
     source_handle: str | None = None
@@ -144,6 +145,8 @@ class NativeSessionStore:
             token = token_urlsafe(24)
             now = _now()
             session.inspection_token = token
+            session.inspection_upload = None
+            session.has_meaningful_temporary_work = True
             session.inspection_progress = DatasetInspectionProgress(
                 status=DatasetInspectionStatus.RUNNING,
                 stage=DatasetInspectionStage.RECEIVING_FILE,
@@ -152,6 +155,15 @@ class NativeSessionStore:
                 updated_at=now,
             )
             return token
+
+    def set_inspection_upload(self, session_id: str, token: str, staged_upload: Any) -> bool:
+        """Attach the temporary file to its active inspection for reset cleanup."""
+        with self._lock:
+            session = self._session(session_id)
+            if session.inspection_token != token:
+                return False
+            session.inspection_upload = staged_upload
+            return True
 
     def update_dataset_inspection_progress(
         self, session_id: str, token: str, stage: DatasetInspectionStage | str
@@ -186,6 +198,7 @@ class NativeSessionStore:
                 started_at=progress.started_at,
                 updated_at=_now(),
             )
+            session.inspection_upload = None
             return True
 
     def fail_dataset_inspection(self, session_id: str, token: str) -> bool:
@@ -202,6 +215,10 @@ class NativeSessionStore:
                 started_at=progress.started_at,
                 updated_at=_now(),
                 message="Не удалось обработать загруженный файл.",
+            )
+            session.inspection_upload = None
+            session.has_meaningful_temporary_work = (
+                session.inspected_dataset is not None and session.preparation_draft is not None
             )
             return True
 
@@ -237,6 +254,7 @@ class NativeSessionStore:
             session.inspected_dataset = inspected_dataset
             session.preparation_draft = preparation_draft
             session.source_handle = token_urlsafe(24)
+            session.inspection_upload = None
             session.data_substep = "ROLES"
             session.has_meaningful_temporary_work = True
             return previous, session.source_handle
@@ -274,10 +292,11 @@ class NativeSessionStore:
                     session=session.snapshot(),
                 )
 
-            discarded_upload = session.staged_upload
+            discarded_uploads = (session.staged_upload, session.inspection_upload)
             session.current_step = 0
             session.has_meaningful_temporary_work = False
             session.staged_upload = None
+            session.inspection_upload = None
             session.inspected_dataset = None
             session.preparation_draft = None
             session.source_handle = None
@@ -287,7 +306,7 @@ class NativeSessionStore:
             return NewAnalysisResult(
                 status=NewAnalysisStatus.STARTED,
                 session=session.snapshot(),
-                discarded_upload=discarded_upload,
+                discarded_upload=discarded_uploads,
             )
 
     def _session(self, session_id: str) -> _NativeAnalysisSession:

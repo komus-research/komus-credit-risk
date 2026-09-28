@@ -165,7 +165,8 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
             resolved_session_id, confirm_reset=request.confirm_reset
         )
         if result.discarded_upload is not None:
-            cleanup_staged_upload(result.discarded_upload)
+            for discarded_upload in result.discarded_upload:
+                cleanup_staged_upload(discarded_upload)
         return NewAnalysisResponse(
             status=result.status,
             **_session_response(result.session).model_dump(),
@@ -225,6 +226,9 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
             staged = await run_in_threadpool(
                 stage_upload_bytes, file.filename or "dataset", upload_bytes
             )
+            if not store.set_inspection_upload(resolved_session_id, inspection_token, staged):
+                cleanup_staged_upload(staged)
+                raise RuntimeError("Dataset inspection was superseded before staging completed.")
             dataset = await run_in_threadpool(
                 onboarding.inspect,
                 staged.local_path,

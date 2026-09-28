@@ -65,6 +65,7 @@ def test_dataset_inspection_progress_keeps_real_stage_transitions() -> None:
     session_id, _ = store.get_or_create(None)
 
     token = store.start_dataset_inspection(session_id)
+    assert store.snapshot(session_id).has_meaningful_temporary_work
     started = store.dataset_inspection_progress(session_id)
     store.update_dataset_inspection_progress(session_id, token, DatasetInspectionStage.STAGING_FILE)
     store.update_dataset_inspection_progress(session_id, token, DatasetInspectionStage.READING_SOURCE)
@@ -77,6 +78,41 @@ def test_dataset_inspection_progress_keeps_real_stage_transitions() -> None:
     assert finished.stage is DatasetInspectionStage.READY
     assert finished.started_at == started.started_at
     assert finished.updated_at >= started.updated_at
+
+
+def test_running_inspection_requires_confirmation_and_reset_supersedes_it() -> None:
+    store = NativeSessionStore()
+    session_id, _ = store.get_or_create(None)
+    token = store.start_dataset_inspection(session_id)
+    staged_upload = object()
+    assert store.set_inspection_upload(session_id, token, staged_upload)
+    before = store.dataset_inspection_progress(session_id)
+
+    blocked = store.start_new_analysis(session_id)
+
+    assert blocked.status is NewAnalysisStatus.CONFIRMATION_REQUIRED
+    assert store.dataset_inspection_progress(session_id) == before
+    assert store.start_new_analysis(session_id, confirm_reset=True).discarded_upload == (
+        None,
+        staged_upload,
+    )
+    assert store.dataset_inspection_progress(session_id).status is DatasetInspectionStatus.IDLE
+    assert not store.update_dataset_inspection_progress(
+        session_id, token, DatasetInspectionStage.READING_SOURCE
+    )
+    assert not store.finish_dataset_inspection(session_id, token)
+    assert not store.snapshot(session_id).has_meaningful_temporary_work
+
+
+def test_failed_first_inspection_clears_meaningful_work() -> None:
+    store = NativeSessionStore()
+    session_id, _ = store.get_or_create(None)
+    token = store.start_dataset_inspection(session_id)
+
+    assert store.snapshot(session_id).has_meaningful_temporary_work
+    assert store.fail_dataset_inspection(session_id, token)
+    assert not store.snapshot(session_id).has_meaningful_temporary_work
+    assert store.dataset_inspection_progress(session_id).status is DatasetInspectionStatus.ERROR
 
 
 def test_dataset_inspection_error_and_reset_are_session_owned() -> None:
