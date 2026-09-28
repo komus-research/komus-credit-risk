@@ -172,8 +172,9 @@ Final corrective architecture Reviewer verdict: **ACCEPT**.
 Accepted architecture head: `6ccad971882901ff779c82a08b22a2699e24f70e`.
 
 Verification: focused presentation/catalog/model-platform and historical regressions
-passed (74 tests, 42 subtests); full suite passed (331 tests, 145 subtests).
+passed (76 tests, 42 subtests); full suite passed (333 tests, 145 subtests).
 `compileall`, `git diff --check`, Ruff F/I checks and changed-file formatting passed.
+A pre-presentation ModelVersion V2 fixture generated at `cf0af5143c29a58afb67fa7c858ce15a8ed4c54a` loads through current trusted validation.
 
 Next: Reviewer.
 

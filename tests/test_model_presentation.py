@@ -226,7 +226,6 @@ def test_hash_canonicalizes_parameter_and_registration_order():
     [
         "missing",
         "unknown",
-        "duplicate",
         "schema_hash",
         "model_id",
         "model_version",
@@ -253,8 +252,6 @@ def test_invalid_complete_composition_fails_closed(case):
                 replace(bad.parameters[-1], parameter_path="/unknown"),
             ),
         )
-    elif case == "duplicate":
-        bad = replace(bad, parameters=(*bad.parameters, bad.parameters[0]))
     elif case == "schema_hash":
         bad = replace(bad, schema_hash="wrong")
     elif case == "model_id":
@@ -280,6 +277,29 @@ def test_invalid_complete_composition_fails_closed(case):
     ):
         ModelCatalogComposition.compose(plugins, ModelPresentationRegistry(entries))
     assert plugins.get(cat.spec.model_id) is cat
+
+
+def test_duplicate_parameter_path_is_rejected_during_profile_construction():
+    plugins = build_builtin_model_plugin_registry()
+    original = builtin_model_presentation_registry(plugins).list()[0]
+    with pytest.raises(
+        ModelPresentationError,
+        match="INVALID_MODEL_PRESENTATION_COMPOSITION",
+    ) as error:
+        ModelPresentationProfile(
+            original.presentation_schema_version,
+            original.presentation_profile_id,
+            original.presentation_profile_version,
+            original.locale,
+            original.model_id,
+            original.model_version,
+            original.adapter_version,
+            original.schema_id,
+            original.schema_version,
+            original.schema_hash,
+            (*original.parameters, original.parameters[0]),
+        )
+    assert error.value.code == "INVALID_MODEL_PRESENTATION_COMPOSITION"
 
 
 def test_builtin_catalog_uses_russian_presentation_and_full_parameter_coverage():
