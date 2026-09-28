@@ -742,7 +742,7 @@ Accepted main после corrective fix: `93823becde40d70a5e6dc189a3a12714112872
 
 Инвариант остаётся прежним: downstream UI читает только `FeatureRegistry → FeatureGroup`; Proposal/Analyzer state не становится frontend dependency, а grouping не меняет `FeatureUsageStatus` или `selected_feature_ids`.
 
-**Configurable Model Platform V1 — architecture accepted; MP-A, MP-B and MP-C accepted; MP-D next.**
+**Configurable Model Platform V1 — architecture accepted; MP-A, MP-B, MP-C and MP-D accepted; MP-E next.**
 
 Принят target design:
 
@@ -777,13 +777,13 @@ Matching technical smoke PASS обязателен перед каждым full 
 
 **Текущий порядок product backend work:**
 
-1. Configurable Model Platform V1 — **MP-A + MP-B + MP-C ACCEPTED**, следующий stage MP-D; затем MP-E.
+1. Configurable Model Platform V1 — **MP-A + MP-B + MP-C + MP-D ACCEPTED**, следующий stage MP-E.
 2. Feature Grouping Propagation V1 — отдельный narrow Architect Lock → Developer → Reviewer.
 3. После ACCEPT обеих backend-задач — продолжение UX с экраном «Алгоритм».
 
 ### Future / not implemented
 
-- Configurable Model Platform V1 stages MP-D → MP-E;
+- Configurable Model Platform V1 stage MP-E;
 - end-to-end Feature Grouping Propagation V1;
 - production React/Next.js + thin FastAPI frontend/backend boundary;
 - Dataset History / Persistence V1 как пользовательская история проектов/экспериментов;

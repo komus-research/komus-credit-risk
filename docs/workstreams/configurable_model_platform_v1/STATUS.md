@@ -1,6 +1,6 @@
 # Configurable Model Platform V1 — STATUS
 
-Phase: **MP-A ACCEPTED / MP-B ACCEPTED / MP-C ACCEPTED / MP-D IMPLEMENTATION COMPLETE / READY FOR REVIEW / MP-E UNIMPLEMENTED**
+Phase: **MP-A ACCEPTED / MP-B ACCEPTED / MP-C ACCEPTED / MP-D ACCEPTED / MP-E READY_FOR_IMPLEMENTATION**
 
 Architecture: **ACCEPTED**
 
@@ -53,8 +53,10 @@ provenance, deterministic bounded stratified technical smoke evidence, the
 matching-PASS gate in `ExperimentApplicationService` for both Recommended and
 Advanced runs, backend-owned prepared-context authority, and additive V2 experiment
 artifacts. V1 artifacts remain readable without rewrite or manufactured provenance.
-MP-D (provider-based persistence) and MP-E (catalog/runtime integration) remain
-intentionally unimplemented.
+MP-D is implemented and **ACCEPTED**. Provider-based ModelVersion V2 persistence now
+supports exact Recommended/Advanced configuration provenance for CatBoost, XGBoost,
+LightGBM and GBDT Mean while legacy ModelVersion V1 remains readable unchanged.
+MP-E (catalog/runtime integration) remains intentionally unimplemented.
 
 Corrective review fixes bind smoke matching to the exact ordered population rows,
 require an authoritative prepared context for locked final-test data, remove the
@@ -100,6 +102,20 @@ Final MP-C verification evidence includes:
 - `git diff --check`: PASS;
 - focused Ruff/import-order/backend format checks: PASS.
 
+Final MP-D Reviewer verdict after corrective review: **ACCEPT**.
+
+Accepted MP-D head: `ba43b8ef91c39b61c3d728afe690add8ad0023af`.
+
+Final MP-D verification evidence includes:
+
+- corrective focused: 46 passed, 30 subtests;
+- full suite: 301 passed, 133 subtests;
+- `compileall src app tests`: PASS;
+- `git diff --check`: PASS;
+- focused Ruff import/unused-import checks: PASS;
+- legacy V1 ModelVersion compatibility preserved;
+- Advanced CatBoost/XGBoost/LightGBM/GBDT Mean V2 save/load confirmed with prediction parity.
+
 ## Next implementation stage
 
-**MP-D — Provider-based persistence**
+**MP-E — Catalog DTO + Integration Regression**
