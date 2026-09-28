@@ -13,13 +13,16 @@ from komus_risk.model_platform import (
     ModelInputContract,
     ModelParameter,
     ModelParameterSchema,
+    ModelPersistenceProviderRegistry,
     ModelPlugin,
     ModelPluginRegistry,
+    NativeGBDTPersistenceProvider,
     ParameterUiLevel,
     ParameterValueType,
     ProviderDescriptor,
     RecommendedModelProfile,
     build_builtin_model_plugin_registry,
+    builtin_gbdt_persistence_providers,
     builtin_model_plugins,
 )
 from komus_risk.models.base import BinaryClassifierAdapter, ModelAdapterFactory
@@ -223,7 +226,12 @@ class ParameterSchemaTests(unittest.TestCase):
             for plugin in builtin_model_plugins()
             if plugin.spec.model_id == "gbdt_mean"
         )
-        self.assertIs(ModelPluginRegistry().register(mean_plugin), mean_plugin)
+        self.assertIs(
+            ModelPluginRegistry(
+                persistence_providers=builtin_gbdt_persistence_providers((mean_plugin,))
+            ).register(mean_plugin),
+            mean_plugin,
+        )
 
 
 class ContractImmutabilityTests(unittest.TestCase):
@@ -248,6 +256,30 @@ class ContractImmutabilityTests(unittest.TestCase):
 
 
 class PluginRegistryTests(unittest.TestCase):
+    def test_supported_persistence_requires_matching_executable_provider(self) -> None:
+        plugin = builtin_model_plugins()[0]
+        with self.assertRaisesRegex(ValueError, "executable trusted provider"):
+            ModelPluginRegistry().register(plugin)
+        with self.assertRaisesRegex(ValueError, "not registered"):
+            ModelPluginRegistry(
+                persistence_providers=ModelPersistenceProviderRegistry()
+            ).register(plugin)
+        providers = builtin_gbdt_persistence_providers((plugin,))
+        self.assertIs(
+            ModelPluginRegistry(persistence_providers=providers).register(plugin),
+            plugin,
+        )
+        wrong = NativeGBDTPersistenceProvider(
+            plugin.persistence_provider,
+            plugin.spec.model_id,
+            "wrong-version",
+            plugin.spec.adapter_version,
+        )
+        with self.assertRaisesRegex(ValueError, "incompatible"):
+            ModelPluginRegistry(
+                persistence_providers=ModelPersistenceProviderRegistry((wrong,))
+            ).register(plugin)
+
     def test_builtin_profiles_are_exact_frozen_profiles(self) -> None:
         plugins = {plugin.spec.model_id: plugin for plugin in builtin_model_plugins()}
         self.assertEqual(

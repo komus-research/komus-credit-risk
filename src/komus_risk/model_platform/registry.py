@@ -109,11 +109,22 @@ class ModelPluginRegistry:
             plugin.recommended_profile.payload
         )
         ModelPluginRegistry._validate_provider_claims(plugin)
-        if (
-            self._persistence_providers is not None
-            and plugin.persistence_provider is not None
-        ):
-            self._persistence_providers.validate_plugin_provider(plugin)
+        persistence_active = any(
+            plugin.capability_manifest.get(domain).support
+            is not CapabilitySupport.UNSUPPORTED
+            for domain in (CapabilityDomain.PERSISTENCE, CapabilityDomain.LOADING)
+        )
+        if persistence_active:
+            if self._persistence_providers is None:
+                raise ValueError(
+                    "persistence/loading capability requires an executable trusted provider registry."
+                )
+            try:
+                self._persistence_providers.validate_plugin_provider(plugin)
+            except KeyError as error:
+                raise ValueError(
+                    "persistence/loading executable provider is not registered."
+                ) from error
 
     @staticmethod
     def _validate_provider_claims(plugin: ModelPlugin) -> None:

@@ -10,6 +10,7 @@ from math import inf, nan
 from komus_risk.model_platform import (
     ModelConfigurationError,
     ModelConfigurationService,
+    ModelPluginRegistry,
     build_builtin_model_plugin_registry,
 )
 from komus_risk.models.gbdt import (
@@ -135,7 +136,9 @@ class ModelConfigurationServiceTests(unittest.TestCase):
                 for item in plugin.parameter_schema.parameters
             ),
         )
-        registry = type(self.registry)()
+        registry = ModelPluginRegistry(
+            persistence_providers=self.registry.persistence_providers
+        )
         registry.register(
             replace(
                 plugin,

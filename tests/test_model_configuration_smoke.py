@@ -32,6 +32,7 @@ from komus_risk.model_platform import (
     ModelPluginRegistry,
     SmokeStatus,
     build_builtin_model_plugin_registry,
+    builtin_gbdt_persistence_providers,
 )
 from komus_risk.models import BinaryClassifierAdapter, ModelAdapterFactory
 from komus_risk.preparation import (
@@ -156,7 +157,9 @@ def _dataset():
 
 def _service(root):
     builtin = build_builtin_model_plugin_registry().get("catboost")
-    registry = ModelPluginRegistry()
+    registry = ModelPluginRegistry(
+        persistence_providers=builtin_gbdt_persistence_providers((builtin,))
+    )
     factory = _Factory()
     factory.model_version = builtin.spec.version
     factory.adapter_version = builtin.spec.adapter_version
@@ -419,7 +422,11 @@ def test_context_authority_rejects_forged_locked_context_before_smoke_or_artifac
             tuple(range(10, 20)), "working", "working-fp", "working"
         )
         forged = PreparedDatasetContext(
-            "forged-authoritative-context", "Dataset", dataset, features, forged_population
+            "forged-authoritative-context",
+            "Dataset",
+            dataset,
+            features,
+            forged_population,
         )
         for action in (service.run_configuration_smoke, service.run_experiment):
             try:
@@ -434,7 +441,10 @@ def test_context_authority_rejects_forged_locked_context_before_smoke_or_artifac
                 assert error.code == "TRUSTED_CONTEXT_NOT_FOUND"
             else:
                 raise AssertionError("unregistered forged context must fail closed")
-        assert service.model_factories["catboost"].create_calls == calls_after_trusted_smoke
+        assert (
+            service.model_factories["catboost"].create_calls
+            == calls_after_trusted_smoke
+        )
         assert not list(Path(root).glob("*.json"))
 
 
