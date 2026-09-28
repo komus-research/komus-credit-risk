@@ -1,6 +1,6 @@
 # HOME UX V1 — Functional Lock
 
-Status: **HOME UX V1 — READY_FOR_REVIEW**
+Status: **HOME UX V1 — ACCEPTED / READY_FOR_IMPLEMENTATION**
 
 Scope: функциональное поведение главной AXION V1 без изменения принятой визуальной композиции.
 
@@ -370,4 +370,4 @@ Home не должен превращать отсутствие backend contrac
 
 Project/history/model-catalog contracts откладываются до отдельной задачи, где они будут нужны как реальные продуктовые сущности, а не как способ заполнить mockup.
 
-**HOME UX V1 — READY_FOR_REVIEW**
+**HOME UX V1 — ACCEPTED / READY_FOR_IMPLEMENTATION**
