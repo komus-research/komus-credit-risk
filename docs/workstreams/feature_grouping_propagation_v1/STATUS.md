@@ -39,7 +39,10 @@ The Architect Lock now defines:
 - Materializer V2 / FeatureRegistry V2 / Manifest V2 identity behavior;
 - legacy compatibility;
 - unchanged Planning / Feature Selection semantics;
-- exact acceptance tests and narrow implementation scope.
+- exact acceptance tests and narrow implementation scope;
+- fail-closed validation of malformed technical-group structure, including duplicate `(group_kind, group_key)` identities and multiple proposed fallback groups, using the stable code `INVALID_TECHNICAL_GROUP_STRUCTURE`.
+
+Reviewer FIX has been incorporated into the architecture document. Architecture remains **READY_FOR_REVIEW**; implementation has not started.
 
 ## Next action
 

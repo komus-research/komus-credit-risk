@@ -59,7 +59,9 @@ The frontend must never depend on Proposal, inspection state, or Analyzer intern
 
 ### 3.1. Validate proposal technical groups
 
-Before projection, materialization treats the exact proposal already bound by `proposal_hash` as trusted input but still validates its technical-group structure fail-closed.
+Technical-group structure validation occurs **after** exact proposal identity has been verified against the confirmed `proposal_hash`, but **before** any `FeatureGroup` projection or `FeatureRegistry` construction.
+
+Therefore an identity-consistent but structurally malformed Proposal still fails closed at materialization. No partial registry may be created.
 
 Allowed `group_kind` values:
 
@@ -76,7 +78,28 @@ Required conditions:
 - every `column_name` exists in the physical snapshot;
 - no duplicate column inside one proposed group;
 - one physical column appears in at most one proposed technical group;
-- unknown group kind or invalid membership is a materialization error.
+- for `structural_prefix`, `repeated_token`, and `logical_type`, the pair `(group_kind, group_key)` is unique inside one `DatasetPreparationProposal`;
+- at most one proposed group has `group_kind == "fallback"`.
+
+Any violation of the technical-group structure contract raises:
+
+```text
+DatasetPreparationError("INVALID_TECHNICAL_GROUP_STRUCTURE")
+```
+
+This single stable V1 error code covers:
+
+- unknown `group_kind`;
+- empty or otherwise invalid `group_key`;
+- unknown physical column;
+- duplicate member inside one proposed group;
+- one physical column appearing in more than one proposed group;
+- duplicate `(group_kind, group_key)` for `structural_prefix`, `repeated_token`, or `logical_type`;
+- more than one proposed fallback group.
+
+Malformed proposed groups are never merged, silently deduplicated, or deferred to a later `FeatureRegistry` duplicate-ID failure.
+
+The normal final fallback projection remains unchanged: members of the one valid Analyzer fallback group and MODEL_ALLOWED columns absent from all Analyzer groups may both end in the single canonical `technical_group_v1:fallback`.
 
 No grouping is recomputed from column names inside the materializer.
 
@@ -542,6 +565,39 @@ Feature Selection / session-state regression tests prove:
 ### N. provenance
 
 Manifest V2 links the generated registry/context to exact proposal/confirmation hashes and materializer version; no second group-confirmation state exists.
+
+### O. duplicate technical identity
+
+A proposal containing distinct groups with the same technical identity, for example:
+
+```text
+structural_prefix / q / (a, b)
+structural_prefix / q / (c, d)
+```
+
+fails before any FeatureGroup projection / FeatureRegistry construction with:
+
+```text
+DatasetPreparationError("INVALID_TECHNICAL_GROUP_STRUCTURE")
+```
+
+The test must exercise the invariant generically for the non-fallback technical kinds rather than special-casing only `structural_prefix`. No merge or silent winner is allowed.
+
+### P. multiple proposed fallback groups
+
+A proposal containing more than one distinct `ProposedTechnicalGroup` with:
+
+```text
+group_kind == "fallback"
+```
+
+fails before projection with:
+
+```text
+DatasetPreparationError("INVALID_TECHNICAL_GROUP_STRUCTURE")
+```
+
+No upstream fallback groups are merged. The single canonical final fallback remains only a downstream projection target for the one valid Analyzer fallback plus ungrouped MODEL_ALLOWED columns.
 
 ---
 
