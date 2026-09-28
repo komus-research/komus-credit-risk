@@ -1,6 +1,6 @@
 # Configurable Model Platform V1 — STATUS
 
-Phase: **MP-A ACCEPTED / MP-B ACCEPTED / MP-C ACCEPTED / MP-D ACCEPTED / MP-E READY_FOR_IMPLEMENTATION**
+Phase: **MP-A ACCEPTED / MP-B ACCEPTED / MP-C ACCEPTED / MP-D ACCEPTED / MP-E IMPLEMENTATION COMPLETE / READY FOR REVIEW**
 
 Architecture: **ACCEPTED**
 
@@ -56,7 +56,12 @@ artifacts. V1 artifacts remain readable without rewrite or manufactured provenan
 MP-D is implemented and **ACCEPTED**. Provider-based ModelVersion V2 persistence now
 supports exact Recommended/Advanced configuration provenance for CatBoost, XGBoost,
 LightGBM and GBDT Mean while legacy ModelVersion V1 remains readable unchanged.
-MP-E (catalog/runtime integration) remains intentionally unimplemented.
+MP-E is implementation-complete and ready for review. It adds a deterministic,
+read-only catalog projection from the trusted plugin registry, generic runtime
+package/version availability resolution, and makes planning/UI model discovery use
+that same registry rather than caller-supplied model maps. A test-only fifth plugin
+proves the generic catalog → configuration → smoke → planning → runner → V2 artifact
+path without production registration or model-id branches.
 
 Corrective review fixes bind smoke matching to the exact ordered population rows,
 require an authoritative prepared context for locked final-test data, remove the

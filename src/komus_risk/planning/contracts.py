@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Mapping
-
-from komus_risk.model_platform.configuration import ResolvedModelConfiguration
+from typing import Any
 
 from komus_risk.contracts import DatasetContract, FeatureUsageStatus
+from komus_risk.model_platform.catalog import ModelCatalogEntry
+from komus_risk.model_platform.configuration import ResolvedModelConfiguration
 
 
 def freeze_value(value: Any) -> Any:
     if isinstance(value, dict):
-        return MappingProxyType({key: freeze_value(item) for key, item in value.items()})
+        return MappingProxyType(
+            {key: freeze_value(item) for key, item in value.items()}
+        )
     if isinstance(value, (list, tuple)):
         return tuple(freeze_value(item) for item in value)
     return value
@@ -37,7 +40,7 @@ class DatasetPassport:
     final_test_locked: bool
 
     @classmethod
-    def from_contract(cls, contract: DatasetContract) -> "DatasetPassport":
+    def from_contract(cls, contract: DatasetContract) -> DatasetPassport:
         return cls(**contract.to_dict())
 
 
@@ -65,19 +68,6 @@ class FeatureGroupView:
 
 
 @dataclass(frozen=True, slots=True)
-class ModelView:
-    model_id: str
-    display_name_ru: str
-    model_version: str
-    task_types: tuple[str, ...]
-    description_ru: str
-    default_profile: Mapping[str, Any]
-    runtime_requirements: Mapping[str, Any]
-    adapter_version: str
-    runnable: bool
-
-
-@dataclass(frozen=True, slots=True)
 class PopulationSummary:
     population_id: str
     population_fingerprint: str
@@ -101,9 +91,13 @@ class PlanningRequestMetadata:
     user_overrides: Mapping[str, Any] = MappingProxyType({})
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "selected_feature_ids", tuple(self.selected_feature_ids))
+        object.__setattr__(
+            self, "selected_feature_ids", tuple(self.selected_feature_ids)
+        )
         object.__setattr__(self, "changed_elements", tuple(self.changed_elements))
-        object.__setattr__(self, "user_overrides", freeze_value(dict(self.user_overrides)))
+        object.__setattr__(
+            self, "user_overrides", freeze_value(dict(self.user_overrides))
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,7 +108,7 @@ class ExperimentPlan:
     selected_feature_ids: tuple[str, ...]
     selected_features: tuple[FeatureView, ...]
     feature_groups: tuple[str, ...]
-    model: ModelView | None
+    model: ModelCatalogEntry | None
     is_valid: bool
     validation_errors: tuple[str, ...]
     resolved_model_configuration: ResolvedModelConfiguration | None = None
