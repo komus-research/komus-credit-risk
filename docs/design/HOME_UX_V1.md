@@ -174,13 +174,17 @@ Wizard step (`current_step = 0..4`) остаётся отдельным под-�
 - `Начать новый анализ` — выполнить полный analysis-session reset и открыть step 0.
 
 Содержательная работа есть, если присутствует хотя бы одно из следующего:
-- dataset preparation/context;
+- пользователь уже выбрал источник данных, включая browser staged upload до появления `dataset_source_preparation`;
+- в session сохранён selected/resolved source locator, который указывает на реально выбранный dataset;
+- существует checked/prepared dataset state (`dataset_source_preparation` / `dataset_context`);
 - достигнут wizard step > 0;
-- выбранная модель/experiment inputs/plan;
-- experiment artifact/result/comparison;
-- loaded ModelVersion/inference/explanation state.
+- выбрана модель либо существуют experiment inputs/plan;
+- существует experiment artifact/result/comparison;
+- существует loaded ModelVersion/inference/explanation state.
 
-Пустой step 0 без выбранного/проверенного dataset не требует подтверждения.
+**SELECTED DATASET SOURCE = MEANINGFUL USER WORK**, даже если пользователь ещё не нажал `Проверить файл`.
+
+Поэтому пустым считается только step 0, где нет выбранного/staged/resolved dataset source и нет checked/prepared dataset state. Один лишь source error без оставшегося выбранного/staged source сам по себе подтверждения перед reset не требует.
 
 ### Wizard → Home
 
