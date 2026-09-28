@@ -1,6 +1,6 @@
 # Algorithm UX V1 — UX / VISUAL LOCK
 
-Status: **UX / VISUAL LOCK — READY_FOR_REVIEW**
+Status: **UX / VISUAL LOCK — ACCEPTED / READY_FOR_IMPLEMENTATION**
 
 Base main: `f32ec4a98d08b47940ceb6ab95956ac80a97e410`
 
@@ -761,7 +761,7 @@ Planning/config error does not mutate Algorithm draft or auto-fix values.
 
 Keep:
 
-- overall dark Risk Studio direction;
+- overall dark graphite/emerald visual direction from the designer mockup; product name/logo remain a replaceable global branding layer;
 - current four-card desktop row;
 - selected card highlight;
 - compact dataset/feature summary;
@@ -874,7 +874,7 @@ No new backend blocker was found on current main.
 
 ```text
 Algorithm UX V1:
-UX / VISUAL LOCK — READY_FOR_REVIEW
+UX / VISUAL LOCK — ACCEPTED / READY_FOR_IMPLEMENTATION
 
 Implementation:
 NOT STARTED
@@ -883,9 +883,7 @@ NOT STARTED
 Next:
 
 ```text
-Reviewer
-→ Technical Coordinator
-→ Codex implementation
+Codex implementation
 → Reviewer
 → manual visual acceptance
 ```
