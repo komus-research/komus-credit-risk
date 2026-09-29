@@ -28,6 +28,7 @@ export function App() {
         setRoute(allowed)
       }
     } catch {
+      if (requestedRoute.current !== requested || currentRoute() !== requested) return
       setSessionReady(false)
       // Keep the current view while the API is temporarily unavailable.
     }
