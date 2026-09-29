@@ -771,16 +771,17 @@ Matching technical smoke PASS обязателен перед каждым full 
 
 `docs/workstreams/configurable_model_platform_v1/ARCHITECT_LOCK.md`.
 
-**Текущий порядок product backend work:**
+**Текущий порядок native product work:**
 
 1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
 2. Feature Grouping Propagation V1 — **CLOSED / ACCEPTED**.
-3. Текущий следующий шаг — продолжение UX экрана «Алгоритм».
-4. Затем «Проверка качества → Результат» и финальный product E2E.
+3. N2b2 Human Confirmation + Prepared Context — **CLOSED / ACCEPTED**.
+4. **NEXT — Native Features V1**.
+5. Затем — **Native Algorithm V1**: UX/spec и reference уже подготовлены, native implementation ещё не завершён.
+6. Затем — **Quality Check → Result** и финальный native product E2E.
 
 ### Future / not implemented
 
-- production React/Next.js + thin FastAPI frontend/backend boundary;
 - Dataset History / Persistence V1 как пользовательская история проектов/экспериментов;
 - semantic business taxonomy для features поверх безопасной technical grouping, если появится trusted source;
 - threshold optimization/calibration и business policy UI;
