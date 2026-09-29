@@ -85,3 +85,11 @@ class FeatureRegistry:
     def resolve(self, feature_ids: Iterable[str]) -> tuple[FeatureSpec, ...]:
         """Разрешает переданный порядок идентификаторов в спецификации."""
         return tuple(self.get(feature_id) for feature_id in feature_ids)
+
+    def ordered_features(self) -> tuple[FeatureSpec, ...]:
+        """Return immutable feature specifications in canonical display order."""
+        return tuple(sorted(self._features.values(), key=lambda item: (item.display_order, item.feature_id)))
+
+    def ordered_groups(self) -> tuple[FeatureGroup, ...]:
+        """Return immutable feature groups in canonical display order."""
+        return tuple(sorted(self._groups.values(), key=lambda item: (item.display_order, item.group_id)))

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { getNativeSession, type NativeSession } from './api/session'
 import { DataPage } from './pages/DataPage'
 import { HomePage } from './pages/HomePage'
+import { AlgorithmPage } from './pages/AlgorithmPage'
+import { FeaturesPage } from './pages/FeaturesPage'
 import { currentRoute, guardedRoute, navigate, replaceRoute, routes, type CanonicalRoute } from './routing'
 
 const recoveryText = 'Сессия подготовки была сброшена. Загрузите файл повторно.'
@@ -90,5 +92,7 @@ export function App() {
   const recoverStaleSession = useCallback(() => void sync(requestedRoute.current, true), [sync])
 
   if (route === routes.home) return <HomePage session={session} onContinue={continueAnalysis} />
+  if (route === routes.features) return <FeaturesPage onHome={openHome} onSessionChange={setSession} />
+  if (route === routes.algorithm) return <AlgorithmPage onHome={openHome} />
   return <DataPage route={route} sessionReady={sessionReady} onHome={openHome} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
 }

@@ -111,6 +111,8 @@ class _NativeAnalysisSession:
     data_substep: str = "FILE"
     inspection_progress: DatasetInspectionProgress | None = None
     inspection_token: str | None = None
+    selected_feature_ids: tuple[str, ...] | None = None
+    features_completed: bool = False
 
     def snapshot(self) -> NativeSessionSnapshot:
         return NativeSessionSnapshot(
@@ -134,6 +136,8 @@ class _NativeAnalysisSession:
         ):
             return "#/analysis/data/confirmation"
         if self.data_substep == "PREPARED" and self.prepared_context_id:
+            if self.features_completed:
+                return "#/analysis/algorithm"
             return "#/analysis/features"
         return "#/analysis/data/file"
 
@@ -181,6 +185,9 @@ class NativeSessionStore:
             if trusted:
                 return session.snapshot()
             session.prepared_context_id = None
+            session.selected_feature_ids = None
+            session.features_completed = False
+            session.current_step = 0
             session.data_substep = (
                 "ROLES"
                 if session.inspected_dataset is not None and session.preparation_draft is not None
@@ -412,6 +419,7 @@ class NativeSessionStore:
         *,
         acknowledged_draft: PreparationDraft,
         context_id: str,
+        selected_feature_ids: tuple[str, ...] = (),
     ) -> NativeSessionSnapshot:
         """Atomically publish the accepted draft and finish CONFIRMATION → PREPARED."""
         with self._lock:
@@ -427,10 +435,43 @@ class NativeSessionStore:
                 raise NativeSessionTransitionError()
             session.preparation_draft = acknowledged_draft
             session.prepared_context_id = context_id
+            session.selected_feature_ids = tuple(selected_feature_ids)
+            session.features_completed = False
+            session.current_step = 1
             session.data_substep = "PREPARED"
             session.analysis_active = True
             session.has_meaningful_temporary_work = True
             session.confirmation_operation_token = None
+            return session.snapshot()
+
+    def feature_selection(self, session_id: str) -> tuple[str, tuple[str, ...], bool]:
+        """Return the current trusted context reference and explicit selection state."""
+        with self._lock:
+            session = self._session(session_id)
+            if session.data_substep != "PREPARED" or not session.prepared_context_id or session.selected_feature_ids is None:
+                raise NativeSessionTransitionError()
+            return session.prepared_context_id, session.selected_feature_ids, session.features_completed
+
+    def update_feature_selection(self, session_id: str, selected_feature_ids: tuple[str, ...]) -> NativeSessionSnapshot:
+        with self._lock:
+            session = self._session(session_id)
+            if session.data_substep != "PREPARED" or not session.prepared_context_id or session.selected_feature_ids is None:
+                raise NativeSessionTransitionError()
+            next_selection = tuple(selected_feature_ids)
+            if next_selection != session.selected_feature_ids:
+                session.selected_feature_ids = next_selection
+                if session.features_completed:
+                    session.features_completed = False
+                    session.current_step = 1
+            return session.snapshot()
+
+    def continue_from_features(self, session_id: str) -> NativeSessionSnapshot:
+        with self._lock:
+            session = self._session(session_id)
+            if session.data_substep != "PREPARED" or not session.prepared_context_id or not session.selected_feature_ids:
+                raise NativeSessionTransitionError()
+            session.features_completed = True
+            session.current_step = 2
             return session.snapshot()
 
     def abort_confirmation_materialization(
@@ -492,6 +533,8 @@ class NativeSessionStore:
             session.preparation_draft = None
             session.source_handle = None
             session.prepared_context_id = None
+            session.selected_feature_ids = None
+            session.features_completed = False
             session.confirmation_operation_token = None
             session.data_substep = "FILE"
             session.inspection_progress = None

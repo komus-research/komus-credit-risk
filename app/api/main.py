@@ -13,6 +13,8 @@ from starlette.concurrency import run_in_threadpool
 
 from komus_risk.application import (
     DatasetDraftError,
+    FeatureSelectionError,
+    FeatureSelectionService,
     NativeDatasetOnboardingService,
     NativeSessionSnapshot,
     NativeSessionStore,
@@ -117,6 +119,44 @@ class ConfirmationRequest(BaseModel):
     population_policy_acknowledged: bool = False
 
 
+class FeatureDatasetResponse(BaseModel):
+    display_name: str
+    row_count: int
+    column_count: int
+    source_type: str
+    source_format: str
+
+
+class FeatureGroupResponse(BaseModel):
+    group_id: str
+    name_ru: str
+    description_ru: str
+    display_order: int
+
+
+class FeatureRowResponse(BaseModel):
+    feature_id: str
+    display_name_ru: str
+    description_ru: str
+    column_name: str
+    group_id: str
+    display_order: int
+
+
+class FeaturesResponse(BaseModel):
+    dataset: FeatureDatasetResponse
+    available_count: int
+    selected_feature_ids: list[str]
+    selected_count: int
+    groups: list[FeatureGroupResponse]
+    features: list[FeatureRowResponse]
+
+
+class FeatureSelectionPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    selected_feature_ids: list[str]
+
+
 def _session_response(snapshot: NativeSessionSnapshot) -> SessionResponse:
     return SessionResponse(
         current_step=snapshot.current_step,
@@ -143,6 +183,7 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
     context_authority = PreparedDatasetContextAuthority()
+    feature_selection = FeatureSelectionService()
     api = FastAPI(title="AXION Native API", version="0.0.1")
     api.mount("/native-assets", StaticFiles(directory=ASSETS_DIRECTORY), name="native-assets")
 
@@ -174,6 +215,61 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
     ) -> SessionResponse:
         _, snapshot = resolve_session(response, session_id)
         return _session_response(snapshot)
+
+    def features_response(session_id: str) -> FeaturesResponse:
+        try:
+            context_id, selected_ids, _ = store.feature_selection(session_id)
+            context = context_authority.resolve(context_id)
+            view = feature_selection.describe(context, selected_ids)
+        except Exception as exc:
+            if isinstance(exc, FeatureSelectionError):
+                raise
+            raise HTTPException(status_code=409, detail={"code": "PREPARED_CONTEXT_REQUIRED", "message": "Сначала завершите подготовку данных."}) from None
+        return FeaturesResponse(
+            dataset=FeatureDatasetResponse(
+                display_name=view.dataset.display_name,
+                row_count=view.dataset.row_count,
+                column_count=view.dataset.column_count,
+                source_type=view.dataset.source_type,
+                source_format=view.dataset.source_format,
+            ),
+            available_count=view.available_count,
+            selected_feature_ids=list(view.selected_feature_ids),
+            selected_count=view.selected_count,
+            groups=[FeatureGroupResponse(group_id=item.group_id, name_ru=item.name_ru, description_ru=item.description_ru, display_order=item.display_order) for item in view.groups],
+            features=[FeatureRowResponse(feature_id=item.feature_id, display_name_ru=item.display_name_ru, description_ru=item.description_ru, column_name=item.column_name, group_id=item.group_id, display_order=item.display_order) for item in view.features],
+        )
+
+    @api.get("/api/v1/features", response_model=FeaturesResponse)
+    def get_features(response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> FeaturesResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        return features_response(resolved_session_id)
+
+    @api.patch("/api/v1/features/selection", response_model=FeaturesResponse)
+    def patch_feature_selection(request: FeatureSelectionPatch, response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> FeaturesResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        try:
+            context_id, _, _ = store.feature_selection(resolved_session_id)
+            selected = feature_selection.normalize_selection(context_authority.resolve(context_id), request.selected_feature_ids)
+            store.update_feature_selection(resolved_session_id, selected)
+        except FeatureSelectionError as exc:
+            raise HTTPException(status_code=422, detail={"code": exc.code, "message": "Недопустимый выбор признаков."}) from None
+        except Exception:
+            raise HTTPException(status_code=409, detail={"code": "PREPARED_CONTEXT_REQUIRED", "message": "Сначала завершите подготовку данных."}) from None
+        return features_response(resolved_session_id)
+
+    @api.post("/api/v1/features/continue", response_model=SessionResponse)
+    def continue_features(response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> SessionResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        try:
+            _, selected, _ = store.feature_selection(resolved_session_id)
+            if not selected:
+                raise FeatureSelectionError("FEATURE_SELECTION_REQUIRED")
+            return _session_response(store.continue_from_features(resolved_session_id))
+        except FeatureSelectionError as exc:
+            raise HTTPException(status_code=422, detail={"code": exc.code, "message": "Выберите хотя бы один разрешённый признак."}) from None
+        except NativeSessionTransitionError:
+            raise HTTPException(status_code=409, detail={"code": "PREPARED_CONTEXT_REQUIRED", "message": "Сначала завершите подготовку данных."}) from None
 
     @api.post("/api/v1/analysis/new", response_model=NewAnalysisResponse)
     def new_analysis(
@@ -389,6 +485,7 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
                 operation_token,
                 acknowledged_draft=draft,
                 context_id=context.context_id,
+                selected_feature_ids=feature_selection.initial_selection(context),
             )
             operation_token = None
             return _session_response(snapshot)

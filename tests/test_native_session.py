@@ -179,18 +179,27 @@ def test_native_session_module_has_no_frontend_or_persistence_dependencies() -> 
     )
 
 
-def test_orphaned_prepared_context_reference_fails_closed_to_file() -> None:
+def test_orphaned_prepared_context_from_algorithm_clears_feature_step_and_returns_to_roles() -> None:
     store = NativeSessionStore()
     session_id, _ = store.get_or_create(None)
     transient = store._sessions[session_id]
+    transient.inspected_dataset = object()
+    transient.preparation_draft = object()
     transient.analysis_active = True
     transient.data_substep = "PREPARED"
     transient.prepared_context_id = "missing-context"
+    transient.selected_feature_ids = ("feature-a",)
+    transient.features_completed = True
+    transient.current_step = 2
 
     reconciled = store.reconcile_prepared_context(session_id, lambda _context_id: False)
 
-    assert reconciled.data_substep == "FILE"
-    assert reconciled.resume_route == "#/analysis/data/file"
+    assert reconciled.current_step == 0
+    assert reconciled.data_substep == "ROLES"
+    assert reconciled.resume_route == "#/analysis/data/roles"
+    assert transient.prepared_context_id is None
+    assert transient.selected_feature_ids is None
+    assert not transient.features_completed
 
 
 def test_data_transitions_are_strict_and_fail_without_mutation() -> None:

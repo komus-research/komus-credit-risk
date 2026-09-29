@@ -3,7 +3,7 @@ export type NativeSession = {
   analysis_active: boolean
   data_substep: 'FILE' | 'ROLES' | 'CONFIRMATION' | 'PREPARED'
   has_meaningful_temporary_work: boolean
-  resume_route: '#/home' | '#/analysis/data/file' | '#/analysis/data/roles' | '#/analysis/data/confirmation' | '#/analysis/features'
+  resume_route: '#/home' | '#/analysis/data/file' | '#/analysis/data/roles' | '#/analysis/data/confirmation' | '#/analysis/features' | '#/analysis/algorithm'
 }
 
 export type NewAnalysisResponse = NativeSession & { status: 'STARTED' | 'CONFIRMATION_REQUIRED' }
@@ -104,3 +104,23 @@ export function confirmDatasetPreparation(populationPolicyAcknowledged: boolean)
     body: JSON.stringify({ population_policy_acknowledged: populationPolicyAcknowledged }),
   }).then(sessionResponse)
 }
+
+export type FeatureGroup = { group_id: string; name_ru: string; description_ru: string; display_order: number }
+export type FeatureRow = { feature_id: string; display_name_ru: string; description_ru: string; column_name: string; group_id: string; display_order: number }
+export type FeatureSelection = {
+  dataset: { display_name: string; row_count: number; column_count: number; source_type: string; source_format: string }
+  available_count: number; selected_feature_ids: string[]; selected_count: number; groups: FeatureGroup[]; features: FeatureRow[]
+}
+
+async function featureResponse(response: Response): Promise<FeatureSelection> {
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { message?: string; code?: string } } | null
+    throw new NativeApiError(payload?.detail?.message ?? 'Не удалось обновить выбор признаков.', response.status, payload?.detail?.code)
+  }
+  return response.json() as Promise<FeatureSelection>
+}
+export function getFeatures(): Promise<FeatureSelection> { return fetch('/api/v1/features').then(featureResponse) }
+export function patchFeatureSelection(selected_feature_ids: string[]): Promise<FeatureSelection> {
+  return fetch('/api/v1/features/selection', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selected_feature_ids }) }).then(featureResponse)
+}
+export function continueFeatures(): Promise<NativeSession> { return fetch('/api/v1/features/continue', { method: 'POST' }).then(sessionResponse) }

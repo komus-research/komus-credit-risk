@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { confirmDatasetPreparation, getDatasetPreparation, getDatasetProgress, getNativeSession, isDatasetNotUploaded, patchDatasetDraft, returnToDatasetRoles, reviewDatasetPreparation, type DatasetInspectionProgress, type DatasetPreparation, uploadDataset } from '../api/session'
 import { Icon } from '../components/Icon'
+import { Sidebar } from '../components/Sidebar'
 import { navigate, routes, type CanonicalRoute } from '../routing'
 
-const asset = (path: string) => `/native-assets/${path}`
 const permissionLabels: Record<string, string> = {
   MODEL_ALLOWED: 'Доступны модели', DIAGNOSTIC_ONLY: 'Только для диагностики', BLOCKED: 'Заблокированы', TARGET: 'Целевая колонка', IDENTIFIER: 'Идентификатор объекта',
 }
@@ -97,20 +97,10 @@ export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onSta
   }
 
   if (route === routes.features) return <FeaturesBoundary onHome={onHome} />
-  if (route === routes.confirmation) return <ConfirmationShell preparation={preparation} busy={busy} setBusy={setBusy} setError={setError} onBack={backToRoles} />
+  if (route === routes.confirmation) return <ConfirmationShell preparation={preparation} busy={busy} setBusy={setBusy} setError={setError} onBack={backToRoles} onHome={onHome} />
 
   return <div className="app-shell data-shell">
-    <aside className="sidebar">
-      <img className="brand" src={asset('brand/logo-primary-dark.png')} alt="AXION — аналитическая платформа" />
-      <nav aria-label="Основная навигация" className="navigation">
-        <button className="nav-item nav-link" onClick={onHome} aria-label="Главная"><Icon name="home" size={26} /><span>Главная</span></button>
-        <div className="nav-item is-active"><Icon name="plus" size={26} /><span>Новый анализ</span></div>
-        <button className="nav-item" disabled><Icon name="model" size={26} /><span>Модели</span></button>
-        <button className="nav-item" disabled><Icon name="menu" size={26} /><span>Проекты / История</span></button>
-        <button className="nav-item with-divider" disabled><Icon name="settings" size={26} /><span>Настройки</span></button>
-      </nav>
-      <div className="profile"><div className="avatar">АП</div><div><strong>Андреев П. С.</strong><small>Аналитик</small></div></div>
-    </aside>
+    <Sidebar active="analysis" onHome={onHome} />
 
     <main className="workspace data-workspace">
       <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index === 0 ? 'active' : ''}><span>{index + 1}</span>{name}</li>)}</ol></div>
@@ -171,7 +161,7 @@ function formatElapsed(milliseconds: number) { const seconds = Math.max(0, Math.
 function stageLabel(stage: string) { return ({ RECEIVING_FILE: 'Получаем файл', STAGING_FILE: 'Сохраняем временную копию', READING_SOURCE: 'Читаем таблицу', INSPECTING_DATASET: 'Проверяем структуру данных', ANALYZING_PREPARATION: 'Определяем роли колонок' } as Record<string, string>)[stage] ?? stage }
 function decodeValue(value: string, choices: Array<string | number | boolean>) { return choices.find(item => String(item) === value) ?? null }
 
-function ConfirmationShell({ preparation, busy, setBusy, setError, onBack }: { preparation: DatasetPreparation | null; busy: boolean; setBusy: (busy: boolean) => void; setError: (message: string | null) => void; onBack: () => void }) {
+function ConfirmationShell({ preparation, busy, setBusy, setError, onBack, onHome }: { preparation: DatasetPreparation | null; busy: boolean; setBusy: (busy: boolean) => void; setError: (message: string | null) => void; onBack: () => void; onHome: () => void }) {
   const [acknowledged, setAcknowledged] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const confirm = () => {
@@ -181,20 +171,10 @@ function ConfirmationShell({ preparation, busy, setBusy, setError, onBack }: { p
       setError(text); setMessage(text)
     }).finally(() => setBusy(false))
   }
-  if (!preparation) return <div className="app-shell data-shell"><aside className="sidebar"><img className="brand" src={asset('brand/logo-primary-dark.png')} alt="AXION — аналитическая платформа" /><nav aria-label="Основная навигация" className="navigation"><button className="nav-item nav-link" onClick={() => navigate(routes.home)} aria-label="Главная"><Icon name="home" size={26} /><span>Главная</span></button><div className="nav-item is-active"><Icon name="plus" size={26} /><span>Новый анализ</span></div><button className="nav-item" disabled><Icon name="model" size={26} /><span>Модели</span></button><button className="nav-item" disabled><Icon name="menu" size={26} /><span>Проекты / История</span></button><button className="nav-item with-divider" disabled><Icon name="settings" size={26} /><span>Настройки</span></button></nav><div className="profile"><div className="avatar">АП</div><div><strong>Андреев П. С.</strong><small>Аналитик</small></div></div></aside><main className="workspace data-workspace confirmation-workspace"><section className="upload-panel panel"><h2>Загружаем сведения о подготовке</h2></section></main></div>
+  if (!preparation) return <div className="app-shell data-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace data-workspace confirmation-workspace"><section className="upload-panel panel"><h2>Загружаем сведения о подготовке</h2></section></main></div>
   const counts = preparation.summary.permission_counts
   return <div className="app-shell data-shell">
-    <aside className="sidebar">
-      <img className="brand" src={asset('brand/logo-primary-dark.png')} alt="AXION — аналитическая платформа" />
-      <nav aria-label="Основная навигация" className="navigation">
-        <button className="nav-item nav-link" onClick={() => navigate(routes.home)} aria-label="Главная"><Icon name="home" size={26} /><span>Главная</span></button>
-        <div className="nav-item is-active"><Icon name="plus" size={26} /><span>Новый анализ</span></div>
-        <button className="nav-item" disabled><Icon name="model" size={26} /><span>Модели</span></button>
-        <button className="nav-item" disabled><Icon name="menu" size={26} /><span>Проекты / История</span></button>
-        <button className="nav-item with-divider" disabled><Icon name="settings" size={26} /><span>Настройки</span></button>
-      </nav>
-      <div className="profile"><div className="avatar">АП</div><div><strong>Андреев П. С.</strong><small>Аналитик</small></div></div>
-    </aside>
+    <Sidebar active="analysis" onHome={onHome} />
     <main className="workspace data-workspace confirmation-workspace">
     <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index === 0 ? 'active' : ''}><span>{index + 1}</span>{name}</li>)}</ol></div>
     <header className="data-header"><h1>Подготовка данных</h1><p>Проверьте сведения о файле, ключевые роли и итог подготовки перед созданием контекста данных.</p></header>

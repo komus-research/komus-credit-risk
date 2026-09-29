@@ -28,6 +28,7 @@ from .native_session import (
     NewAnalysisResult,
     NewAnalysisStatus,
 )
+from .feature_selection import FeatureSelectionError, FeatureSelectionService, FeatureSelectionView
 from .dataset_onboarding import (
     DatasetDraftError,
     InspectedDataset,
@@ -63,6 +64,9 @@ __all__ = [
     "ModelInferenceService",
     "NativeSessionSnapshot",
     "NativeSessionStore",
+    "FeatureSelectionError",
+    "FeatureSelectionService",
+    "FeatureSelectionView",
     "NewAnalysisResult",
     "NewAnalysisStatus",
     "DatasetDraftError",

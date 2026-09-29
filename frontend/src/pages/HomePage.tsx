@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { startNewAnalysis, type NativeSession } from '../api/session'
 import { Icon } from '../components/Icon'
+import { Sidebar } from '../components/Sidebar'
 
 const asset = (path: string) => `/native-assets/${path}`
 
@@ -9,14 +10,6 @@ const summary = [
   ['box', 'Сохранённых моделей'],
   ['clock', 'Проектов в работе'],
   ['check', 'Завершённых проектов'],
-] as const
-
-const navigation = [
-  ['home', 'Главная', false],
-  ['plus', 'Новый анализ', false],
-  ['model', 'Модели', true],
-  ['menu', 'Проекты / История', true],
-  ['settings', 'Настройки', true],
 ] as const
 
 export function HomePage({ session, onContinue }: { session: NativeSession | null; onContinue: () => void }) {
@@ -37,31 +30,7 @@ export function HomePage({ session, onContinue }: { session: NativeSession | nul
 
   return (
     <div className="app-shell home-shell">
-      <aside className="sidebar">
-        <div className="brand-block" role="img" aria-label="AXION">
-          <img className="brand-mark" src={asset('brand/logo-mark-primary.png')} alt="" />
-          <img className="brand-wordmark" src={asset('brand/wordmark-dark.png')} alt="" />
-        </div>
-        <nav aria-label="Основная навигация" className="navigation">
-          {navigation.map(([icon, label, disabled]) => {
-            const isHome = label === 'Главная'
-            const isNewAnalysis = label === 'Новый анализ'
-            return (
-              <button
-                key={label}
-                className={`nav-item ${isHome ? 'is-active' : ''} ${label === 'Настройки' ? 'with-divider' : ''}`}
-                disabled={(disabled && !isNewAnalysis) || (isNewAnalysis && starting)}
-                onClick={isNewAnalysis ? () => beginNewAnalysis() : undefined}
-                title={disabled ? 'Будет доступно позже' : undefined}
-                aria-current={isHome ? 'page' : undefined}
-              >
-                <Icon name={icon} size={26} /><span>{label}</span>
-              </button>
-            )
-          })}
-        </nav>
-        <div className="profile"><div className="avatar">АП</div><div><strong>Андреев П. С.</strong><small>Аналитик</small></div><Icon name="arrow" size={18} /></div>
-      </aside>
+      <Sidebar active="home" onHome={() => undefined} onNewAnalysis={() => beginNewAnalysis()} />
 
       <main className="workspace">
         <header className="topbar">

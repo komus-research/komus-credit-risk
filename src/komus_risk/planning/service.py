@@ -54,10 +54,7 @@ class ExperimentPlanningService:
     ) -> tuple[FeatureView, ...]:
         return tuple(
             self._feature_view(spec)
-            for spec in sorted(
-                feature_registry._features.values(),
-                key=lambda item: (item.display_order, item.feature_id),
-            )
+            for spec in feature_registry.ordered_features()
         )
 
     def list_feature_groups(
@@ -70,10 +67,7 @@ class ExperimentPlanningService:
                 group.description_ru,
                 group.display_order,
             )
-            for group in sorted(
-                feature_registry._groups.values(),
-                key=lambda item: (item.display_order, item.group_id),
-            )
+            for group in feature_registry.ordered_groups()
         )
 
     def list_models(self) -> tuple[ModelCatalogEntry, ...]:

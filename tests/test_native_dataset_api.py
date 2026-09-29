@@ -284,6 +284,7 @@ def test_explicit_confirmation_materializes_only_after_acknowledgement() -> None
     )
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json()["data_substep"] == "PREPARED"
+    assert confirmed.json()["current_step"] == 1
     assert confirmed.json()["resume_route"] == "#/analysis/features"
     invalid_edit = client.patch(
         "/api/v1/dataset/preparation/draft", json={"positive_class": 0}
