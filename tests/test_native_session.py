@@ -22,7 +22,10 @@ def test_session_is_created_and_reused() -> None:
     assert session_id == reused_id
     assert created == reused
     assert created.current_step == 0
+    assert not created.analysis_active
+    assert created.data_substep == "FILE"
     assert not created.has_meaningful_temporary_work
+    assert created.resume_route == "#/home"
 
 
 def test_clean_new_analysis_starts_at_data_step() -> None:
@@ -33,7 +36,10 @@ def test_clean_new_analysis_starts_at_data_step() -> None:
 
     assert result.status is NewAnalysisStatus.STARTED
     assert result.session.current_step == 0
+    assert result.session.analysis_active
+    assert result.session.data_substep == "FILE"
     assert not result.session.has_meaningful_temporary_work
+    assert result.session.resume_route == "#/analysis/data/file"
 
 
 def test_meaningful_work_requires_confirmation_without_mutation() -> None:

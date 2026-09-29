@@ -35,7 +35,10 @@ _NATIVE_INSPECTION_STAGES = {
 
 class SessionResponse(BaseModel):
     current_step: int
+    analysis_active: bool
+    data_substep: Literal["FILE", "ROLES", "CONFIRMATION", "PREPARED"]
     has_meaningful_temporary_work: bool
+    resume_route: str
 
 
 class NewAnalysisRequest(BaseModel):
@@ -107,7 +110,10 @@ class PreparationDraftPatch(BaseModel):
 def _session_response(snapshot: NativeSessionSnapshot) -> SessionResponse:
     return SessionResponse(
         current_step=snapshot.current_step,
+        analysis_active=snapshot.analysis_active,
+        data_substep=snapshot.data_substep,
         has_meaningful_temporary_work=snapshot.has_meaningful_temporary_work,
+        resume_route=snapshot.resume_route,
     )
 
 

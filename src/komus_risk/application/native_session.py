@@ -72,7 +72,10 @@ class NativeSessionSnapshot:
     """The native frontend's read model for one analysis session."""
 
     current_step: int
+    analysis_active: bool
+    data_substep: str
     has_meaningful_temporary_work: bool
+    resume_route: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +90,7 @@ class NewAnalysisResult:
 @dataclass(slots=True)
 class _NativeAnalysisSession:
     current_step: int = 0
+    analysis_active: bool = False
     has_meaningful_temporary_work: bool = False
     staged_upload: Any | None = None
     inspection_upload: Any | None = None
@@ -100,8 +104,21 @@ class _NativeAnalysisSession:
     def snapshot(self) -> NativeSessionSnapshot:
         return NativeSessionSnapshot(
             current_step=self.current_step,
+            analysis_active=self.analysis_active,
+            data_substep=self.data_substep,
             has_meaningful_temporary_work=self.has_meaningful_temporary_work,
+            resume_route=self.resume_route(),
         )
+
+    def resume_route(self) -> str:
+        """Return the public route justified by the actual transient state."""
+        if not self.analysis_active:
+            return "#/home"
+        if self.data_substep == "ROLES" and (
+            self.inspected_dataset is not None and self.preparation_draft is not None
+        ):
+            return "#/analysis/data/roles"
+        return "#/analysis/data/file"
 
 
 class NativeSessionStore:
@@ -135,6 +152,7 @@ class NativeSessionStore:
         """Record temporary workflow progress for future native use cases."""
         with self._lock:
             session = self._session(session_id)
+            session.analysis_active = True
             session.has_meaningful_temporary_work = True
             return session.snapshot()
 
@@ -146,6 +164,7 @@ class NativeSessionStore:
             now = _now()
             session.inspection_token = token
             session.inspection_upload = None
+            session.analysis_active = True
             session.has_meaningful_temporary_work = True
             session.inspection_progress = DatasetInspectionProgress(
                 status=DatasetInspectionStatus.RUNNING,
@@ -255,6 +274,7 @@ class NativeSessionStore:
             session.preparation_draft = preparation_draft
             session.source_handle = token_urlsafe(24)
             session.inspection_upload = None
+            session.analysis_active = True
             session.data_substep = "ROLES"
             session.has_meaningful_temporary_work = True
             return previous, session.source_handle
@@ -276,6 +296,7 @@ class NativeSessionStore:
             if session.inspected_dataset is None:
                 raise KeyError("No staged dataset for this native analysis session.")
             session.preparation_draft = draft
+            session.analysis_active = True
             session.data_substep = "ROLES"
             session.has_meaningful_temporary_work = True
             return session.snapshot()
@@ -294,6 +315,7 @@ class NativeSessionStore:
 
             discarded_uploads = (session.staged_upload, session.inspection_upload)
             session.current_step = 0
+            session.analysis_active = True
             session.has_meaningful_temporary_work = False
             session.staged_upload = None
             session.inspection_upload = None

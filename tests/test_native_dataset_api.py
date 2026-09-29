@@ -57,10 +57,14 @@ def test_upload_finishes_with_ready_progress() -> None:
 
     _upload(client)
     progress = client.get("/api/v1/dataset/progress")
+    session = client.get("/api/v1/session")
 
     assert progress.status_code == 200
     assert progress.json()["status"] == "READY"
     assert progress.json()["stage"] == "READY"
+    assert session.json()["analysis_active"] is True
+    assert session.json()["data_substep"] == "ROLES"
+    assert session.json()["resume_route"] == "#/analysis/data/roles"
     assert progress.json()["stage_label"] == "Файл успешно проверен"
 
 

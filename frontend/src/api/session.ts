@@ -1,6 +1,15 @@
 export type NativeSession = {
   current_step: number
+  analysis_active: boolean
+  data_substep: 'FILE' | 'ROLES' | 'CONFIRMATION' | 'PREPARED'
   has_meaningful_temporary_work: boolean
+  resume_route: '#/home' | '#/analysis/data/file' | '#/analysis/data/roles' | '#/analysis/data/confirmation' | '#/analysis/features'
+}
+
+export type NewAnalysisResponse = NativeSession & { status: 'STARTED' | 'CONFIRMATION_REQUIRED' }
+
+export class NativeApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) { super(message) }
 }
 
 export async function getNativeSession(): Promise<NativeSession> {
@@ -9,6 +18,16 @@ export async function getNativeSession(): Promise<NativeSession> {
     throw new Error('Не удалось получить состояние нативной сессии.')
   }
   return response.json() as Promise<NativeSession>
+}
+
+export async function startNewAnalysis(confirmReset = false): Promise<NewAnalysisResponse> {
+  const response = await fetch('/api/v1/analysis/new', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirm_reset: confirmReset }),
+  })
+  if (!response.ok) throw new Error('Не удалось начать новый анализ.')
+  return response.json() as Promise<NewAnalysisResponse>
 }
 
 export type DatasetPreparation = {
@@ -29,10 +48,14 @@ export type DatasetInspectionProgress = {
 
 async function datasetResponse(response: Response): Promise<DatasetPreparation> {
   if (!response.ok) {
-    const payload = await response.json().catch(() => null) as { detail?: { message?: string } } | null
-    throw new Error(payload?.detail?.message ?? 'Не удалось обработать данные.')
+    const payload = await response.json().catch(() => null) as { detail?: { message?: string; code?: string } } | null
+    throw new NativeApiError(payload?.detail?.message ?? 'Не удалось обработать данные.', response.status, payload?.detail?.code)
   }
   return response.json() as Promise<DatasetPreparation>
+}
+
+export function isDatasetNotUploaded(error: unknown): boolean {
+  return error instanceof NativeApiError && error.code === 'DATASET_NOT_UPLOADED'
 }
 
 export function getDatasetPreparation(): Promise<DatasetPreparation> {

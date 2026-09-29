@@ -43,12 +43,18 @@ def test_new_analysis_contract_requires_confirmation_then_resets() -> None:
     assert confirmation.json() == {
         "status": "CONFIRMATION_REQUIRED",
         "current_step": 0,
+        "analysis_active": True,
+        "data_substep": "FILE",
         "has_meaningful_temporary_work": True,
+        "resume_route": "#/analysis/data/file",
     }
     assert confirmed.json() == {
         "status": "STARTED",
         "current_step": 0,
+        "analysis_active": True,
+        "data_substep": "FILE",
         "has_meaningful_temporary_work": False,
+        "resume_route": "#/analysis/data/file",
     }
 
 
