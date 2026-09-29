@@ -1,4 +1,4 @@
-"""Local, row-level evidence from the exact persisted CatBoost model."""
+"""Local, row-level TreeSHAP evidence from an exact persisted GBDT model."""
 
 from __future__ import annotations
 
@@ -7,8 +7,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 import catboost
+import lightgbm
 import numpy as np
 import pandas as pd
+import xgboost
 
 from komus_risk.artifacts import LoadedModelVersion
 from komus_risk.hashing import stable_hash
@@ -16,7 +18,18 @@ from komus_risk.hashing import stable_hash
 from .model_inference import PredictionBatch, PredictionRow
 
 _EVIDENCE_VERSION = "local_explanation_v1"
-_EXPLAINER_ID = "catboost_native_shap"
+_SUPPORTED_MODEL_IDS = frozenset({"catboost", "xgboost", "lightgbm"})
+_EXPLAINER_IDS = {model_id: f"{model_id}_native_shap" for model_id in _SUPPORTED_MODEL_IDS}
+_EXPLAINER_VERSIONS = {
+    "catboost": catboost.__version__,
+    "xgboost": xgboost.__version__,
+    "lightgbm": lightgbm.__version__,
+}
+_ADDITIVITY_TOLERANCES = {
+    "catboost": (1e-7, 1e-8),
+    "xgboost": (1e-6, 1e-6),
+    "lightgbm": (1e-7, 1e-8),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +66,7 @@ class LocalExplanationEvidence:
 
 
 class LocalExplanationService:
-    """Builds fail-closed native CatBoost SHAP evidence for a predicted row."""
+    """Builds fail-closed native TreeSHAP evidence for a predicted row."""
 
     def explain(
         self,
@@ -63,7 +76,7 @@ class LocalExplanationService:
         row_id: str,
     ) -> LocalExplanationEvidence:
         metadata = loaded_model_version.metadata
-        feature_ids, columns, dataset = self._validate_binding(
+        model_id, feature_ids, columns, dataset = self._validate_binding(
             loaded_model_version, prediction_batch, metadata
         )
         row, values = self._locate_row(prediction_batch, row_id, len(columns))
@@ -71,9 +84,15 @@ class LocalExplanationService:
         probability = float(loaded_model_version.predictor.predict_positive_proba(frame)[0])
         if not np.isclose(probability, row.probability, rtol=1e-9, atol=1e-12):
             raise ValueError("Recomputed probability does not match the displayed PredictionBatch probability.")
-        shap_values, base_value, raw_model_output = loaded_model_version.predictor.catboost_local_shap(frame)
-        if not np.isclose(base_value + float(np.sum(shap_values)), raw_model_output, rtol=1e-7, atol=1e-8):
-            raise ValueError("Native CatBoost SHAP values fail the raw-margin additivity check.")
+        shap_values, base_value, raw_model_output = loaded_model_version.predictor.local_shap(frame)
+        relative_tolerance, absolute_tolerance = _ADDITIVITY_TOLERANCES[model_id]
+        if not np.isclose(
+            base_value + float(np.sum(shap_values)), raw_model_output,
+            rtol=relative_tolerance, atol=absolute_tolerance,
+        ):
+            raise ValueError("Native SHAP values fail the raw-margin additivity check.")
+        if not np.isclose(self._margin_probability(raw_model_output), probability, rtol=1e-7, atol=1e-9):
+            raise ValueError("Native SHAP raw margin does not reproduce the model probability.")
 
         contributions = [
             LocalFeatureContribution(
@@ -97,7 +116,7 @@ class LocalExplanationService:
             "dataset_id": dataset["dataset_id"],
             "dataset_fingerprint": dataset["dataset_fingerprint"],
             "feature_set_hash": metadata["feature_set_hash"],
-            "model_id": "catboost",
+            "model_id": model_id,
             "model_version": metadata["model_version"],
             "row_id": row.row_id,
             "identifier_column": prediction_batch.identifier_column,
@@ -107,8 +126,8 @@ class LocalExplanationService:
             "raw_model_output": raw_model_output,
             "base_value": base_value,
             "features": ranked,
-            "explainer_id": _EXPLAINER_ID,
-            "explainer_version": catboost.__version__,
+            "explainer_id": _EXPLAINER_IDS[model_id],
+            "explainer_version": _EXPLAINER_VERSIONS[model_id],
         }
         return LocalExplanationEvidence(
             **payload,
@@ -121,11 +140,13 @@ class LocalExplanationService:
         loaded: LoadedModelVersion,
         batch: PredictionBatch,
         metadata: dict[str, Any],
-    ) -> tuple[tuple[str, ...], tuple[str, ...], dict[str, Any]]:
+    ) -> tuple[str, tuple[str, ...], tuple[str, ...], dict[str, Any]]:
         if batch.model_version_id != loaded.summary.model_version_id:
             raise ValueError("PredictionBatch model_version_id does not match the loaded model version.")
-        if loaded.summary.model_id != "catboost" or metadata.get("model_id") != "catboost" or loaded.predictor.model_id != "catboost":
-            raise ValueError("Local explanations are unsupported for non-CatBoost model versions.")
+        model_id = loaded.summary.model_id
+        if (model_id not in _SUPPORTED_MODEL_IDS or metadata.get("model_id") != model_id
+                or loaded.predictor.model_id != model_id):
+            raise ValueError("Local explanations are unsupported for this model version.")
         try:
             columns = tuple(metadata["feature_columns"])
             feature_ids = tuple(metadata["feature_ids"])
@@ -157,7 +178,16 @@ class LocalExplanationService:
                 or any(not isinstance(dataset.get(key), str) or not dataset[key].strip() for key in ("dataset_id", "dataset_fingerprint"))
                 or any(not isinstance(metadata.get(key), str) or not metadata[key].strip() for key in required_metadata)):
             raise ValueError("Loaded model version has invalid local-explanation provenance.")
-        return feature_ids, columns, dataset
+        return model_id, feature_ids, columns, dataset
+
+    @staticmethod
+    def _margin_probability(raw_margin: float) -> float:
+        if not np.isfinite(raw_margin):
+            raise ValueError("Native SHAP raw margin must be finite.")
+        if raw_margin >= 0:
+            return float(1.0 / (1.0 + np.exp(-raw_margin)))
+        exp_margin = float(np.exp(raw_margin))
+        return exp_margin / (1.0 + exp_margin)
 
     @staticmethod
     def _locate_row(batch: PredictionBatch, row_id: str, feature_count: int) -> tuple[PredictionRow, tuple[float, ...]]:

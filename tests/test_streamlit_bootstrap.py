@@ -525,6 +525,11 @@ class StreamlitBootstrapTests(unittest.TestCase):
             )
             self.assertEqual(workflow.model_version_store.root, Path(directory) / "model_versions")
             self.assertNotEqual(workflow.model_version_store.root, runtime.application_service.artifact_store.root)
+            self.assertEqual(
+                {"catboost", "xgboost", "lightgbm"},
+                set(workflow.local_explainers),
+            )
+            self.assertNotIn("gbdt_mean", workflow.local_explainers)
 
     def test_result_interpreter_runtime_defaults_to_disabled_without_environment(self) -> None:
         with TemporaryDirectory() as directory:
@@ -592,6 +597,36 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertEqual(created, [("configured-model", "secret")])
         self.assertIs(workflow.result_interpreter_client, fake_client)
         self.assertTrue(workflow.result_interpreter_runtime.is_ready)
+
+    def test_runtime_loads_result_interpreter_settings_from_local_dotenv(self) -> None:
+        created = []
+        fake_client = SimpleNamespace(interpreter_id="test", interpreter_model="dotenv-model")
+
+        def factory(model, credential):
+            created.append((model, credential))
+            return fake_client
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env").write_text(
+                "KOMUS_EXTERNAL_DATA_POLICY=REDACTED_V1\n"
+                "KOMUS_RESULT_INTERPRETER_PROVIDER=test\n"
+                "KOMUS_RESULT_INTERPRETER_MODEL=dotenv-model\n"
+                "OPENAI_API_KEY=dotenv-secret\n",
+                encoding="utf-8",
+            )
+            with (
+                patch.object(bootstrap, "_repository_root", return_value=root),
+                patch.dict(bootstrap.os.environ, {}, clear=True),
+            ):
+                runtime = bootstrap.create_runtime(
+                    root / "artifacts",
+                    secrets={},
+                    result_interpreter_factories={"test": factory},
+                )
+
+        self.assertEqual(created, [("dotenv-model", "dotenv-secret")])
+        self.assertTrue(runtime.integration_workflow_service.result_interpreter_runtime.is_ready)
 
 
 if __name__ == "__main__":

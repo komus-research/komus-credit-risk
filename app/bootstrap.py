@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from dotenv import load_dotenv
 
 from komus_risk.application import (
     ExperimentApplicationService,
@@ -448,6 +449,8 @@ def create_runtime(
     result_interpreter_factories: Mapping[str, Callable[[str, str], Any]] | None = None,
 ) -> PrototypeRuntime:
     """Wire existing model, planning, application, persistence and comparison services."""
+    if environment is None:
+        load_dotenv(_repository_root() / ".env", override=False)
     component_factories = (CatBoostFactory(), XGBoostFactory(), LightGBMFactory())
     mean_factory = GBDTMeanFactory({factory.model_id: factory for factory in component_factories})
     factories = {factory.model_id: factory for factory in (*component_factories, mean_factory)}
@@ -478,7 +481,10 @@ def create_runtime(
         final_model_training_service=final_model_training_service,
         model_version_store=model_version_store,
         model_inference_service=ModelInferenceService(),
-        local_explainers={"catboost": LocalExplanationService()},
+        local_explainers={
+            model_id: LocalExplanationService()
+            for model_id in ("catboost", "xgboost", "lightgbm")
+        },
         result_interpreter_service=ResultInterpreterService(),
         result_interpreter_client=interpreter_client,
         outbound_interpreter_policy=outbound_policy,

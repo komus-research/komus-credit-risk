@@ -6,8 +6,10 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from catboost import CatBoostClassifier
+from lightgbm import LGBMClassifier
 import numpy as np
 import pandas as pd
+from xgboost import XGBClassifier
 
 from komus_risk.application import LocalExplanationService, ModelInferenceService
 from komus_risk.artifacts import LoadedModelVersion, ModelVersionSummary
@@ -77,6 +79,70 @@ class LocalExplanationTests(unittest.TestCase):
         repeat = self.service.explain(loaded_model_version=self.loaded, prediction_batch=self.batch, row_id=self.batch.rows[0].row_id)
         self.assertEqual(evidence.evidence_hash, repeat.evidence_hash)
 
+    def test_real_native_xgboost_and_lightgbm_local_shap_evidence(self) -> None:
+        train = pd.DataFrame({
+            "f_a": [0.0, 0.2, 0.8, 1.0, 0.1, 0.9, 0.3, 0.7],
+            "f_b": [0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 0.0],
+        })
+        target = [0, 0, 1, 1, 0, 1, 0, 1]
+        estimators = {
+            "xgboost": XGBClassifier(
+                n_estimators=20, max_depth=3, learning_rate=0.15,
+                objective="binary:logistic", eval_metric="logloss", n_jobs=1, random_state=7,
+            ),
+            "lightgbm": LGBMClassifier(
+                n_estimators=20, num_leaves=7, learning_rate=0.15,
+                n_jobs=1, verbosity=-1, random_state=7,
+            ),
+        }
+        for model_id, estimator in estimators.items():
+            with self.subTest(model_id=model_id):
+                estimator.fit(train, target)
+                native_dir = Path(self.temp.name) / f"native-{model_id}"
+                native_dir.mkdir()
+                if model_id == "xgboost":
+                    estimator.save_model(native_dir / "model.json")
+                else:
+                    estimator.booster_.save_model(str(native_dir / "model.txt"))
+                predictor = load_native_predictor(model_id, native_dir, self.columns)
+                summary = replace(
+                    self.summary,
+                    model_version_id=f"model-version-{model_id}",
+                    model_id=model_id,
+                )
+                metadata = {
+                    **self.metadata,
+                    "model_id": model_id,
+                    "experiment_artifact_id": summary.experiment_artifact_id,
+                }
+                loaded = LoadedModelVersion(summary, metadata, {}, predictor)
+                source = TabularSnapshot(
+                    source_path=Path(self.temp.name) / f"inference-{model_id}.csv",
+                    source_format="csv",
+                    read_options={"separator": ",", "encoding": "utf-8"},
+                    fingerprint=f"inference-{model_id}",
+                    row_count=2,
+                    column_count=3,
+                    dataframe=pd.DataFrame({"company_id": ["a-1", "b-2"], "f_a": [0.15, 0.85], "f_b": [1.0, 0.0]}),
+                    source_file_sha256=("b" if model_id == "xgboost" else "c") * 64,
+                    physical_headers=("company_id", "f_a", "f_b"),
+                )
+                batch = ModelInferenceService().predict(loaded_model_version=loaded, snapshot=source)
+                evidence = self.service.explain(
+                    loaded_model_version=loaded,
+                    prediction_batch=batch,
+                    row_id=batch.rows[0].row_id,
+                )
+
+                self.assertEqual(model_id, evidence.model_id)
+                self.assertEqual(f"{model_id}_native_shap", evidence.explainer_id)
+                self.assertAlmostEqual(
+                    evidence.raw_model_output,
+                    evidence.base_value + sum(item.shap_value for item in evidence.features),
+                    places=6,
+                )
+                self.assertAlmostEqual(batch.rows[0].probability, evidence.probability, places=9)
+
     def test_unknown_row_wrong_version_and_changed_probability_fail_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "exactly once"):
             self.service.explain(loaded_model_version=self.loaded, prediction_batch=self.batch, row_id="unknown")
@@ -87,10 +153,10 @@ class LocalExplanationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Recomputed probability"):
             self.service.explain(loaded_model_version=self.loaded, prediction_batch=changed_batch, row_id=changed_row.row_id)
 
-    def test_non_catboost_is_explicitly_unsupported(self) -> None:
+    def test_unregistered_ensemble_is_explicitly_unsupported(self) -> None:
         unsupported = LoadedModelVersion(
-            replace(self.summary, model_id="xgboost"),
-            {**self.metadata, "model_id": "xgboost"},
+            replace(self.summary, model_id="gbdt_mean"),
+            {**self.metadata, "model_id": "gbdt_mean"},
             {},
             self.loaded.predictor,
         )

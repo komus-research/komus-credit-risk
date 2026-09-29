@@ -158,6 +158,7 @@ class ResultInterpreterTests(unittest.TestCase):
         for phrase in (
             "русском",
             "не пересчитывайте",
+            "не называйте probability высокой",
             "не доказывает причинность",
             "одобрить/отказать",
             "предметный смысл не задан",
