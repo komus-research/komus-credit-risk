@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { getDatasetPreparation, getDatasetProgress, getNativeSession, patchDatasetDraft, type DatasetInspectionProgress, type DatasetPreparation, uploadDataset } from '../api/session'
+import { getDatasetPreparation, getDatasetProgress, getNativeSession, isDatasetNotUploaded, patchDatasetDraft, type DatasetInspectionProgress, type DatasetPreparation, uploadDataset } from '../api/session'
 import { Icon } from '../components/Icon'
+import type { CanonicalRoute } from '../routing'
 
 const asset = (path: string) => `/native-assets/${path}`
 const permissionLabels: Record<string, string> = {
@@ -13,7 +14,7 @@ const roleCards = [
 ] as const
 const inspectionStages = ['RECEIVING_FILE', 'STAGING_FILE', 'READING_SOURCE', 'INSPECTING_DATASET', 'ANALYZING_PREPARATION']
 
-export function DataPage() {
+export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onStaleSession, recoveryMessage }: { route: CanonicalRoute; sessionReady: boolean; onHome: () => void; onDatasetUploaded: () => void; onStaleSession: () => void; recoveryMessage: string | null }) {
   const [preparation, setPreparation] = useState<DatasetPreparation | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -23,9 +24,23 @@ export function DataPage() {
   const input = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    void getNativeSession().catch(() => undefined)
-    void getDatasetPreparation().then(setPreparation).catch(() => undefined)
-  }, [])
+    if (route !== '#/analysis/data/roles') {
+      setPreparation(null)
+      setInspecting(false)
+      return
+    }
+    let active = true
+    void getDatasetPreparation().then(next => {
+      if (!active) return
+      setPreparation(next)
+      onDatasetUploaded()
+    }).catch(reason => {
+      if (!active) return
+      setPreparation(null)
+      if (isDatasetNotUploaded(reason)) onStaleSession()
+    })
+    return () => { active = false }
+  }, [route, onDatasetUploaded, onStaleSession])
   useEffect(() => {
     if (!inspecting) return
     let active = true
@@ -44,15 +59,21 @@ export function DataPage() {
   }, [inspecting, progress?.started_at])
   const update = (changes: Record<string, unknown>) => {
     setBusy(true); setError(null)
-    void patchDatasetDraft(changes).then(setPreparation).catch((reason: Error) => setError(reason.message)).finally(() => setBusy(false))
+    void patchDatasetDraft(changes).then(setPreparation).catch(reason => {
+      if (isDatasetNotUploaded(reason)) onStaleSession()
+      else setError(reason instanceof Error ? reason.message : 'Не удалось сохранить изменения.')
+    }).finally(() => setBusy(false))
   }
   const selectFile = (file?: File) => {
-    if (!file) return
-    setBusy(true); setInspecting(true); setProgress(null); setError(null)
+    if (!file || !sessionReady || busy) return
+    setBusy(true); setError(null)
     void (async () => {
       try {
         await getNativeSession()
+        setInspecting(true)
+        setProgress(null)
         setPreparation(await uploadDataset(file))
+        onDatasetUploaded()
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : 'Не удалось обработать данные.')
       } finally {
@@ -66,7 +87,7 @@ export function DataPage() {
     <aside className="sidebar">
       <img className="brand" src={asset('brand/logo-primary-dark.png')} alt="AXION — аналитическая платформа" />
       <nav aria-label="Основная навигация" className="navigation">
-        <a className="nav-item nav-link" href="/" aria-label="Главная"><Icon name="home" size={26} /><span>Главная</span></a>
+        <button className="nav-item nav-link" onClick={onHome} aria-label="Главная"><Icon name="home" size={26} /><span>Главная</span></button>
         <div className="nav-item is-active"><Icon name="plus" size={26} /><span>Новый анализ</span></div>
         <button className="nav-item" disabled><Icon name="model" size={26} /><span>Модели</span></button>
         <button className="nav-item" disabled><Icon name="menu" size={26} /><span>Проекты / История</span></button>
@@ -83,12 +104,12 @@ export function DataPage() {
         return <li key={name} className={state}><span>{state === 'completed' ? '✓' : index + 1}</span>{name}</li>
       })}</ol>
 
-      {inspecting ? <section className="upload-panel panel"><InspectionProgress progress={progress} now={now} /></section> : !preparation ? <section className="upload-panel panel"><><Icon name="folder" size={42} /><h2>Загрузите файл датасета</h2><p>Поддерживаются CSV, XLSX, XLSB и Parquet. Файл обрабатывается на сервере и не раскрывает путь к нему в браузер.</p><input ref={input} type="file" accept=".csv,.xlsx,.xlsb,.parquet" onChange={event => selectFile(event.target.files?.[0])} /><button className="primary-action" disabled={busy} onClick={() => input.current?.click()}><Icon name="plus" size={20} />Выбрать файл</button></></section> : <>
+      {inspecting ? <section className="upload-panel panel"><InspectionProgress progress={progress} now={now} /></section> : route === '#/analysis/data/file' || !preparation ? <section className="upload-panel panel"><><Icon name="folder" size={42} /><h2>Загрузите файл датасета</h2><p>Поддерживаются CSV, XLSX, XLSB и Parquet. Файл обрабатывается на сервере и не раскрывает путь к нему в браузер.</p><input ref={input} type="file" accept=".csv,.xlsx,.xlsb,.parquet" disabled={!sessionReady || busy} onChange={event => selectFile(event.target.files?.[0])} /><button className="primary-action" disabled={!sessionReady || busy} onClick={() => input.current?.click()}><Icon name="plus" size={20} />Выбрать файл</button></></section> : <>
         <section className="file-summary panel">
           <div className="file-identity"><span className="file-icon"><Icon name="box" size={38} /></span><div><h2>{preparation.source.display_name}</h2><p className="file-ready"><Icon name="check" size={17} />Файл успешно проверен</p><p className="muted">Размер: {formatSize(preparation.source.size)}</p></div></div>
-          <button className="secondary-action choose-file" disabled={busy} onClick={() => input.current?.click()}>Выбрать другой файл</button>
+          <button className="secondary-action choose-file" disabled={!sessionReady || busy} onClick={() => input.current?.click()}>Выбрать другой файл</button>
           <dl className="file-facts"><Fact label="Строк" value={preparation.source.rows.toLocaleString('ru-RU')} /><Fact label="Колонок" value={String(preparation.source.columns)} /><Fact label="Размер" value={formatSize(preparation.source.size)} /><Fact label="Формат" value={preparation.source.format.toUpperCase()} /></dl>
-          <input ref={input} className="hidden-input" type="file" accept=".csv,.xlsx,.xlsb,.parquet" onChange={event => selectFile(event.target.files?.[0])} />
+          <input ref={input} className="hidden-input" type="file" accept=".csv,.xlsx,.xlsb,.parquet" disabled={!sessionReady || busy} onChange={event => selectFile(event.target.files?.[0])} />
         </section>
 
         <section className="key-roles panel"><div className="section-heading"><h2>Ключевые роли</h2><p>Укажите, какие колонки являются целевой, идентификатором и какое значение считается целевым событием.</p></div><div className="role-grid">{roleCards.map(role => <RoleControl key={role.key} role={role} preparation={preparation} busy={busy} update={update} />)}</div></section>
@@ -98,7 +119,11 @@ export function DataPage() {
         <section className="inert-section panel"><div><Icon name="settings" size={25} /><div><h2>Технические сведения</h2><p>Дополнительные параметры файла будут показаны здесь, когда станут доступны.</p></div></div><Icon name="arrow" size={20} /></section>
         <footer className="data-footer"><button className="secondary-action" disabled>Назад</button><div><p>Проверьте роли колонок перед подтверждением.</p><button className="primary-action" disabled>Продолжить к подтверждению <Icon name="arrow" size={19} /></button></div></footer>
       </>}
-      {error && <div className="data-error" role="alert">{error}</div>}
+      {(recoveryMessage || error) && <div className="data-error" role={error ? 'alert' : 'status'}>
+        {recoveryMessage && <span>{recoveryMessage}</span>}
+        {recoveryMessage && error && <br />}
+        {error && <span>{error}</span>}
+      </div>}
     </main>
   </div>
 }
