@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { startNewAnalysis, type NativeSession } from '../api/session'
 import { Icon } from '../components/Icon'
 
@@ -13,7 +13,7 @@ const summary = [
 
 const navigation = [
   ['home', 'Главная', false],
-  ['plus', 'Новый анализ', true],
+  ['plus', 'Новый анализ', false],
   ['model', 'Модели', true],
   ['menu', 'Проекты / История', true],
   ['settings', 'Настройки', true],
@@ -22,6 +22,11 @@ const navigation = [
 export function HomePage({ session, onContinue }: { session: NativeSession | null; onContinue: () => void }) {
   const [confirming, setConfirming] = useState(false)
   const [starting, setStarting] = useState(false)
+  useEffect(() => {
+    document.body.classList.add('home-v2-route')
+    return () => document.body.classList.remove('home-v2-route')
+  }, [])
+
   const beginNewAnalysis = (confirmReset = false) => {
     setStarting(true)
     void startNewAnalysis(confirmReset).then(result => {
@@ -31,24 +36,41 @@ export function HomePage({ session, onContinue }: { session: NativeSession | nul
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell home-shell">
       <aside className="sidebar">
-        <img className="brand" src={asset('brand/logo-primary-dark.png')} alt="AXION — аналитическая платформа" />
+        <div className="brand-block" role="img" aria-label="AXION">
+          <img className="brand-mark" src={asset('brand/logo-mark-primary.png')} alt="" />
+          <img className="brand-wordmark" src={asset('brand/wordmark-dark.png')} alt="" />
+        </div>
         <nav aria-label="Основная навигация" className="navigation">
-          {navigation.map(([icon, label, disabled]) => (
-            <button key={label} className={`nav-item ${label === 'Главная' ? 'is-active' : ''} ${label === 'Настройки' ? 'with-divider' : ''}`} disabled={(disabled && icon !== 'plus') || starting} onClick={icon === 'plus' ? () => beginNewAnalysis() : undefined} title={disabled && icon !== 'plus' ? 'Будет доступно позже' : undefined}>
-              <Icon name={icon} size={26} /><span>{label}</span>
-            </button>
-          ))}
+          {navigation.map(([icon, label, disabled]) => {
+            const isHome = label === 'Главная'
+            const isNewAnalysis = label === 'Новый анализ'
+            return (
+              <button
+                key={label}
+                className={`nav-item ${isHome ? 'is-active' : ''} ${label === 'Настройки' ? 'with-divider' : ''}`}
+                disabled={(disabled && !isNewAnalysis) || (isNewAnalysis && starting)}
+                onClick={isNewAnalysis ? () => beginNewAnalysis() : undefined}
+                title={disabled ? 'Будет доступно позже' : undefined}
+                aria-current={isHome ? 'page' : undefined}
+              >
+                <Icon name={icon} size={26} /><span>{label}</span>
+              </button>
+            )
+          })}
         </nav>
         <div className="profile"><div className="avatar">АП</div><div><strong>Андреев П. С.</strong><small>Аналитик</small></div><Icon name="arrow" size={18} /></div>
       </aside>
 
       <main className="workspace">
         <header className="topbar">
-          <div><h1>Главная</h1><p>Проекты, модели и последние действия</p></div>
+          <div className="page-heading"><h1>Главная</h1><p>Проекты, модели и последние действия</p></div>
           <div className="header-actions">
-            <label className="search" title="Поиск станет доступен после подключения истории и каталога моделей"><Icon name="search" size={23} /><input disabled placeholder="Поиск проектов и моделей..." aria-label="Поиск проектов и моделей — пока недоступен" /></label>
+            <label className="search" title="Поиск станет доступен после подключения истории и каталога моделей">
+              <Icon name="search" size={23} />
+              <input disabled placeholder="Поиск проектов и моделей..." aria-label="Поиск проектов и моделей — пока недоступен" title="Поиск станет доступен после подключения истории и каталога моделей" />
+            </label>
             <button className="primary-action" disabled={starting} onClick={() => beginNewAnalysis()}><Icon name="plus" size={27} />Новый анализ</button>
           </div>
         </header>
@@ -62,10 +84,10 @@ export function HomePage({ session, onContinue }: { session: NativeSession | nul
         <section className="panel quick-start"><h2>Быстрый старт</h2><div className="quick-grid">
           <FutureAction icon="plus" title="Новый анализ" description="Загрузить данные и начать новый анализ" accent onClick={() => beginNewAnalysis()} disabled={starting} />
           <FutureAction icon="box" title="Открыть модель" description="Использовать сохранённую модель без повторного обучения" />
-          <FutureAction icon="menu" title="Продолжить последний проект" description="История проектов пока не подключена" />
+          {session?.analysis_active
+            ? <FutureAction icon="menu" title="Продолжить текущий анализ" description="Вернуться к активному анализу" accent onClick={onContinue} disabled={false} />
+            : <FutureAction icon="menu" title="Продолжить последний проект" description="История проектов пока не подключена" />}
         </div></section>
-
-        {session?.analysis_active && <section className="session-note" aria-live="polite"><Icon name="clock" /><span>В текущей сессии есть незавершённый анализ.</span><button className="secondary-action" onClick={onContinue}>Продолжить текущий анализ</button></section>}
 
         <div className="two-column">
           <section className="panel status-panel"><PanelTitle title="Выполняется сейчас" actionLabel="Все процессы" /><div className="empty-state"><div className="empty-icon"><Icon name="clock" /></div><div><strong>Сейчас нет фоновых операций</strong><p>Операции анализа выполняются на соответствующих шагах.</p></div></div></section>
@@ -86,7 +108,7 @@ function FutureAction({ icon, title, description, accent = false, onClick, disab
 }
 
 function PanelTitle({ title, actionLabel }: { title: string; actionLabel: string }) {
-  return <div className="panel-title"><h2>{title}</h2><span title="Будет доступно позже" aria-label={`${actionLabel} — будет доступно позже`}>{actionLabel} <Icon name="arrow" size={17} /></span></div>
+  return <div className="panel-title"><h2>{title}</h2><button className="panel-link" type="button" disabled title="Будет доступно позже" aria-label={`${actionLabel} — будет доступно позже`}>{actionLabel} <Icon name="arrow" size={17} /></button></div>
 }
 
 function DataTable({ columns, empty, className }: { columns: string[]; empty: string; className: string }) {
