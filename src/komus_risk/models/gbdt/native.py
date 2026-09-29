@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier, Pool
 from lightgbm import Booster
-from xgboost import XGBClassifier
+from xgboost import DMatrix, XGBClassifier
 
 from komus_risk.models.base import BinaryClassifierAdapter
 
@@ -47,22 +47,31 @@ class NativePredictor:
             raise ValueError("Native model returned invalid positive probabilities.")
         return values
 
-    def catboost_local_shap(self, X: pd.DataFrame) -> tuple[np.ndarray, float, float]:
-        """Return native CatBoost SHAP values and raw margin for one exact row."""
-        if self.model_id != "catboost" or self._local_shap is None or self._raw_predict is None:
+    def local_shap(self, X: pd.DataFrame) -> tuple[np.ndarray, float, float]:
+        """Return native additive TreeSHAP values and raw margin for one exact row."""
+        if self.model_id not in {"catboost", "xgboost", "lightgbm"} or self._local_shap is None or self._raw_predict is None:
             raise ValueError("Local explanations are unsupported for this native model.")
         if not isinstance(X, pd.DataFrame) or tuple(X.columns) != self.feature_columns or len(X) != 1:
-            raise ValueError("Native CatBoost local SHAP requires one row with exact persisted feature columns.")
+            raise ValueError("Native local SHAP requires one row with exact persisted feature columns.")
         try:
-            shap_matrix = np.asarray(self._local_shap(X), dtype=float)
+            raw_shap = self._local_shap(X)
+            if hasattr(raw_shap, "toarray"):
+                raw_shap = raw_shap.toarray()
+            shap_matrix = np.asarray(raw_shap, dtype=float)
             raw_values = np.asarray(self._raw_predict(X), dtype=float)
-        except (TypeError, ValueError) as error:
-            raise ValueError("Native CatBoost local SHAP returned invalid values.") from error
+        except Exception as error:
+            raise ValueError("Native local SHAP returned invalid values.") from error
         expected_shape = (1, len(self.feature_columns) + 1)
         if (shap_matrix.shape != expected_shape or raw_values.shape not in {(1,), (1, 1)}
                 or not np.isfinite(shap_matrix).all() or not np.isfinite(raw_values).all()):
-            raise ValueError("Native CatBoost local SHAP returned invalid values.")
+            raise ValueError("Native local SHAP returned invalid values.")
         return shap_matrix[0, :-1].copy(), float(shap_matrix[0, -1]), float(raw_values.reshape(-1)[0])
+
+    def catboost_local_shap(self, X: pd.DataFrame) -> tuple[np.ndarray, float, float]:
+        """Backward-compatible CatBoost-only local-SHAP entry point."""
+        if self.model_id != "catboost":
+            raise ValueError("Local explanations are unsupported for this native model.")
+        return self.local_shap(X)
 
 
 def native_model_files(model_id: str) -> tuple[str, ...]:
@@ -166,10 +175,25 @@ def load_native_predictor(model_id: str, directory: str | Path, feature_columns:
         if model_id == "xgboost":
             model = XGBClassifier()
             model.load_model(path / "model.json")
-            return NativePredictor(model_id, feature_columns, lambda X: model.predict_proba(prepare_numeric_input(X))[:, 1])
+            booster = model.get_booster()
+
+            def matrix(X: pd.DataFrame) -> DMatrix:
+                return DMatrix(prepare_numeric_input(X), feature_names=list(feature_columns))
+
+            return NativePredictor(
+                model_id, feature_columns,
+                lambda X: model.predict_proba(prepare_numeric_input(X))[:, 1],
+                local_shap=lambda X: booster.predict(matrix(X), pred_contribs=True),
+                raw_predict=lambda X: booster.predict(matrix(X), output_margin=True),
+            )
         if model_id == "lightgbm":
             model = Booster(model_file=str(path / "model.txt"))
-            return NativePredictor(model_id, feature_columns, lambda X: model.predict(prepare_numeric_input(X)))
+            return NativePredictor(
+                model_id, feature_columns,
+                lambda X: model.predict(prepare_numeric_input(X)),
+                local_shap=lambda X: model.predict(prepare_numeric_input(X), pred_contrib=True),
+                raw_predict=lambda X: model.predict(prepare_numeric_input(X), raw_score=True),
+            )
         catboost = CatBoostClassifier(); catboost.load_model(path / "catboost.cbm")
         xgboost = XGBClassifier(); xgboost.load_model(path / "xgboost.json")
         lightgbm = Booster(model_file=str(path / "lightgbm.txt"))

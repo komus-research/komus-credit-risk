@@ -39,6 +39,8 @@ class ResultInterpreterRuntimeConfiguration:
     provider_registered: bool = False
     model_configured: bool = False
     credentials_configured: bool = False
+    prompts_configured: bool = True
+    configuration_error: str | None = None
 
     @classmethod
     def disabled(cls) -> "ResultInterpreterRuntimeConfiguration":
@@ -52,6 +54,7 @@ class ResultInterpreterRuntimeConfiguration:
             and self.provider_registered
             and self.model_configured
             and self.credentials_configured
+            and self.prompts_configured
         )
 
 
@@ -294,6 +297,8 @@ class IntegrationWorkflowService:
         runtime = self.result_interpreter_runtime
         if evidence is None:
             return CapabilityStatus("WAITING_FOR_INPUT", "LOCAL_EXPLANATION_MISSING")
+        if runtime.configuration_error == "CONFIG_CONFLICT":
+            return CapabilityStatus("MISCONFIGURED", "CONFIG_CONFLICT")
         if runtime.policy_mode == "DISABLED":
             return CapabilityStatus("DISABLED", "EXTERNAL_DATA_POLICY_DISABLED")
         if runtime.policy_mode != "REDACTED_V1":
@@ -306,6 +311,8 @@ class IntegrationWorkflowService:
             return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_MODEL_MISSING")
         if not runtime.credentials_configured:
             return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_CREDENTIALS_MISSING")
+        if not runtime.prompts_configured:
+            return CapabilityStatus("MISCONFIGURED", runtime.configuration_error or "RESULT_INTERPRETER_PROMPTS_INVALID")
         if (
             self.result_interpreter_service is None
             or self.result_interpreter_client is None

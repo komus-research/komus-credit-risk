@@ -60,6 +60,14 @@ _CATBOOST_EXPLANATION_PROVIDER = ProviderDescriptor(
     "local_explanation",
     {"implementation": "existing accepted Local SHAP path"},
 )
+_XGBOOST_EXPLANATION_PROVIDER = ProviderDescriptor(
+    "xgboost_native_local_shap", "1", "local_explanation",
+    {"implementation": "native XGBoost pred_contribs"},
+)
+_LIGHTGBM_EXPLANATION_PROVIDER = ProviderDescriptor(
+    "lightgbm_native_local_shap", "1", "local_explanation",
+    {"implementation": "native LightGBM pred_contrib"},
+)
 
 
 def _value_type(value: Any) -> ParameterValueType:
@@ -279,13 +287,9 @@ def _capabilities(
     spec: ModelSpec,
     persistence_provider: ProviderDescriptor,
     *,
-    local_explanation: bool,
+    local_explanation_provider: ProviderDescriptor | None,
 ) -> ModelCapabilityManifest:
-    explanation = (
-        CapabilitySupport.SUPPORTED
-        if local_explanation
-        else CapabilitySupport.UNSUPPORTED
-    )
+    explanation = CapabilitySupport.SUPPORTED if local_explanation_provider else CapabilitySupport.UNSUPPORTED
     return ModelCapabilityManifest(
         spec.model_id,
         spec.version,
@@ -314,9 +318,7 @@ def _capabilities(
             CapabilityDeclaration(
                 CapabilityDomain.LOCAL_EXPLANATION,
                 explanation,
-                _CATBOOST_EXPLANATION_PROVIDER.provider_id
-                if local_explanation
-                else None,
+                local_explanation_provider.provider_id if local_explanation_provider else None,
             ),
             CapabilityDeclaration(
                 CapabilityDomain.SMOKE_TEST,
@@ -342,7 +344,7 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
         ),
         _profile(CATBOOST_MODEL_SPEC, CATBOOST_PROFILE),
         CatBoostFactory(),
-        _capabilities(CATBOOST_MODEL_SPEC, catboost_provider, local_explanation=True),
+        _capabilities(CATBOOST_MODEL_SPEC, catboost_provider, local_explanation_provider=_CATBOOST_EXPLANATION_PROVIDER),
         _input_contract(CATBOOST_MODEL_SPEC),
         persistence_provider=catboost_provider,
         local_explanation_provider=_CATBOOST_EXPLANATION_PROVIDER,
@@ -366,9 +368,10 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
         ),
         _profile(XGBOOST_MODEL_SPEC, XGBOOST_PROFILE),
         XGBoostFactory(),
-        _capabilities(XGBOOST_MODEL_SPEC, xgboost_provider, local_explanation=False),
+        _capabilities(XGBOOST_MODEL_SPEC, xgboost_provider, local_explanation_provider=_XGBOOST_EXPLANATION_PROVIDER),
         _input_contract(XGBOOST_MODEL_SPEC),
         persistence_provider=xgboost_provider,
+        local_explanation_provider=_XGBOOST_EXPLANATION_PROVIDER,
     )
     lightgbm = ModelPlugin(
         LIGHTGBM_MODEL_SPEC,
@@ -391,9 +394,10 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
         ),
         _profile(LIGHTGBM_MODEL_SPEC, LIGHTGBM_PROFILE),
         LightGBMFactory(),
-        _capabilities(LIGHTGBM_MODEL_SPEC, lightgbm_provider, local_explanation=False),
+        _capabilities(LIGHTGBM_MODEL_SPEC, lightgbm_provider, local_explanation_provider=_LIGHTGBM_EXPLANATION_PROVIDER),
         _input_contract(LIGHTGBM_MODEL_SPEC),
         persistence_provider=lightgbm_provider,
+        local_explanation_provider=_LIGHTGBM_EXPLANATION_PROVIDER,
     )
     mean_factory = GBDTMeanFactory(
         {
@@ -407,7 +411,7 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
         _mean_schema(),
         _profile(GBDT_MEAN_MODEL_SPEC, GBDT_MEAN_PROFILE),
         mean_factory,
-        _capabilities(GBDT_MEAN_MODEL_SPEC, mean_provider, local_explanation=False),
+        _capabilities(GBDT_MEAN_MODEL_SPEC, mean_provider, local_explanation_provider=None),
         _input_contract(GBDT_MEAN_MODEL_SPEC),
         persistence_provider=mean_provider,
     )

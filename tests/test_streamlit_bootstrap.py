@@ -571,6 +571,27 @@ class StreamlitBootstrapTests(unittest.TestCase):
         self.assertIs(workflow.result_interpreter_client, fake_client)
         self.assertTrue(workflow.result_interpreter_runtime.is_ready)
 
+    def test_streamlit_secret_source_is_resolved_at_bootstrap_boundary(self) -> None:
+        created = []
+        fake_client = SimpleNamespace(interpreter_id="test", interpreter_model="test-model")
+
+        def factory(model, credential):
+            created.append((model, credential))
+            return fake_client
+
+        environment = {
+            "AXION_EXTERNAL_DATA_POLICY": "REDACTED_V1",
+            "AXION_RESULT_INTERPRETER_PROVIDER": "test",
+            "AXION_RESULT_INTERPRETER_MODEL": "configured-model",
+        }
+        with TemporaryDirectory() as directory, patch.object(bootstrap, "_streamlit_secrets", return_value={"OPENAI_API_KEY": "streamlit-secret"}):
+            runtime = bootstrap.create_runtime(
+                directory, environment=environment, secrets=None,
+                result_interpreter_factories={"test": factory},
+            )
+        self.assertEqual([("configured-model", "streamlit-secret")], created)
+        self.assertIs(runtime.integration_workflow_service.result_interpreter_client, fake_client)
+
 
 if __name__ == "__main__":
     unittest.main()

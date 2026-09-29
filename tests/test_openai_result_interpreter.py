@@ -149,6 +149,9 @@ class OpenAIResultInterpreterClientTests(unittest.TestCase):
             stable_hash(
                 {
                     "request_hash": request.request_hash,
+                    "prompt_id": request.prompt_id,
+                    "prompt_version": request.prompt_version,
+                    "prompt_hash": request.prompt_hash,
                     "interpreter_id": "openai",
                     "interpreter_model": self.model,
                     "text": response.text,
