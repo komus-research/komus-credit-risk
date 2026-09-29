@@ -228,3 +228,29 @@ def test_data_transitions_are_strict_and_fail_without_mutation() -> None:
     with pytest.raises(NativeSessionTransitionError):
         store.return_to_roles(session_id)
     assert store.snapshot(session_id) == before_prepared
+
+
+def test_confirmation_reservation_is_session_local_and_releases_on_abort() -> None:
+    store = NativeSessionStore()
+    first_id, _ = store.get_or_create(None)
+    second_id, _ = store.get_or_create(None)
+    for session_id in (first_id, second_id):
+        store.set_dataset(
+            session_id,
+            staged_upload=None,
+            inspected_dataset=object(),
+            preparation_draft=object(),
+        )
+        store.begin_confirmation(session_id)
+
+    operation_token, _, _ = store.begin_confirmation_materialization(first_id)
+
+    with pytest.raises(NativeSessionTransitionError):
+        store.begin_confirmation_materialization(first_id)
+    with pytest.raises(NativeSessionTransitionError):
+        store.return_to_roles(first_id)
+    # The second session remains mutable while the first is reserved.
+    assert store.return_to_roles(second_id).data_substep == "ROLES"
+    assert store.abort_confirmation_materialization(first_id, operation_token)
+    assert store.snapshot(first_id).data_substep == "CONFIRMATION"
+    assert store.return_to_roles(first_id).data_substep == "ROLES"

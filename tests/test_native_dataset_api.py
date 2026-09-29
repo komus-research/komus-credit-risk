@@ -363,3 +363,119 @@ def test_review_and_back_reject_invalid_transitions_without_state_change() -> No
     assert client.post("/api/v1/dataset/preparation/roles").status_code == 200
     assert client.get("/api/v1/session").json()["data_substep"] == "ROLES"
     assert client.post("/api/v1/dataset/preparation/roles").status_code == 409
+
+
+def test_confirmation_reservation_blocks_same_session_transitions_until_complete(monkeypatch) -> None:
+    store = NativeSessionStore()
+    materializing, release = Event(), Event()
+    registered_contexts: list[str] = []
+    original_materialize = NativeDatasetOnboardingService.materialize_confirmation
+    original_register = PreparedDatasetContextAuthority.register
+
+    def blocked_materialize(self, dataset, draft, *, context_authority):
+        materializing.set()
+        assert release.wait(timeout=5)
+        return original_materialize(
+            self, dataset, draft, context_authority=context_authority
+        )
+
+    def tracked_register(authority, context):
+        registered_contexts.append(context.context_id)
+        return original_register(authority, context)
+
+    monkeypatch.setattr(
+        NativeDatasetOnboardingService,
+        "materialize_confirmation",
+        blocked_materialize,
+    )
+    monkeypatch.setattr(PreparedDatasetContextAuthority, "register", tracked_register)
+
+    with TestClient(create_app(session_store=store)) as client:
+        _upload(client)
+        assert client.patch(
+            "/api/v1/dataset/preparation/draft", json={"positive_class": 1}
+        ).status_code == 200
+        assert client.post("/api/v1/dataset/preparation/review").status_code == 200
+        session_id = client.cookies.get(SESSION_COOKIE_NAME)
+        assert session_id is not None
+        confirmation_result: dict[str, object] = {}
+
+        def confirm() -> None:
+            confirmation_result["response"] = client.post(
+                "/api/v1/dataset/preparation/confirm",
+                json={"population_policy_acknowledged": True},
+            )
+
+        worker = Thread(target=confirm)
+        worker.start()
+        assert materializing.wait(timeout=5)
+
+        back = client.post("/api/v1/dataset/preparation/roles")
+        duplicate_confirm = client.post(
+            "/api/v1/dataset/preparation/confirm",
+            json={"population_policy_acknowledged": True},
+        )
+        reset = client.post("/api/v1/analysis/new", json={"confirm_reset": True})
+        draft_edit = client.patch(
+            "/api/v1/dataset/preparation/draft", json={"positive_class": 0}
+        )
+        replacement_upload = client.post(
+            "/api/v1/dataset/upload",
+            files={"file": ("replacement.csv", _dataset(), "text/csv")},
+        )
+        assert back.status_code == 409
+        assert back.json()["detail"]["code"] == "INVALID_DATA_TRANSITION"
+        for rejected in (duplicate_confirm, reset, draft_edit, replacement_upload):
+            assert rejected.status_code == 409
+            assert rejected.json()["detail"]["code"] == "INVALID_DATA_TRANSITION"
+        assert client.get("/api/v1/session").json()["data_substep"] == "CONFIRMATION"
+        assert registered_contexts == []
+
+        release.set()
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+
+        confirmed = confirmation_result["response"]
+        assert confirmed.status_code == 200
+        assert confirmed.json()["data_substep"] == "PREPARED"
+        assert confirmed.json()["resume_route"] == "#/analysis/features"
+        assert len(registered_contexts) == 1
+        assert store._sessions[session_id].confirmation_operation_token is None
+
+        reset_after_complete = client.post(
+            "/api/v1/analysis/new", json={"confirm_reset": True}
+        )
+        assert reset_after_complete.status_code == 200
+        assert reset_after_complete.json()["data_substep"] == "FILE"
+
+
+def test_failed_materialization_releases_confirmation_reservation(monkeypatch) -> None:
+    store = NativeSessionStore()
+    client = TestClient(create_app(session_store=store))
+    _upload(client)
+    assert client.patch(
+        "/api/v1/dataset/preparation/draft", json={"positive_class": 1}
+    ).status_code == 200
+    assert client.post("/api/v1/dataset/preparation/review").status_code == 200
+    session_id = client.cookies.get(SESSION_COOKIE_NAME)
+    assert session_id is not None
+
+    def fail_materialization(*_args, **_kwargs):
+        raise RuntimeError("private materializer detail")
+
+    monkeypatch.setattr(
+        NativeDatasetOnboardingService,
+        "materialize_confirmation",
+        fail_materialization,
+    )
+    failed = client.post(
+        "/api/v1/dataset/preparation/confirm",
+        json={"population_policy_acknowledged": True},
+    )
+
+    assert failed.status_code == 500
+    assert failed.json()["detail"]["code"] == "PREPARATION_FAILED"
+    assert "private materializer detail" not in failed.text
+    assert store._sessions[session_id].confirmation_operation_token is None
+    assert client.get("/api/v1/session").json()["data_substep"] == "CONFIRMATION"
+    assert client.post("/api/v1/dataset/preparation/roles").status_code == 200

@@ -182,9 +182,12 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
         session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
     ) -> NewAnalysisResponse:
         resolved_session_id, _ = resolve_session(response, session_id)
-        result = store.start_new_analysis(
-            resolved_session_id, confirm_reset=request.confirm_reset
-        )
+        try:
+            result = store.start_new_analysis(
+                resolved_session_id, confirm_reset=request.confirm_reset
+            )
+        except NativeSessionTransitionError as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "message": "Недопустимый переход этапа подготовки данных."}) from None
         if result.discarded_upload is not None:
             for discarded_upload in result.discarded_upload:
                 cleanup_staged_upload(discarded_upload)
@@ -239,7 +242,10 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
         session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
     ) -> DatasetPreparationResponse | JSONResponse:
         resolved_session_id, _ = resolve_session(response, session_id)
-        inspection_token = store.start_dataset_inspection(resolved_session_id)
+        try:
+            inspection_token = store.start_dataset_inspection(resolved_session_id)
+        except NativeSessionTransitionError as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "message": "Недопустимый переход этапа подготовки данных."}) from None
         staged = None
         try:
             upload_bytes = await file.read()
@@ -367,21 +373,25 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
         session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
     ) -> SessionResponse:
         resolved_session_id, _ = resolve_session(response, session_id)
+        operation_token: str | None = None
         try:
-            store.require_confirmation(resolved_session_id)
-            dataset, draft, _ = store.dataset_state(resolved_session_id)
+            operation_token, dataset, draft = store.begin_confirmation_materialization(
+                resolved_session_id
+            )
             draft = onboarding.acknowledge_population_policy(
                 draft, request.population_policy_acknowledged
             )
-            # Store the acknowledgement before materialization so a failed,
-            # correctable confirmation remains a draft and never a context.
-            store.set_preparation_draft(resolved_session_id, draft, preserve_substep=True)
             context, _, _ = onboarding.materialize_confirmation(
                 dataset, draft, context_authority=context_authority
             )
-            return _session_response(
-                store.set_prepared_context(resolved_session_id, context.context_id)
+            snapshot = store.complete_confirmation_materialization(
+                resolved_session_id,
+                operation_token,
+                acknowledged_draft=draft,
+                context_id=context.context_id,
             )
+            operation_token = None
+            return _session_response(snapshot)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": "DATASET_NOT_UPLOADED", "message": "Сначала загрузите файл датасета."}) from exc
         except NativeSessionTransitionError as exc:
@@ -389,6 +399,13 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
         except (DatasetDraftError, DatasetPreparationError, ValueError) as exc:
             code = getattr(exc, "code", "INVALID_CONFIRMATION")
             raise HTTPException(status_code=422, detail={"code": code, "message": "Не удалось подтвердить подготовку данных. Проверьте выбранные роли и подтверждение политики."}) from exc
+        except Exception:
+            raise HTTPException(status_code=500, detail={"code": "PREPARATION_FAILED", "message": "Не удалось завершить подготовку данных."}) from None
+        finally:
+            if operation_token is not None:
+                store.abort_confirmation_materialization(
+                    resolved_session_id, operation_token
+                )
 
     return api
 
