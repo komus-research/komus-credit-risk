@@ -17,9 +17,11 @@ from komus_risk.application import (
     NativeSessionSnapshot,
     NativeSessionStore,
 )
+from komus_risk.preparation import DatasetPreparationError, PreparedDatasetContextAuthority
 from komus_risk.application.native_session import (
     DatasetInspectionProgress,
     DatasetInspectionStage,
+    NativeSessionTransitionError,
 )
 from app.upload_staging import cleanup_staged_upload, stage_upload_bytes
 
@@ -79,6 +81,8 @@ class PreparationSummaryResponse(BaseModel):
     permission_counts: dict[str, int]
     warnings: list[str]
     actions: list[str]
+    population_policy: str
+    population_policy_acknowledged: bool
 
 
 class DatasetPreparationResponse(BaseModel):
@@ -107,6 +111,12 @@ class PreparationDraftPatch(BaseModel):
     identifier: str | None = None
 
 
+class ConfirmationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    population_policy_acknowledged: bool = False
+
+
 def _session_response(snapshot: NativeSessionSnapshot) -> SessionResponse:
     return SessionResponse(
         current_step=snapshot.current_step,
@@ -132,6 +142,7 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
     """Create the native HTTP adapter without constructing ML or Streamlit runtime."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
+    context_authority = PreparedDatasetContextAuthority()
     api = FastAPI(title="AXION Native API", version="0.0.1")
     api.mount("/native-assets", StaticFiles(directory=ASSETS_DIRECTORY), name="native-assets")
 
@@ -139,6 +150,10 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
         response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None
     ) -> tuple[str, NativeSessionSnapshot]:
         resolved_session_id, snapshot = store.get_or_create(session_id)
+        snapshot = store.reconcile_prepared_context(
+            resolved_session_id,
+            lambda context_id: context_authority.resolve(context_id) is not None,
+        )
         response.set_cookie(
             key=SESSION_COOKIE_NAME,
             value=resolved_session_id,
@@ -167,9 +182,12 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
         session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
     ) -> NewAnalysisResponse:
         resolved_session_id, _ = resolve_session(response, session_id)
-        result = store.start_new_analysis(
-            resolved_session_id, confirm_reset=request.confirm_reset
-        )
+        try:
+            result = store.start_new_analysis(
+                resolved_session_id, confirm_reset=request.confirm_reset
+            )
+        except NativeSessionTransitionError as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "message": "Недопустимый переход этапа подготовки данных."}) from None
         if result.discarded_upload is not None:
             for discarded_upload in result.discarded_upload:
                 cleanup_staged_upload(discarded_upload)
@@ -212,6 +230,8 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
                     for reason in warning.reasons_ru
                 ],
                 actions=["Проверьте автоматически заполненные роли колонок перед подтверждением."],
+                population_policy=draft.population_policy,
+                population_policy_acknowledged=draft.population_policy_acknowledged,
             ),
         )
 
@@ -222,7 +242,10 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
         session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
     ) -> DatasetPreparationResponse | JSONResponse:
         resolved_session_id, _ = resolve_session(response, session_id)
-        inspection_token = store.start_dataset_inspection(resolved_session_id)
+        try:
+            inspection_token = store.start_dataset_inspection(resolved_session_id)
+        except NativeSessionTransitionError as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "message": "Недопустимый переход этапа подготовки данных."}) from None
         staged = None
         try:
             upload_bytes = await file.read()
@@ -298,6 +321,7 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
     ) -> DatasetPreparationResponse:
         resolved_session_id, _ = resolve_session(response, session_id)
         try:
+            store.require_roles(resolved_session_id)
             dataset, current, _ = store.dataset_state(resolved_session_id)
             changes: dict[str, Any] = {}
             if "target" in request.model_fields_set:
@@ -310,9 +334,78 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
             store.set_preparation_draft(resolved_session_id, draft)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={"code": "DATASET_NOT_UPLOADED", "message": "Сначала загрузите файл датасета."}) from exc
+        except NativeSessionTransitionError as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "message": "Недопустимый переход этапа подготовки данных."}) from None
         except DatasetDraftError as exc:
             raise HTTPException(status_code=422, detail={"code": exc.code, "message": "Проверьте выбранные роли колонок."}) from exc
         return preparation_response(resolved_session_id)
+
+    @api.post("/api/v1/dataset/preparation/review", response_model=SessionResponse)
+    def review_dataset_preparation(
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> SessionResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        try:
+            return _session_response(store.begin_confirmation(resolved_session_id))
+        except NativeSessionTransitionError as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "message": "Недопустимый переход этапа подготовки данных."}) from None
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": "DATASET_NOT_UPLOADED", "message": "Сначала загрузите файл датасета."}) from exc
+
+    @api.post("/api/v1/dataset/preparation/roles", response_model=SessionResponse)
+    def return_to_dataset_roles(
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> SessionResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        try:
+            return _session_response(store.return_to_roles(resolved_session_id))
+        except NativeSessionTransitionError as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "message": "Недопустимый переход этапа подготовки данных."}) from None
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": "DATASET_NOT_UPLOADED", "message": "Сначала загрузите файл датасета."}) from exc
+
+    @api.post("/api/v1/dataset/preparation/confirm", response_model=SessionResponse)
+    def confirm_dataset_preparation(
+        request: ConfirmationRequest,
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> SessionResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        operation_token: str | None = None
+        try:
+            operation_token, dataset, draft = store.begin_confirmation_materialization(
+                resolved_session_id
+            )
+            draft = onboarding.acknowledge_population_policy(
+                draft, request.population_policy_acknowledged
+            )
+            context, _, _ = onboarding.materialize_confirmation(
+                dataset, draft, context_authority=context_authority
+            )
+            snapshot = store.complete_confirmation_materialization(
+                resolved_session_id,
+                operation_token,
+                acknowledged_draft=draft,
+                context_id=context.context_id,
+            )
+            operation_token = None
+            return _session_response(snapshot)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={"code": "DATASET_NOT_UPLOADED", "message": "Сначала загрузите файл датасета."}) from exc
+        except NativeSessionTransitionError as exc:
+            raise HTTPException(status_code=409, detail={"code": exc.code, "message": "Недопустимый переход этапа подготовки данных."}) from None
+        except (DatasetDraftError, DatasetPreparationError, ValueError) as exc:
+            code = getattr(exc, "code", "INVALID_CONFIRMATION")
+            raise HTTPException(status_code=422, detail={"code": code, "message": "Не удалось подтвердить подготовку данных. Проверьте выбранные роли и подтверждение политики."}) from exc
+        except Exception:
+            raise HTTPException(status_code=500, detail={"code": "PREPARATION_FAILED", "message": "Не удалось завершить подготовку данных."}) from None
+        finally:
+            if operation_token is not None:
+                store.abort_confirmation_materialization(
+                    resolved_session_id, operation_token
+                )
 
     return api
 

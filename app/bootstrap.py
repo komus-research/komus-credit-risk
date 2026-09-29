@@ -24,7 +24,10 @@ from komus_risk.application import (
     ResultInterpreterService,
     NativeDatasetOnboardingService,
 )
-from komus_risk.application.dataset_onboarding import proposal_backed_initial_draft
+from komus_risk.application.dataset_onboarding import (
+    build_confirmed_dataset_preparation,
+    proposal_backed_initial_draft,
+)
 from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
 from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
@@ -40,17 +43,12 @@ from komus_risk.models import (
 )
 from komus_risk.planning import ExperimentPlanningService
 from komus_risk.preparation import (
-    ConfirmedColumnDecision,
-    ConfirmedColumnStatus,
     ConfirmedDatasetPreparation,
-    DatasetPreparationError,
     DatasetPreparationManifest,
     KomusDatasetPreparationService,
-    PopulationPolicyV1,
     PreparedDatasetContextAuthority,
 )
 from komus_risk.preparation.context import PreparedDatasetContext
-from komus_risk.preparation.materializer import inspection_report_hash, proposal_hash
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 
@@ -551,52 +549,17 @@ def confirm_dataset_preparation(
     )
     if snapshot is None or report is None or proposal is None:
         raise ValueError("No source analysis is available for confirmation.")
-    if not draft.get("population_policy_acknowledged", False):
-        raise DatasetPreparationError("POPULATION_POLICY_NOT_ACKNOWLEDGED")
     _notify_data_progress(progress_listener, "validating_confirmation")
-    target = str(draft.get("target_column") or "")
-    identifier = str(draft.get("identifier_column") or "")
-    if not target or not identifier:
-        raise DatasetPreparationError("INCOMPLETE_CONFIRMATION")
-    if draft.get("positive_class") is None:
-        raise DatasetPreparationError("POSITIVE_CLASS_MISSING")
-    statuses = dict(draft.get("column_statuses") or {})
-    reasons = dict(draft.get("blocked_reasons") or {})
-    decisions = []
-    for name in snapshot.physical_headers:
-        status = (
-            ConfirmedColumnStatus.TARGET
-            if name == target
-            else (
-                ConfirmedColumnStatus.IDENTIFIER
-                if name == identifier
-                else ConfirmedColumnStatus(
-                    statuses.get(name, ConfirmedColumnStatus.DIAGNOSTIC_ONLY.value)
-                )
-            )
-        )
-        decisions.append(
-            ConfirmedColumnDecision(
-                name,
-                status,
-                reasons.get(name) if status is ConfirmedColumnStatus.BLOCKED else None,
-            )
-        )
-    report_digest = inspection_report_hash(report)
-    confirmation = ConfirmedDatasetPreparation(
-        "1",
-        snapshot.fingerprint,
-        report_digest,
-        proposal_hash(proposal, report_digest),
-        proposal.policy_id,
-        proposal.policy_version,
-        proposal.policy_hash,
-        str(draft.get("dataset_name") or preparation.source.file_name),
-        target,
-        draft.get("positive_class"),
-        identifier,
-        tuple(decisions),
-        PopulationPolicyV1(draft.get("population_policy")),
+    confirmation = build_confirmed_dataset_preparation(
+        snapshot, report, proposal,
+        dataset_name=str(draft.get("dataset_name") or preparation.source.file_name),
+        target_column=str(draft.get("target_column") or "") or None,
+        positive_class=draft.get("positive_class"),
+        identifier_column=str(draft.get("identifier_column") or "") or None,
+        column_statuses=dict(draft.get("column_statuses") or {}),
+        blocked_reasons=dict(draft.get("blocked_reasons") or {}),
+        population_policy=str(draft.get("population_policy") or ""),
+        population_policy_acknowledged=bool(draft.get("population_policy_acknowledged", False)),
     )
     _notify_data_progress(progress_listener, "materializing_dataset")
     context, manifest = KomusDatasetPreparationService(
