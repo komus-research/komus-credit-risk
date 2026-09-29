@@ -34,7 +34,7 @@ export type DatasetPreparation = {
   source: { handle: string; display_name: string; format: string; size: number; rows: number; columns: number }
   draft: { target: string | null; positive_class: string | number | boolean | null; identifier: string | null }
   options: { columns: string[]; positive_classes: Array<string | number | boolean> }
-  summary: { permission_counts: Record<string, number>; warnings: string[]; actions: string[] }
+  summary: { permission_counts: Record<string, number>; warnings: string[]; actions: string[]; population_policy: string; population_policy_acknowledged: boolean }
 }
 
 export type DatasetInspectionProgress = {
@@ -80,4 +80,27 @@ export function patchDatasetDraft(changes: Record<string, unknown>): Promise<Dat
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(changes),
   }).then(datasetResponse)
+}
+
+async function sessionResponse(response: Response): Promise<NativeSession> {
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { message?: string; code?: string } } | null
+    throw new NativeApiError(payload?.detail?.message ?? 'Не удалось перейти к следующему шагу.', response.status, payload?.detail?.code)
+  }
+  return response.json() as Promise<NativeSession>
+}
+
+export function reviewDatasetPreparation(): Promise<NativeSession> {
+  return fetch('/api/v1/dataset/preparation/review', { method: 'POST' }).then(sessionResponse)
+}
+
+export function returnToDatasetRoles(): Promise<NativeSession> {
+  return fetch('/api/v1/dataset/preparation/roles', { method: 'POST' }).then(sessionResponse)
+}
+
+export function confirmDatasetPreparation(populationPolicyAcknowledged: boolean): Promise<NativeSession> {
+  return fetch('/api/v1/dataset/preparation/confirm', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ population_policy_acknowledged: populationPolicyAcknowledged }),
+  }).then(sessionResponse)
 }

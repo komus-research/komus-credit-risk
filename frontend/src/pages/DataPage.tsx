@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { getDatasetPreparation, getDatasetProgress, getNativeSession, isDatasetNotUploaded, patchDatasetDraft, type DatasetInspectionProgress, type DatasetPreparation, uploadDataset } from '../api/session'
+import { confirmDatasetPreparation, getDatasetPreparation, getDatasetProgress, getNativeSession, isDatasetNotUploaded, patchDatasetDraft, returnToDatasetRoles, reviewDatasetPreparation, type DatasetInspectionProgress, type DatasetPreparation, uploadDataset } from '../api/session'
 import { Icon } from '../components/Icon'
-import type { CanonicalRoute } from '../routing'
+import { navigate, routes, type CanonicalRoute } from '../routing'
 
 const asset = (path: string) => `/native-assets/${path}`
 const permissionLabels: Record<string, string> = {
@@ -24,7 +24,7 @@ export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onSta
   const input = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (route !== '#/analysis/data/roles') {
+    if (route !== routes.roles && route !== routes.confirmation) {
       setPreparation(null)
       setInspecting(false)
       return
@@ -33,7 +33,7 @@ export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onSta
     void getDatasetPreparation().then(next => {
       if (!active) return
       setPreparation(next)
-      onDatasetUploaded()
+      if (route === routes.roles) onDatasetUploaded()
     }).catch(reason => {
       if (!active) return
       setPreparation(null)
@@ -64,6 +64,19 @@ export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onSta
       else setError(reason instanceof Error ? reason.message : 'Не удалось сохранить изменения.')
     }).finally(() => setBusy(false))
   }
+  const review = () => {
+    setBusy(true); setError(null)
+    void reviewDatasetPreparation().then(() => navigate(routes.confirmation)).catch(reason => {
+      if (isDatasetNotUploaded(reason)) onStaleSession()
+      else setError(reason instanceof Error ? reason.message : 'Не удалось открыть подтверждение.')
+    }).finally(() => setBusy(false))
+  }
+  const backToRoles = () => {
+    setBusy(true); setError(null)
+    void returnToDatasetRoles().then(() => navigate(routes.roles)).catch(reason => {
+      setError(reason instanceof Error ? reason.message : 'Не удалось вернуться к ролям.')
+    }).finally(() => setBusy(false))
+  }
   const selectFile = (file?: File) => {
     if (!file || !sessionReady || busy) return
     setBusy(true); setError(null)
@@ -82,6 +95,9 @@ export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onSta
       }
     })()
   }
+
+  if (route === routes.features) return <FeaturesBoundary onHome={onHome} />
+  if (route === routes.confirmation) return <ConfirmationShell preparation={preparation} busy={busy} setBusy={setBusy} setError={setError} onBack={backToRoles} />
 
   return <div className="app-shell data-shell">
     <aside className="sidebar">
@@ -117,7 +133,7 @@ export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onSta
         <section className="permission-summary panel"><div className="section-heading"><h2>Колонки без замечаний</h2><p>Сводка рассчитана по текущему черновику ролей.</p></div><div className="permission-counts">{Object.entries(preparation.summary.permission_counts).map(([key, value]) => <div key={key}><span>{permissionLabels[key]}</span><strong>{value}</strong></div>)}</div></section>
         <section className="inert-section panel"><div><Icon name="menu" size={25} /><div><h2>Предпросмотр данных</h2><p>Содержимое набора данных пока не доступно в этом экране.</p></div></div><Icon name="arrow" size={20} /></section>
         <section className="inert-section panel"><div><Icon name="settings" size={25} /><div><h2>Технические сведения</h2><p>Дополнительные параметры файла будут показаны здесь, когда станут доступны.</p></div></div><Icon name="arrow" size={20} /></section>
-        <footer className="data-footer"><button className="secondary-action" disabled>Назад</button><div><p>Проверьте роли колонок перед подтверждением.</p><button className="primary-action" disabled>Продолжить к подтверждению <Icon name="arrow" size={19} /></button></div></footer>
+        <footer className="data-footer"><button className="secondary-action" disabled>Назад</button><div><p>Проверьте роли колонок перед подтверждением.</p><button className="primary-action" disabled={busy || !preparation.draft.target || !preparation.draft.identifier || preparation.draft.positive_class === null} onClick={review}>Продолжить к подтверждению <Icon name="arrow" size={19} /></button></div></footer>
       </>}
       {(recoveryMessage || error) && <div className="data-error" role={error ? 'alert' : 'status'}>
         {recoveryMessage && <span>{recoveryMessage}</span>}
@@ -154,3 +170,49 @@ function formatSize(size: number) { return size < 1024 * 1024 ? `${Math.max(1, M
 function formatElapsed(milliseconds: number) { const seconds = Math.max(0, Math.floor(milliseconds / 1000)); return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}` }
 function stageLabel(stage: string) { return ({ RECEIVING_FILE: 'Получаем файл', STAGING_FILE: 'Сохраняем временную копию', READING_SOURCE: 'Читаем таблицу', INSPECTING_DATASET: 'Проверяем структуру данных', ANALYZING_PREPARATION: 'Определяем роли колонок' } as Record<string, string>)[stage] ?? stage }
 function decodeValue(value: string, choices: Array<string | number | boolean>) { return choices.find(item => String(item) === value) ?? null }
+
+function ConfirmationShell({ preparation, busy, setBusy, setError, onBack }: { preparation: DatasetPreparation | null; busy: boolean; setBusy: (busy: boolean) => void; setError: (message: string | null) => void; onBack: () => void }) {
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const confirm = () => {
+    setBusy(true); setError(null); setMessage(null)
+    void confirmDatasetPreparation(acknowledged).then(() => navigate(routes.features)).catch(reason => {
+      const text = reason instanceof Error ? reason.message : 'Не удалось подтвердить подготовку данных.'
+      setError(text); setMessage(text)
+    }).finally(() => setBusy(false))
+  }
+  if (!preparation) return <div className="app-shell data-shell"><aside className="sidebar"><img className="brand" src={asset('brand/logo-primary-dark.png')} alt="AXION — аналитическая платформа" /><nav aria-label="Основная навигация" className="navigation"><button className="nav-item nav-link" onClick={() => navigate(routes.home)} aria-label="Главная"><Icon name="home" size={26} /><span>Главная</span></button><div className="nav-item is-active"><Icon name="plus" size={26} /><span>Новый анализ</span></div><button className="nav-item" disabled><Icon name="model" size={26} /><span>Модели</span></button><button className="nav-item" disabled><Icon name="menu" size={26} /><span>Проекты / История</span></button><button className="nav-item with-divider" disabled><Icon name="settings" size={26} /><span>Настройки</span></button></nav><div className="profile"><div className="avatar">АП</div><div><strong>Андреев П. С.</strong><small>Аналитик</small></div></div></aside><main className="workspace data-workspace confirmation-workspace"><section className="upload-panel panel"><h2>Загружаем сведения о подготовке</h2></section></main></div>
+  const counts = preparation.summary.permission_counts
+  return <div className="app-shell data-shell">
+    <aside className="sidebar">
+      <img className="brand" src={asset('brand/logo-primary-dark.png')} alt="AXION — аналитическая платформа" />
+      <nav aria-label="Основная навигация" className="navigation">
+        <button className="nav-item nav-link" onClick={() => navigate(routes.home)} aria-label="Главная"><Icon name="home" size={26} /><span>Главная</span></button>
+        <div className="nav-item is-active"><Icon name="plus" size={26} /><span>Новый анализ</span></div>
+        <button className="nav-item" disabled><Icon name="model" size={26} /><span>Модели</span></button>
+        <button className="nav-item" disabled><Icon name="menu" size={26} /><span>Проекты / История</span></button>
+        <button className="nav-item with-divider" disabled><Icon name="settings" size={26} /><span>Настройки</span></button>
+      </nav>
+      <div className="profile"><div className="avatar">АП</div><div><strong>Андреев П. С.</strong><small>Аналитик</small></div></div>
+    </aside>
+    <main className="workspace data-workspace confirmation-workspace">
+    <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index === 0 ? 'active' : ''}><span>{index + 1}</span>{name}</li>)}</ol></div>
+    <header className="data-header"><h1>Подготовка данных</h1><p>Проверьте сведения о файле, ключевые роли и итог подготовки перед созданием контекста данных.</p></header>
+    <ol className="data-stepper confirmation-stepper" aria-label="Этапы подготовки данных"><li className="completed"><span>✓</span>Файл</li><li className="completed"><span>✓</span>Роли колонок</li><li className="active"><span>3</span>Подтверждение</li></ol>
+    <section className="confirmation-file panel"><h2>Файл</h2><div className="confirmation-file-body"><span className="file-icon"><Icon name="box" size={38} /></span><div className="confirmation-file-identity"><strong>{preparation.source.display_name}</strong><p>{preparation.source.rows.toLocaleString('ru-RU')} строк <span>·</span> {preparation.source.columns} колонок <span>·</span> {formatSize(preparation.source.size)} <span>·</span> {preparation.source.format.toUpperCase()}</p></div></div></section>
+    <section className="confirmation-card confirmation-roles panel"><h2>Ключевые роли</h2><div className="confirmation-role-grid"><article><span className="role-icon target"><Icon name="check" size={25} /></span><div><label>Цель</label><output>{preparation.draft.target ?? 'Не выбрана'}</output></div></article><article><span className="role-icon positive"><Icon name="settings" size={25} /></span><div><label>Целевое событие</label><output>{String(preparation.draft.positive_class ?? 'Не выбрано')}</output></div></article><article><span className="role-icon identifier"><Icon name="model" size={25} /></span><div><label>Идентификатор</label><output>{preparation.draft.identifier ?? 'Не выбран'}</output></div></article></div></section>
+    <section className="confirmation-card confirmation-result panel"><h2>Итог подготовки</h2><p className="confirmation-total">{preparation.source.columns} колонок всего</p><div className="confirmation-count-grid">{[
+      ['MODEL_ALLOWED', 'Признаки модели'], ['DIAGNOSTIC_ONLY', 'Не используются моделью напрямую'], ['TARGET', 'Целевая колонка'], ['IDENTIFIER', 'Идентификатор'], ['BLOCKED', 'Заблокировано'],
+    ].filter(([key]) => key !== 'BLOCKED' || (counts[key] ?? 0) > 0).map(([key, label]) => <div key={key} className={`confirmation-count ${key.toLowerCase()}`}><strong>{counts[key] ?? 0}</strong><span>{label}</span></div>)}</div>
+      {preparation.summary.warnings.length > 0 && <div className="confirmation-warnings"><strong>Замечания</strong>{preparation.summary.warnings.map((warning, index) => <p key={`${warning}-${index}`}>{warning}</p>)}</div>}
+      <div className="confirmation-policy"><p>Вся подтверждённая популяция используется для OOF-оценки. Защищённая финальная тестовая выборка на этом этапе не создаётся.</p><label><input type="checkbox" checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} /> Я понимаю и подтверждаю эту политику.</label></div>
+    </section>
+    {message && <div className="data-error confirmation-error" role="alert">{message}</div>}
+    <footer className="data-footer confirmation-footer"><button className="secondary-action" disabled={busy} onClick={onBack}>Назад к ролям</button><div><button className="primary-action" disabled={busy || !acknowledged} onClick={confirm}>Подтвердить и перейти к признакам <Icon name="arrow" size={19} /></button></div></footer>
+    </main>
+  </div>
+}
+
+function FeaturesBoundary({ onHome }: { onHome: () => void }) {
+  return <div className="app-shell"><main className="workspace data-workspace features-boundary"><p className="eyebrow">Новый анализ · Шаг 2</p><section className="panel"><Icon name="check" size={36} /><h1>Данные подготовлены</h1><p>Подтверждённый контекст создан на сервере. Выбор признаков будет доступен на следующем этапе.</p><button className="secondary-action" onClick={onHome}>На главную</button></section></main></div>
+}

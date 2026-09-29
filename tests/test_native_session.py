@@ -5,9 +5,12 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from komus_risk.application.native_session import (
     DatasetInspectionStage,
     DatasetInspectionStatus,
+    NativeSessionTransitionError,
     NativeSessionStore,
     NewAnalysisStatus,
 )
@@ -174,3 +177,54 @@ def test_native_session_module_has_no_frontend_or_persistence_dependencies() -> 
     assert {"ExperimentArtifactStore", "ModelVersionStore", "komus_risk.artifacts"}.isdisjoint(
         references
     )
+
+
+def test_orphaned_prepared_context_reference_fails_closed_to_file() -> None:
+    store = NativeSessionStore()
+    session_id, _ = store.get_or_create(None)
+    transient = store._sessions[session_id]
+    transient.analysis_active = True
+    transient.data_substep = "PREPARED"
+    transient.prepared_context_id = "missing-context"
+
+    reconciled = store.reconcile_prepared_context(session_id, lambda _context_id: False)
+
+    assert reconciled.data_substep == "FILE"
+    assert reconciled.resume_route == "#/analysis/data/file"
+
+
+def test_data_transitions_are_strict_and_fail_without_mutation() -> None:
+    store = NativeSessionStore()
+    session_id, _ = store.get_or_create(None)
+    store.set_dataset(
+        session_id,
+        staged_upload=None,
+        inspected_dataset=object(),
+        preparation_draft=object(),
+    )
+
+    with pytest.raises(NativeSessionTransitionError) as invalid_back:
+        store.return_to_roles(session_id)
+    assert invalid_back.value.code == "INVALID_DATA_TRANSITION"
+    assert store.snapshot(session_id).data_substep == "ROLES"
+
+    store.begin_confirmation(session_id)
+    before_confirmation = store.snapshot(session_id)
+    with pytest.raises(NativeSessionTransitionError):
+        store.begin_confirmation(session_id)
+    assert store.snapshot(session_id) == before_confirmation
+
+    store.return_to_roles(session_id)
+    before_roles = store.snapshot(session_id)
+    with pytest.raises(NativeSessionTransitionError):
+        store.return_to_roles(session_id)
+    assert store.snapshot(session_id) == before_roles
+
+    store.begin_confirmation(session_id)
+    store.set_prepared_context(session_id, "trusted-context")
+    before_prepared = store.snapshot(session_id)
+    with pytest.raises(NativeSessionTransitionError):
+        store.begin_confirmation(session_id)
+    with pytest.raises(NativeSessionTransitionError):
+        store.return_to_roles(session_id)
+    assert store.snapshot(session_id) == before_prepared

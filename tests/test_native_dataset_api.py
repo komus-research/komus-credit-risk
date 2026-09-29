@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from threading import Event, Thread
+from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
@@ -13,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.api.main import SESSION_COOKIE_NAME, create_app
 from komus_risk.application.dataset_onboarding import NativeDatasetOnboardingService
 from komus_risk.application.native_session import NativeSessionStore
+from komus_risk.preparation import PreparedDatasetContextAuthority
 
 
 def _dataset() -> bytes:
@@ -256,3 +258,108 @@ def test_sessions_are_isolated_and_confirmed_reset_removes_only_own_upload() -> 
     assert reset.status_code == 200
     assert not first_upload.local_path.exists()
     assert second.get("/api/v1/dataset/preparation").status_code == 404
+
+
+def test_explicit_confirmation_materializes_only_after_acknowledgement() -> None:
+    client = TestClient(create_app())
+    uploaded = _upload(client)
+    assert uploaded["draft"]["target"] is not None
+
+    assert client.patch(
+        "/api/v1/dataset/preparation/draft", json={"positive_class": 1}
+    ).status_code == 200
+    review = client.post("/api/v1/dataset/preparation/review")
+    assert review.status_code == 200
+    assert review.json()["data_substep"] == "CONFIRMATION"
+    assert review.json()["resume_route"] == "#/analysis/data/confirmation"
+
+    blocked = client.post("/api/v1/dataset/preparation/confirm", json={})
+    assert blocked.status_code == 422
+    assert blocked.json()["detail"]["code"] == "POPULATION_POLICY_NOT_ACKNOWLEDGED"
+    assert client.get("/api/v1/session").json()["data_substep"] == "CONFIRMATION"
+
+    confirmed = client.post(
+        "/api/v1/dataset/preparation/confirm",
+        json={"population_policy_acknowledged": True},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    assert confirmed.json()["data_substep"] == "PREPARED"
+    assert confirmed.json()["resume_route"] == "#/analysis/features"
+    invalid_edit = client.patch(
+        "/api/v1/dataset/preparation/draft", json={"positive_class": 0}
+    )
+    assert invalid_edit.status_code == 409
+    assert invalid_edit.json()["detail"]["code"] == "INVALID_DATA_TRANSITION"
+    assert client.get("/api/v1/session").json()["data_substep"] == "PREPARED"
+    for endpoint in ("review", "roles"):
+        invalid = client.post(f"/api/v1/dataset/preparation/{endpoint}")
+        assert invalid.status_code == 409
+        assert invalid.json()["detail"]["code"] == "INVALID_DATA_TRANSITION"
+        assert client.get("/api/v1/session").json()["data_substep"] == "PREPARED"
+
+    reset = client.post("/api/v1/analysis/new", json={"confirm_reset": True})
+    assert reset.status_code == 200
+    assert reset.json()["data_substep"] == "FILE"
+    assert reset.json()["resume_route"] == "#/analysis/data/file"
+
+
+def test_direct_confirm_from_roles_fails_before_any_materialization(monkeypatch) -> None:
+    from komus_risk.preparation.komus_service import KomusDatasetPreparationService
+
+    store = NativeSessionStore()
+    client = TestClient(create_app(session_store=store))
+    uploaded = _upload(client)
+    assert client.patch(
+        "/api/v1/dataset/preparation/draft", json={"positive_class": 1}
+    ).status_code == 200
+    session_id = client.cookies.get(SESSION_COOKIE_NAME)
+    assert session_id is not None
+    before_draft = store.dataset_state(session_id)[1]
+
+    materialize = Mock(side_effect=AssertionError("materialization must not run"))
+    prepare = Mock(side_effect=AssertionError("prepare must not run"))
+    register = Mock(side_effect=AssertionError("authority registration must not run"))
+    monkeypatch.setattr(NativeDatasetOnboardingService, "materialize_confirmation", materialize)
+    monkeypatch.setattr(KomusDatasetPreparationService, "prepare", prepare)
+    monkeypatch.setattr(PreparedDatasetContextAuthority, "register", register)
+
+    response = client.post(
+        "/api/v1/dataset/preparation/confirm",
+        json={"population_policy_acknowledged": True},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "INVALID_DATA_TRANSITION"
+    assert "traceback" not in response.text.lower()
+    assert materialize.call_count == 0
+    assert prepare.call_count == 0
+    assert register.call_count == 0
+    assert store.snapshot(session_id).data_substep == "ROLES"
+    assert store.dataset_state(session_id)[1] == before_draft
+    assert store._sessions[session_id].prepared_context_id is None
+
+
+def test_review_and_back_reject_invalid_transitions_without_state_change() -> None:
+    client = TestClient(create_app())
+    _upload(client)
+
+    invalid_back = client.post("/api/v1/dataset/preparation/roles")
+    assert invalid_back.status_code == 409
+    assert invalid_back.json()["detail"]["code"] == "INVALID_DATA_TRANSITION"
+    assert client.get("/api/v1/session").json()["data_substep"] == "ROLES"
+
+    first_review = client.post("/api/v1/dataset/preparation/review")
+    assert first_review.status_code == 200
+    repeated_review = client.post("/api/v1/dataset/preparation/review")
+    assert repeated_review.status_code == 409
+    assert repeated_review.json()["detail"]["code"] == "INVALID_DATA_TRANSITION"
+    invalid_edit = client.patch(
+        "/api/v1/dataset/preparation/draft", json={"positive_class": 1}
+    )
+    assert invalid_edit.status_code == 409
+    assert invalid_edit.json()["detail"]["code"] == "INVALID_DATA_TRANSITION"
+    assert client.get("/api/v1/session").json()["data_substep"] == "CONFIRMATION"
+
+    assert client.post("/api/v1/dataset/preparation/roles").status_code == 200
+    assert client.get("/api/v1/session").json()["data_substep"] == "ROLES"
+    assert client.post("/api/v1/dataset/preparation/roles").status_code == 409
