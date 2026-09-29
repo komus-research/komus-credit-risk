@@ -28,6 +28,12 @@ from .native_session import (
     NewAnalysisResult,
     NewAnalysisStatus,
 )
+from .dataset_onboarding import (
+    DatasetDraftError,
+    InspectedDataset,
+    NativeDatasetOnboardingService,
+    PreparationDraft,
+)
 from .result_interpreter import (
     RESULT_INTERPRETER_ROLES,
     InterpreterFeatureFact,
@@ -54,6 +60,10 @@ __all__ = [
     "NativeSessionStore",
     "NewAnalysisResult",
     "NewAnalysisStatus",
+    "DatasetDraftError",
+    "InspectedDataset",
+    "NativeDatasetOnboardingService",
+    "PreparationDraft",
     "OutboundInterpreterPolicy",
     "PolicyBoundResultInterpreterClient",
     "PredictionBatch",

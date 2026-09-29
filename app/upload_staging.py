@@ -24,7 +24,7 @@ _REGISTERED_ROOTS: set[Path] = set()
 
 
 class BrowserUpload(Protocol):
-    """Minimal Streamlit UploadedFile contract used by the staging boundary."""
+    """Minimal browser-upload adapter contract used by the staging boundary."""
 
     name: str
 
@@ -68,12 +68,24 @@ def stage_browser_upload(
     A replacement is written completely before its predecessor is removed, so a
     failed upload cannot invalidate a source currently used by the workflow.
     """
-    safe_name = _safe_filename(_upload_name(upload))
+    return stage_upload_bytes(
+        _upload_name(upload), _upload_bytes(upload), previous=previous, staging_root=staging_root
+    )
+
+
+def stage_upload_bytes(
+    name: str,
+    data: bytes,
+    *,
+    previous: StagedUpload | None = None,
+    staging_root: Path | None = None,
+) -> StagedUpload:
+    """Stage bytes from any HTTP/UI adapter using the same safety rules."""
+    safe_name = _safe_filename(name)
     extension = Path(safe_name).suffix.lower()
     if extension not in SUPPORTED_UPLOAD_EXTENSIONS:
         raise UnsupportedUploadExtension(extension or "(без расширения)")
 
-    data = _upload_bytes(upload)
     if not data:
         raise EmptyUploadError("Загруженный файл не содержит данных.")
     digest = sha256(data).hexdigest()
