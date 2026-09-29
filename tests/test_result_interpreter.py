@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from hashlib import sha256
+import json
+from pathlib import Path
+import shutil
+from tempfile import TemporaryDirectory
 import unittest
 
 from komus_risk.application import (
@@ -9,6 +14,11 @@ from komus_risk.application import (
     LocalFeatureContribution,
     ResultInterpreterService,
 )
+from komus_risk.application.result_interpreter_prompts import (
+    ResultInterpreterPromptLoader,
+    ResultInterpreterPromptsError,
+)
+from komus_risk.application.interpreter_policy import RedactedV1OutboundPolicy
 
 
 class FakeInterpreter:
@@ -106,6 +116,10 @@ class ResultInterpreterTests(unittest.TestCase):
         }
         self.assertEqual(set(RESULT_INTERPRETER_ROLES), set(requests))
         self.assertEqual(4, len({request.request_hash for request in requests.values()}))
+        identities = {(request.prompt_id, request.prompt_version, request.prompt_hash) for request in requests.values()}
+        self.assertEqual(4, len({identity[0] for identity in identities}))
+        self.assertEqual(1, len({identity[1] for identity in identities}))
+        self.assertEqual(4, len({identity[2] for identity in identities}))
 
         expected_phrases = {
             "sales_manager": "менеджер по продажам",
@@ -116,8 +130,81 @@ class ResultInterpreterTests(unittest.TestCase):
         for role, phrase in expected_phrases.items():
             with self.subTest(role=role):
                 client = FakeInterpreter()
-                self.service.interpret_request(request=requests[role], client=client)
+                response = self.service.interpret_request(request=requests[role], client=client)
                 self.assertIn(phrase, (client.received_instruction or "").lower())
+                dispatch = RedactedV1OutboundPolicy().project(requests[role])
+                identity = (requests[role].prompt_id, requests[role].prompt_version, requests[role].prompt_hash)
+                self.assertEqual(identity, (response.prompt_id, response.prompt_version, response.prompt_hash))
+                self.assertEqual(identity, (dispatch.receipt.prompt_id, dispatch.receipt.prompt_version, dispatch.receipt.prompt_hash))
+
+    def test_prompt_hash_tracks_normalized_base_and_role_files(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "resources" / "prompts" / "result_interpreter"
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / "prompts"
+            shutil.copytree(source, root)
+            loader = ResultInterpreterPromptLoader(root)
+            original = loader.load("lawyer")
+            self.assertIn("threshold", loader.load("sales_manager").system_instruction.lower())
+            self.assertEqual(original.prompt_hash, loader.load("lawyer").prompt_hash)
+
+            role_path = root / "lawyer.md"
+            role_path.write_text(role_path.read_text(encoding="utf-8") + "\nДополнение.", encoding="utf-8")
+            manifest_path = root / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            role_text = role_path.read_text(encoding="utf-8").strip()
+            manifest["roles"]["lawyer"]["hash"] = sha256(role_text.encode("utf-8")).hexdigest()
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertNotEqual(original.prompt_hash, loader.load("lawyer").prompt_hash)
+
+            base_path = root / "base.md"
+            base_path.write_text(base_path.read_text(encoding="utf-8") + "\nНовое общее правило.", encoding="utf-8")
+            manifest["base"]["hash"] = sha256(base_path.read_text(encoding="utf-8").strip().encode("utf-8")).hexdigest()
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertNotEqual(original.prompt_hash, loader.load("lawyer").prompt_hash)
+
+            manifest["roles"].pop("information_security")
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(ResultInterpreterPromptsError, "RESULT_INTERPRETER_PROMPTS_INVALID"):
+                loader.load("lawyer")
+
+    def test_missing_prompt_manifest_or_file_fails_before_provider_access(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "resources" / "prompts" / "result_interpreter"
+        cases = ("manifest", "file", "role_set")
+        for failure in cases:
+            with self.subTest(failure=failure), TemporaryDirectory() as directory:
+                root = Path(directory) / "prompts"
+                shutil.copytree(source, root)
+                service = ResultInterpreterService(ResultInterpreterPromptLoader(root))
+                request = service.build_request(evidence=self.evidence, recipient_role="lawyer")
+                if failure == "manifest":
+                    (root / "manifest.json").unlink()
+                elif failure == "file":
+                    (root / "lawyer.md").unlink()
+                else:
+                    manifest_path = root / "manifest.json"
+                    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                    manifest["roles"].pop("sales_manager")
+                    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+                client = FakeInterpreter()
+                with self.assertRaisesRegex(ResultInterpreterPromptsError, "RESULT_INTERPRETER_PROMPTS_INVALID"):
+                    service.interpret_request(request=request, client=client)
+                self.assertFalse(client.interpreter_id_read)
+                self.assertFalse(client.interpret_called)
+
+    def test_prompt_tampering_fails_before_provider_access(self) -> None:
+        source = Path(__file__).resolve().parents[1] / "resources" / "prompts" / "result_interpreter"
+        with TemporaryDirectory() as directory:
+            root = Path(directory) / "prompts"
+            shutil.copytree(source, root)
+            service = ResultInterpreterService(ResultInterpreterPromptLoader(root))
+            request = service.build_request(evidence=self.evidence, recipient_role="lawyer")
+            base = root / "base.md"
+            base.write_text(base.read_text(encoding="utf-8") + "\nTampered.", encoding="utf-8")
+            client = FakeInterpreter()
+            with self.assertRaisesRegex(ResultInterpreterPromptsError, "RESULT_INTERPRETER_PROMPTS_INVALID"):
+                service.interpret_request(request=request, client=client)
+            self.assertFalse(client.interpreter_id_read)
+            self.assertFalse(client.interpret_called)
 
     def test_invalid_role_fails_before_client_access(self) -> None:
         with self.assertRaisesRegex(ValueError, "recipient role"):

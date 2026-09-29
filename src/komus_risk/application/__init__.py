@@ -42,6 +42,11 @@ from .result_interpreter import (
     ResultInterpreterResponse,
     ResultInterpreterService,
 )
+from .result_interpreter_prompts import (
+    LoadedResultInterpreterPrompt,
+    ResultInterpreterPromptLoader,
+    ResultInterpreterPromptsError,
+)
 from .service import ExperimentApplicationService, SmokeGateError
 
 __all__ = [
@@ -77,6 +82,9 @@ __all__ = [
     "ResultInterpreterResponse",
     "ResultInterpreterRuntimeConfiguration",
     "ResultInterpreterService",
+    "ResultInterpreterPromptLoader",
+    "ResultInterpreterPromptsError",
+    "LoadedResultInterpreterPrompt",
     "RunExperimentRequest",
     "SmokeGateError",
 ]

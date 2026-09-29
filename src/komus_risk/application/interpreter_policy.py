@@ -16,6 +16,9 @@ class ProviderDispatchReceipt:
     """Immutable audit link between a full request and its provider projection."""
 
     source_request_hash: str
+    prompt_id: str
+    prompt_version: str
+    prompt_hash: str
     policy_id: str
     policy_version: int
     provider_payload_hash: str
@@ -71,6 +74,9 @@ class RedactedV1OutboundPolicy:
             payload=provider_payload,
             receipt=ProviderDispatchReceipt(
                 source_request_hash=request.request_hash,
+                prompt_id=request.prompt_id,
+                prompt_version=request.prompt_version,
+                prompt_hash=request.prompt_hash,
                 policy_id=self.policy_id,
                 policy_version=self.policy_version,
                 provider_payload_hash=provider_payload_hash,

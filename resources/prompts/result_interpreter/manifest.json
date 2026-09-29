@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "prompt_set_id": "result_interpreter",
+  "prompt_set_version": "1",
+  "base": {"filename": "base.md", "hash": "124ed50296575efbe15f454a5c6cec3d23935053b98ff304a1d57c91c5370124"},
+  "roles": {
+    "sales_manager": {"filename": "sales_manager.md", "hash": "275fe74c5e36c110bc4dcc287e1565d2f49ac28fdb13c599e46d1aae78c9047c"},
+    "credit_controller": {"filename": "credit_controller.md", "hash": "72bebf317d2ac5ba35005fc924cb78d1b1a87ea346f412e769925884f554dc99"},
+    "lawyer": {"filename": "lawyer.md", "hash": "6e9df5153e53508296211a639f63b7f3a1d86bab8eb961f195c2a8e5d131d02a"},
+    "information_security": {"filename": "information_security.md", "hash": "75f77bdd51374e56385d35b43a6c7781c055c11f251a9126ad7eb77172035043"}
+  }
+}
