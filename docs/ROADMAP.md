@@ -6,7 +6,7 @@
 
 Перед крупным изменением проверяются branch/HEAD/status, данные и affected artifacts. Исследовательский Stage закрывается только после review результата и сохранения evidence package по правилам `docs/RESEARCH_RECORD.md`.
 
-Дата актуализации: **2026-09-27**.
+Дата актуализации: **2026-09-29**.
 
 ---
 
@@ -730,25 +730,97 @@ Source:
 
 1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
 2. Feature Grouping Propagation V1 — **CLOSED / ACCEPTED**.
-3. Текущий следующий шаг — UX экрана «Алгоритм».
-4. Затем продолжить «Проверка качества → Результат» и финальный product E2E.
+3. **N2b2 — Human Confirmation + Prepared Context — CLOSED / ACCEPTED**.
+4. **NEXT — Native Features V1** по принятому reference `docs/design/screens/new-analysis/03_features_v1.png`.
+5. Затем — экран «Алгоритм».
+6. Затем — «Проверка качества → Результат» и финальный native product E2E.
 
 ---
 
 ## PARALLEL / NON-BLOCKING WORK
 
-Отдельно, не смешивая с двумя backend blockers:
+Отдельно, не смешивая с текущим native core flow:
 
 - Ярослав: quality/cost review role-based LLM explanations;
-- XGBoost/LightGBM Local SHAP provider work после отдельного ACCEPT;
+- XGBoost/LightGBM Local SHAP — **ACCEPTED** в `FINAL_SHAP_LLM_BACKEND_V1`; отдельного future workstream больше не требуется;
 - корректный GBDT Mean local explanation только после математически принятого метода;
 - defense/demo evidence package.
 
 ---
 
+## CONFIRMED FUTURE PRODUCT WORKSTREAMS
+
+Эти workstreams подтверждены owner как продуктовые направления, но **не вытесняют текущий core flow**. Приоритет сохраняется: `Features → Algorithm → Quality Check → Result / native E2E`.
+
+### A. Model Comparison V1
+
+Backend foundation уже существует: `ExperimentComparisonService`.
+
+Цель UX — дать пользователю понятное контролируемое сравнение завершённых экспериментов/моделей без ручной проверки внутренних identity-полей.
+
+Нужны:
+- действие **«Сравнить»** у завершённого experiment/model result;
+- автоматический список **«Совместимые для сравнения»**;
+- backend, а не frontend, определяет comparability;
+- пользователь не обязан вручную проверять dataset fingerprint, population, folds, seed или protocol;
+- рядом показываются Gini, ROC-AUC, PR-AUC, Precision, Recall, F1, TP/TN/FP/FN, runtime и fold stability;
+- отдельно показываются фактические изменения model parameters и/или feature set;
+- для `incomparable` результата UI показывает конкретные причины;
+- никакого ложного общего leaderboard для несопоставимых экспериментов.
+
+Controlled model comparison допустим, когда dataset/population/feature set/protocol/folds/seed/evaluation level совпадают, а меняется только модель или объявленная model-parameter dimension.
+
+Controlled feature comparison допустим, когда data/model/protocol/folds/seed совпадают, а меняется только feature set.
+
+### B. LLM Comparison Interpreter
+
+LLM получает только trusted structured comparison result и разрешённые facts. Он простым русским языком объясняет изменения метрик, Recall/Precision и FP/FN trade-off, runtime, стабильность по folds, изменённую dimension, ограничения вывода и причины comparability/incomparability.
+
+LLM не выбирает «лучшую модель» за пользователя, не создаёт собственный leaderboard, не скрывает несопоставимость, не придумывает causal conclusions и не заменяет `ExperimentComparisonService`. External-provider path соблюдает существующий privacy/redaction boundary.
+
+### C. Model Package export / import UX
+
+Подтверждённое product requirement:
+- сохранить Model Package в выбранную пользователем папку;
+- загрузить ранее сохранённый Model Package;
+- хранить и читать metadata обучения вместе с artifact;
+- metadata должна позволять проверить dataset / feature set / protocol / model provenance;
+- imported package допускается к controlled comparison только при достаточной metadata/provenance;
+- model artifact без нужной metadata не выдаётся за сопоставимый experiment.
+
+### D. Single-company preflight
+
+Будущая capability: **«Проверить на одной компании»** перед дорогим full training/run, если это технически применимо.
+
+Это технический/UX preflight: проверка схемы, подготовки входа, smoke/inference compatibility и раннее выявление технических ошибок. Это **не** metric validation и не доказательство качества модели.
+
+### E. Flexible model settings UX
+
+Backend foundation уже принят в `Configurable Model Platform V1`.
+
+Future UX должен поддержать `Recommended`, `Advanced`, versioned backend parameter schema и удобное редактирование безопасно поддержанных гиперпараметров. Frontend не хардкодит model-specific ranges/logic.
+
+### F. Bulk model explanation
+
+Будущий UX: сформировать объяснения для выбранных model results / моделей одним действием там, где результаты и privacy policy это позволяют.
+
+Это **не** отменяет принятое правило Stage III-C2c: четыре роли для одного результата остаются отдельными действиями и не запускаются автоматически одновременно.
+
+### G. Universal product
+
+Приложение остаётся generic-first:
+- без hardcode `INN`;
+- без hardcode `DefMark`;
+- без hardcode `Q_B1_norm` / `Q_B2_norm`;
+- без hardcode конкретных feature names.
+
+Historical KOMUS / `Data_final` остаётся compatibility/research profile, а не generic product semantics.
+
+`Dataset History / Persistence V1` должен в будущем стать общей опорой для history, controlled comparison и Model Package import/export.
+
 ## LATER PRODUCT WORKSTREAMS
 
-После текущих backend blockers и Algorithm UX:
+После текущего core native flow:
 
 - Dataset History / Persistence V1;
 - Model Package export/import UX;

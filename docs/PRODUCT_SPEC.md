@@ -197,6 +197,28 @@ Frontend должен иметь возможность учитывать ог�
 
 Интерфейс не должен автоматически ранжировать несопоставимые результаты как один leaderboard.
 
+### Product UX для controlled comparison
+
+Сравнение строится поверх фактического backend `ExperimentComparisonService`; frontend не определяет comparability самостоятельно.
+
+Для завершённого experiment/model result интерфейс должен поддерживать действие **«Сравнить»** и показывать список совместимых кандидатов.
+
+Пользователь не обязан вручную сверять internal identity. Система сама проверяет необходимые experimental invariants и либо строит controlled comparison, либо показывает конкретные причины, почему прямое сравнение недопустимо.
+
+Для сравнимых результатов нужно показывать как минимум:
+- Gini;
+- ROC-AUC;
+- PR-AUC;
+- Precision;
+- Recall;
+- F1;
+- TP / TN / FP / FN;
+- runtime;
+- стабильность/дельты по folds;
+- фактически изменённые model parameters или feature set.
+
+Интерфейс не должен автоматически объявлять «лучшую модель» или строить общий leaderboard для результатов, которые не прошли controlled-comparison gate. Пользователь получает факты и принимает решение сам.
+
 ## 12. Артефакты и воспроизводимость
 
 Значимый эксперимент должен сохранять достаточный набор для воспроизведения:
@@ -223,7 +245,7 @@ LLM является отдельным post-processing слоем.
 
 - что проверялось;
 - что произошло;
-- какие модели лидируют;
+- как различаются результаты моделей;
 - как изменились метрики;
 - какие ограничения остаются;
 - что результат не доказывает;
@@ -262,6 +284,24 @@ LLM не должна:
 Provider подключается через общий `ResultInterpreterClient`. Конкретная model/provider configuration не хардкодится в core/UI.
 
 Для OpenAI adapter обязателен `store=False`; это не означает Zero Data Retention. Перед использованием внешнего provider на реальных клиентских identifiers/feature values должна быть отдельно подтверждена допустимая data-sharing/redaction policy.
+
+### Comparison Interpreter
+
+LLM может интерпретировать только trusted structured comparison result и разрешённые facts после фактического controlled-comparison gate.
+
+Он должен простым русским языком объяснять:
+- какие метрики изменились;
+- Recall / Precision trade-off;
+- FP / FN trade-off;
+- runtime;
+- стабильность по folds;
+- что именно было изменено в experiment;
+- ограничения вывода;
+- почему результаты comparable или incomparable.
+
+LLM не должен выбирать победителя за пользователя, создавать собственный leaderboard, скрывать несопоставимость, придумывать causal explanation, вводить business threshold, принимать approve/deny решение или заменять `ExperimentComparisonService`.
+
+При использовании внешнего provider сохраняются принятые external-data policy и privacy/redaction boundaries.
 
 ## 14. Backend
 
@@ -554,6 +594,26 @@ SHA-256, fingerprint, manifest, policy hash и cache не являются по�
 Прямой controlled comparison допустим только при одинаковых критичных experimental conditions: dataset identity и population, split/folds, seed, preprocessing, feature set, evaluation protocol и metrics — кроме заранее объявленного единственного changed dimension конкретного controlled experiment.
 
 Если критичные условия различаются более чем по этому контролируемому изменению, результаты должны быть помечены как `partially comparable` или `incomparable`. Интерфейс не должен представлять их как прямой leaderboard или делать вывод о победителе на основании такого сравнения.
+
+### Model Package и controlled comparison
+
+Сохранённые experiments могут использоваться как кандидаты для controlled comparison.
+
+Imported Model Package может участвовать в controlled comparison только если metadata/provenance достаточно, чтобы доказать необходимые invariants: dataset identity, population, feature set, evaluation protocol, folds/seed и model identity/configuration.
+
+Если нужной metadata нет, интерфейс должен явно блокировать controlled comparison, а не делать вывод по имени файла или модели.
+
+Пользовательский UX должен поддержать:
+- сохранение Model Package в выбранную папку;
+- загрузку Model Package вместе с metadata;
+- просмотр ключевых training/provenance сведений до использования package.
+
+### Подтверждённые будущие product capabilities
+
+- **Single-company preflight** перед дорогим full run: техническая проверка входа/smoke/inference compatibility, но не metric validation.
+- **Recommended / Advanced model settings** поверх versioned backend parameter schema; frontend не хардкодит ranges/логику конкретной библиотеки.
+- **Bulk model explanation** для выбранных model results там, где это разрешают privacy policy и доступные evidence; это не означает одновременный запуск четырёх ролей для одной строки.
+- **Generic-first product semantics**: никакого обязательного hardcode `INN`, `DefMark`, `Q_B1_norm`, `Q_B2_norm` или конкретных feature names.
 
 ### Изменение правил
 

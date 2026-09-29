@@ -771,16 +771,17 @@ Matching technical smoke PASS обязателен перед каждым full 
 
 `docs/workstreams/configurable_model_platform_v1/ARCHITECT_LOCK.md`.
 
-**Текущий порядок product backend work:**
+**Текущий порядок native product work:**
 
 1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
 2. Feature Grouping Propagation V1 — **CLOSED / ACCEPTED**.
-3. Текущий следующий шаг — продолжение UX экрана «Алгоритм».
-4. Затем «Проверка качества → Результат» и финальный product E2E.
+3. N2b2 Human Confirmation + Prepared Context — **CLOSED / ACCEPTED**.
+4. **NEXT — Native Features V1**.
+5. Затем — **Native Algorithm V1**: UX/spec и reference уже подготовлены, native implementation ещё не завершён.
+6. Затем — **Quality Check → Result** и финальный native product E2E.
 
 ### Future / not implemented
 
-- production React/Next.js + thin FastAPI frontend/backend boundary;
 - Dataset History / Persistence V1 как пользовательская история проектов/экспериментов;
 - semantic business taxonomy для features поверх безопасной technical grouping, если появится trusted source;
 - threshold optimization/calibration и business policy UI;
@@ -1009,3 +1010,94 @@ Manual external E2E на synthetic/non-client input выполнен для `sal
 Начата нативная миграция frontend AXION. N0 создаёт только её фундамент: минимальный client на React/TypeScript/Vite, публичный HTTP adapter FastAPI и framework-neutral process-local native session layer. Реализованы только endpoints health, session и explicit reset для new analysis.
 
 Канонический переход ещё не выполнен: Home/N1 ещё не реализован, а существующий Streamlit frontend не удалён и остаётся frozen compatibility frontend и каноническим compatibility launch path, пока native functional parity не будет разработан на последующих этапах. Нативная session владеет только временным состоянием workflow; сохраняемые ExperimentArtifact и ModelVersion остаются за её пределами.
+
+## Native Product State — актуализация 2026-09-29
+
+Этот раздел supersede-ит раннюю запись `Нативная миграция frontend AXION — N0` и фиксирует фактическое состояние приложения после принятых native-этапов.
+
+### ACCEPTED / CURRENT
+
+Приняты и зафиксированы:
+
+- **N0 — Native foundation — ACCEPTED**;
+- **N1 — Native Home — ACCEPTED**;
+- **N2a — Native Data Preparation — ACCEPTED**;
+- **N2b1 — Canonical Navigation + Session Recovery — ACCEPTED**;
+- **FINAL_SHAP_LLM_BACKEND_V1 — ACCEPTED**;
+- **N2b2 — Human Confirmation + Prepared Context — ACCEPTED**.
+
+Текущий canonical native flow:
+
+```text
+#/home
+→ #/analysis/data/file
+→ #/analysis/data/roles
+→ #/analysis/data/confirmation
+→ #/analysis/features
+```
+
+Backend session остаётся authoritative. URL сам по себе не создаёт или не подтверждает scientific/runtime state.
+
+### N2b2 — Human Confirmation + Prepared Context
+
+Подтверждено:
+
+- `PROPOSAL / DRAFT` не становятся runtime truth автоматически;
+- перед materialization требуется явное human confirmation;
+- native и compatibility frontend используют общую framework-neutral confirmation semantics;
+- accepted path: `ConfirmedDatasetPreparation → KomusDatasetPreparationService → PreparedDatasetContextAuthority`;
+- native session хранит только opaque `prepared_context_id`, а не сам `PreparedDatasetContext`;
+- state machine строго ограничена: `ROLES → CONFIRMATION → PREPARED`;
+- confirmation materialization защищена session-local reservation token;
+- пока reservation активна, Back, reset, draft edit, replacement upload, повторный review/confirm этой же session fail-closed с `INVALID_DATA_TRANSITION`;
+- materialization не держит глобальный store lock и не блокирует другие sessions;
+- при success acknowledged draft, `prepared_context_id` и переход в `PREPARED` публикуются атомарно;
+- при ошибке reservation снимается, session остаётся в `CONFIRMATION`;
+- orphaned `prepared_context_id` без matching authority fail-closed;
+- Confirmation UI приведён к принятому AXION shell и reference `02_data_confirmation_v1.png`;
+- `#/analysis/features` на этом этапе остаётся только boundary следующего native stage.
+
+Verification N2b2 перед ACCEPT:
+
+- backend targeted: **64 tests PASS**;
+- frontend production build: **PASS**;
+- `git diff --check`: **PASS**;
+- Reviewer verdict: **ACCEPT**.
+
+Source commit:
+
+`0236da7646c11442fe8a8a5f9db6d661f1cb05d4`.
+
+### FINAL_SHAP_LLM_BACKEND_V1 — accepted backend foundation
+
+Принятый путь:
+
+```text
+ModelVersion V2
+→ inference
+→ Local SHAP
+→ REDACTED_V1
+→ Result Interpreter
+```
+
+Поддержано:
+
+- CatBoost Local SHAP;
+- XGBoost Local SHAP;
+- LightGBM Local SHAP;
+- GBDT Mean Local SHAP — `UNSUPPORTED`;
+- четыре ролевые интерпретации;
+- versioned prompt package + prompt provenance;
+- request schema V3;
+- `AXION_*` как canonical config и `KOMUS_*` как legacy aliases;
+- neutral result-interpreter runtime без зависимости от Streamlit.
+
+LLM остаётся Result Interpreter, а не кредитным предиктором или источником business threshold/approve-deny решения.
+
+### NEXT
+
+Следующий основной native product stage — **полноценный экран «Признаки»** по принятому reference:
+
+`docs/design/screens/new-analysis/03_features_v1.png`.
+
+До его завершения будущие product workstreams не должны вытеснять текущий core flow.
