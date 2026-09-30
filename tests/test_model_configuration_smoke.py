@@ -185,12 +185,14 @@ def _dataset():
 
 
 def _service(root):
-    builtin = build_builtin_model_plugin_registry().get("catboost")
+    builtin_plugins = build_builtin_model_plugin_registry()
+    builtin = builtin_plugins.get("catboost")
     provider = _PersistenceProvider(
         builtin.persistence_provider, builtin.spec.version, builtin.spec.adapter_version
     )
     registry = ModelPluginRegistry(
-        persistence_providers=builtin_gbdt_persistence_providers(())
+        persistence_providers=builtin_gbdt_persistence_providers(()),
+        explanation_providers=builtin_plugins.explanation_providers,
     )
     registry.persistence_providers.register(provider)
     factory = _Factory()

@@ -19,7 +19,6 @@ from komus_risk.application import (
     ExperimentApplicationService,
     FinalModelTrainingService,
     IntegrationWorkflowService,
-    LocalExplanationService,
     ModelInferenceService,
     ResultInterpreterService,
     NativeDatasetOnboardingService,
@@ -638,7 +637,9 @@ def create_runtime(
         final_model_training_service=final_model_training_service,
         model_version_store=model_version_store,
         model_inference_service=ModelInferenceService(),
-        local_explainers={plugin.spec.model_id: LocalExplanationService() for plugin in plugins if plugin.local_explanation_provider is not None},
+        # Executable explainers are resolved only through the reviewed plugin
+        # binding; descriptors never become executable from request data.
+        model_plugin_registry=plugin_registry,
         result_interpreter_service=ResultInterpreterService(interpreter_runtime.prompt_loader),
         result_interpreter_client=interpreter_runtime.client,
         outbound_interpreter_policy=interpreter_runtime.outbound_policy,

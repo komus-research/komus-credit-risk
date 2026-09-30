@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from komus_risk.application import (
-    IntegrationWorkflowService, LocalExplanationService, ModelInferenceService,
+    IntegrationWorkflowService, ModelInferenceService,
     RedactedV1OutboundPolicy, RESULT_INTERPRETER_ROLES,
     ResultInterpreterRuntimeConfiguration, ResultInterpreterService,
 )
@@ -74,7 +74,7 @@ class MultiModelExplainabilityPathTests(unittest.TestCase):
         self.workflow = IntegrationWorkflowService(
             final_model_training_service=SimpleNamespace(model_version_store=self.store),
             model_version_store=self.store, model_inference_service=ModelInferenceService(),
-            local_explainers={model_id: LocalExplanationService() for model_id in self.model_ids},
+            model_plugin_registry=self.plugins,
             result_interpreter_service=ResultInterpreterService(), result_interpreter_client=self.client,
             outbound_interpreter_policy=RedactedV1OutboundPolicy(),
             result_interpreter_runtime=ResultInterpreterRuntimeConfiguration(
@@ -115,7 +115,8 @@ class MultiModelExplainabilityPathTests(unittest.TestCase):
                 evidence = self.workflow.explain(loaded_model_version=loaded, prediction_batch=prediction, row_id=prediction.rows[0].row_id)
                 repeated = self.workflow.explain(loaded_model_version=loaded, prediction_batch=prediction, row_id=prediction.rows[0].row_id)
                 self.assertEqual(model_id, evidence.model_id)
-                self.assertEqual(model_id, evidence.explainer_id.removesuffix("_native_shap"))
+                self.assertEqual(plugin.local_explanation_provider.provider_id, evidence.provider_id)
+                self.assertEqual(plugin.local_explanation_provider.provider_id, evidence.explainer_id)
                 self.assertEqual(evidence.evidence_hash, repeated.evidence_hash)
                 self.assertAlmostEqual(prediction.rows[0].probability, evidence.probability, places=9)
                 self.assertAlmostEqual(evidence.raw_model_output, evidence.base_value + sum(item.shap_value for item in evidence.features), places=5)
@@ -135,10 +136,10 @@ class MultiModelExplainabilityPathTests(unittest.TestCase):
 
         self.assertEqual(12, len(self.client.calls))
 
-    def test_gbdt_mean_local_explanation_is_unsupported(self) -> None:
+    def test_gbdt_mean_local_explanation_uses_registered_provider(self) -> None:
         mean = SimpleNamespace(summary=SimpleNamespace(model_id="gbdt_mean"))
         capability = self.workflow.capabilities(loaded_model_version=mean, prediction_batch=object(), selected_row_id="row-1")["local_explanation"]
-        self.assertEqual("UNSUPPORTED", capability.state)
+        self.assertEqual(("AVAILABLE", "LOCAL_EXPLAINER_READY"), (capability.state, capability.reason_code))
 
     def _snapshot(self, model_id: str) -> TabularSnapshot:
         dataframe = pd.DataFrame({"company_id": ["secret-company", "second-company"], "f_a": [-0.35, 0.65], "f_b": [1.0, 0.0], "ignored_note": [10, 20]})

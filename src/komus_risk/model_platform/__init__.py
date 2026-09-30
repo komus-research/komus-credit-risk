@@ -37,6 +37,13 @@ from .persistence import (
     NativeGBDTPersistenceProvider,
     builtin_gbdt_persistence_providers,
 )
+from .explainability import (
+    BuiltinNativeExplanationProvider,
+    GBDTMeanProbabilityExplanationProvider,
+    ModelExplanationProvider,
+    ModelExplanationProviderRegistry,
+    TrustedExplanationContext,
+)
 from .plugins import build_builtin_model_plugin_registry, builtin_model_plugins
 from .presentation import (
     ModelCatalogComposition,
@@ -79,12 +86,17 @@ __all__ = [
     "ModelParameterSchema",
     "ModelPersistenceProvider",
     "ModelPersistenceProviderRegistry",
+    "ModelExplanationProvider",
+    "ModelExplanationProviderRegistry",
+    "TrustedExplanationContext",
     "ModelPlugin",
     "ModelPluginRegistry",
     "ModelPresentationError",
     "ModelPresentationProfile",
     "ModelPresentationRegistry",
     "NativeGBDTPersistenceProvider",
+    "BuiltinNativeExplanationProvider",
+    "GBDTMeanProbabilityExplanationProvider",
     "ParameterUiLevel",
     "ParameterValueType",
     "ProviderDescriptor",

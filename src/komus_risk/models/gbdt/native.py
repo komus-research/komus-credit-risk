@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -32,12 +32,14 @@ class NativePredictor:
         *,
         local_shap: Callable[[pd.DataFrame], Any] | None = None,
         raw_predict: Callable[[pd.DataFrame], Any] | None = None,
+        component_predict: Mapping[str, Callable[[pd.DataFrame], Any]] | None = None,
     ) -> None:
         self.model_id = model_id
         self.feature_columns = tuple(feature_columns)
         self._predict = predict
         self._local_shap = local_shap
         self._raw_predict = raw_predict
+        self._component_predict = dict(component_predict or {})
 
     def predict_positive_proba(self, X: pd.DataFrame) -> np.ndarray:
         if not isinstance(X, pd.DataFrame) or tuple(X.columns) != self.feature_columns:
@@ -72,6 +74,28 @@ class NativePredictor:
         if self.model_id != "catboost":
             raise ValueError("Local explanations are unsupported for this native model.")
         return self.local_shap(X)
+
+    def component_positive_probabilities(self, X: pd.DataFrame) -> dict[str, np.ndarray]:
+        """Return the fixed GBDT Mean component probabilities in saved order."""
+        if self.model_id != "gbdt_mean" or set(self._component_predict) != {
+            "catboost", "xgboost", "lightgbm"
+        }:
+            raise ValueError("Component probabilities are unsupported for this native model.")
+        if not isinstance(X, pd.DataFrame) or tuple(X.columns) != self.feature_columns:
+            raise ValueError("NativePredictor requires the exact persisted ordered feature columns.")
+        result: dict[str, np.ndarray] = {}
+        for model_id in ("catboost", "xgboost", "lightgbm"):
+            values = np.asarray(self._component_predict[model_id](X), dtype=float)
+            if (
+                values.ndim != 1
+                or len(values) != len(X)
+                or not np.isfinite(values).all()
+                or (values < 0).any()
+                or (values > 1).any()
+            ):
+                raise ValueError("Native component returned invalid positive probabilities.")
+            result[model_id] = values
+        return result
 
 
 def native_model_files(model_id: str) -> tuple[str, ...]:
@@ -197,13 +221,19 @@ def load_native_predictor(model_id: str, directory: str | Path, feature_columns:
         catboost = CatBoostClassifier(); catboost.load_model(path / "catboost.cbm")
         xgboost = XGBClassifier(); xgboost.load_model(path / "xgboost.json")
         lightgbm = Booster(model_file=str(path / "lightgbm.txt"))
+        components = {
+            "catboost": lambda X: catboost.predict_proba(prepare_numeric_input(X))[:, 1],
+            "xgboost": lambda X: xgboost.predict_proba(prepare_numeric_input(X))[:, 1],
+            "lightgbm": lambda X: lightgbm.predict(prepare_numeric_input(X)),
+        }
         return NativePredictor(
-            model_id, feature_columns,
-            lambda X: (
-                np.asarray(catboost.predict_proba(prepare_numeric_input(X))[:, 1], dtype=float)
-                + np.asarray(xgboost.predict_proba(prepare_numeric_input(X))[:, 1], dtype=float)
-                + np.asarray(lightgbm.predict(prepare_numeric_input(X)), dtype=float)
+            model_id,
+            feature_columns,
+            lambda X: sum(
+                np.asarray(components[component](X), dtype=float)
+                for component in ("catboost", "xgboost", "lightgbm")
             ) / 3,
+            component_predict=components,
         )
     except Exception as error:
         raise ValueError("Native model could not be reloaded.") from error

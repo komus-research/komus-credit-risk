@@ -10,12 +10,14 @@ from komus_risk.model_platform import (
     CapabilityDomain,
     CapabilitySupport,
     ModelCapabilityManifest,
+    ModelExplanationProviderRegistry,
     ModelInputContract,
     ModelParameter,
     ModelParameterSchema,
     ModelPersistenceProviderRegistry,
     ModelPlugin,
     ModelPluginRegistry,
+    BuiltinNativeExplanationProvider,
     NativeGBDTPersistenceProvider,
     ParameterUiLevel,
     ParameterValueType,
@@ -221,14 +223,12 @@ class ParameterSchemaTests(unittest.TestCase):
             )
 
     def test_nested_recommended_value_path_passes_for_composite_plugin(self) -> None:
-        mean_plugin = next(
-            plugin
-            for plugin in builtin_model_plugins()
-            if plugin.spec.model_id == "gbdt_mean"
-        )
+        builtin = build_builtin_model_plugin_registry()
+        mean_plugin = builtin.get("gbdt_mean")
         self.assertIs(
             ModelPluginRegistry(
-                persistence_providers=builtin_gbdt_persistence_providers((mean_plugin,))
+                persistence_providers=builtin_gbdt_persistence_providers((mean_plugin,)),
+                explanation_providers=builtin.explanation_providers,
             ).register(mean_plugin),
             mean_plugin,
         )
@@ -257,7 +257,8 @@ class ContractImmutabilityTests(unittest.TestCase):
 
 class PluginRegistryTests(unittest.TestCase):
     def test_supported_persistence_requires_matching_executable_provider(self) -> None:
-        plugin = builtin_model_plugins()[0]
+        builtin = build_builtin_model_plugin_registry()
+        plugin = builtin.get("catboost")
         with self.assertRaisesRegex(ValueError, "executable trusted provider"):
             ModelPluginRegistry().register(plugin)
         with self.assertRaisesRegex(ValueError, "not registered"):
@@ -266,7 +267,10 @@ class PluginRegistryTests(unittest.TestCase):
             ).register(plugin)
         providers = builtin_gbdt_persistence_providers((plugin,))
         self.assertIs(
-            ModelPluginRegistry(persistence_providers=providers).register(plugin),
+            ModelPluginRegistry(
+                persistence_providers=providers,
+                explanation_providers=builtin.explanation_providers,
+            ).register(plugin),
             plugin,
         )
         wrong = NativeGBDTPersistenceProvider(
@@ -277,7 +281,26 @@ class PluginRegistryTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "incompatible"):
             ModelPluginRegistry(
-                persistence_providers=ModelPersistenceProviderRegistry((wrong,))
+                persistence_providers=ModelPersistenceProviderRegistry((wrong,)),
+                explanation_providers=builtin.explanation_providers,
+            ).register(plugin)
+
+    def test_supported_local_explanation_requires_matching_executable_provider(self) -> None:
+        builtin = build_builtin_model_plugin_registry()
+        plugin = builtin.get("catboost")
+        persistence = builtin_gbdt_persistence_providers((plugin,))
+        with self.assertRaisesRegex(ValueError, "executable trusted provider registry"):
+            ModelPluginRegistry(persistence_providers=persistence).register(plugin)
+
+        descriptor = plugin.local_explanation_provider
+        self.assertIsNotNone(descriptor)
+        mismatched = BuiltinNativeExplanationProvider(
+            descriptor, plugin.spec.model_id, "wrong-version", plugin.spec.adapter_version
+        )
+        with self.assertRaisesRegex(ValueError, "incompatible"):
+            ModelPluginRegistry(
+                persistence_providers=persistence,
+                explanation_providers=ModelExplanationProviderRegistry((mismatched,)),
             ).register(plugin)
 
     def test_builtin_profiles_are_exact_frozen_profiles(self) -> None:
@@ -310,6 +333,10 @@ class PluginRegistryTests(unittest.TestCase):
             [plugin.plugin_contract_hash for plugin in first.list()],
             [plugin.plugin_contract_hash for plugin in second.list()],
         )
+        for plugin in first.list():
+            with self.subTest(model_id=plugin.spec.model_id):
+                provider = first.explanation_providers.validate_plugin_provider(plugin)
+                self.assertEqual(plugin.local_explanation_provider, provider.descriptor)
 
     def test_factory_identity_and_duplicate_conflicts_are_rejected(self) -> None:
         plugin = _dummy_plugin()

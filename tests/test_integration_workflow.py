@@ -122,21 +122,16 @@ class IntegrationWorkflowTests(unittest.TestCase):
         self.assertIs(result, self.batch)
         self.assertEqual(self.inference.calls, [{"loaded_model_version": self.loaded, "snapshot": self.snapshot}])
 
-    def test_registered_future_model_explainer_is_available_and_delegated(self) -> None:
+    def test_model_id_mapping_cannot_execute_untrusted_explainer(self) -> None:
         capability = self.workflow.capabilities(
             loaded_model_version=self.loaded, prediction_batch=self.batch, selected_row_id="row-1",
         )["local_explanation"]
-        evidence = self.workflow.explain(
-            loaded_model_version=self.loaded, prediction_batch=self.batch, row_id="row-1",
-        )
-
-        self.assertEqual((capability.state, capability.reason_code), ("AVAILABLE", "LOCAL_EXPLAINER_READY"))
-        self.assertIs(evidence, self.evidence)
-        self.assertEqual(self.explainer.calls, [{
-            "loaded_model_version": self.loaded,
-            "prediction_batch": self.batch,
-            "row_id": "row-1",
-        }])
+        self.assertEqual((capability.state, capability.reason_code), ("UNSUPPORTED", "LOCAL_EXPLAINER_NOT_REGISTERED"))
+        with self.assertRaisesRegex(ValueError, "unsupported"):
+            self.workflow.explain(
+                loaded_model_version=self.loaded, prediction_batch=self.batch, row_id="row-1",
+            )
+        self.assertEqual(self.explainer.calls, [])
 
     def test_missing_explainer_does_not_block_prediction(self) -> None:
         unsupported = SimpleNamespace(summary=ModelVersionSummary("version-2", "experiment-1", "unregistered", "v1", ("feature-a",)))

@@ -14,10 +14,11 @@ import xgboost
 
 from komus_risk.artifacts import LoadedModelVersion
 from komus_risk.hashing import stable_hash
+from komus_risk.model_platform.contracts import ProviderDescriptor
 
 from .model_inference import PredictionBatch, PredictionRow
 
-_EVIDENCE_VERSION = "local_explanation_v1"
+_EVIDENCE_VERSION = "local_explanation_v2"
 _SUPPORTED_MODEL_IDS = frozenset({"catboost", "xgboost", "lightgbm"})
 _EXPLAINER_IDS = {model_id: f"{model_id}_native_shap" for model_id in _SUPPORTED_MODEL_IDS}
 _EXPLAINER_VERSIONS = {
@@ -39,6 +40,9 @@ class LocalFeatureContribution:
     raw_value: float
     shap_value: float
     abs_rank: int
+    display_name_ru: str | None = None
+    description_ru: str | None = None
+    direction: str = "neutral"
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,10 +67,59 @@ class LocalExplanationEvidence:
     explainer_version: str
     created_at: str
     evidence_hash: str
+    # V2 normalized aliases/provenance.  The V1 names above remain available
+    # for the accepted REDACTED_V1 request contract.
+    source_kind: str = "model_version"
+    source_artifact_id: str = ""
+    model_binding_id: str = ""
+    object_id: str = ""
+    prediction_probability: float = 0.0
+    explanation_method_id: str = ""
+    explanation_method_version: str = ""
+    output_space: str = "raw_margin"
+    explained_output_value: float = 0.0
+    provider_id: str = ""
+    provider_version: str = ""
+    provenance: Any = None
+
+    def __post_init__(self) -> None:
+        if self.evidence_version != "local_explanation_v2":
+            return
+        required = (
+            self.source_kind, self.source_artifact_id, self.model_binding_id,
+            self.object_id, self.explanation_method_id,
+            self.explanation_method_version, self.output_space,
+            self.provider_id, self.provider_version,
+        )
+        if any(not isinstance(value, str) or not value.strip() for value in required):
+            raise ValueError("LocalExplanationEvidence V2 has incomplete trusted provenance.")
+        if self.object_id != self.row_id:
+            raise ValueError("LocalExplanationEvidence V2 identity is inconsistent.")
+        if self.source_kind == "model_version":
+            if self.model_binding_id != self.model_version_id:
+                raise ValueError("LocalExplanationEvidence V2 ModelVersion identity is inconsistent.")
+        elif self.source_kind == "oof_fold":
+            if not isinstance(self.provenance, dict) or not isinstance(self.provenance.get("fold_id"), str) or not self.provenance["fold_id"].strip():
+                raise ValueError("LocalExplanationEvidence V2 OOF fold provenance is incomplete.")
+        else:
+            raise ValueError("LocalExplanationEvidence V2 source kind is unsupported.")
+        if not np.isclose(self.prediction_probability, self.probability, rtol=1e-12, atol=1e-12):
+            raise ValueError("LocalExplanationEvidence V2 prediction identity is inconsistent.")
+        if self.output_space == "probability" and not np.isclose(
+            self.base_value + sum(item.shap_value for item in self.features),
+            self.explained_output_value, rtol=1e-8, atol=1e-10,
+        ):
+            raise ValueError("LocalExplanationEvidence V2 probability reconstruction failed.")
 
 
 class LocalExplanationService:
     """Builds fail-closed native TreeSHAP evidence for a predicted row."""
+
+    def __init__(self, *, provider_descriptor: ProviderDescriptor | None = None, expected_model_id: str | None = None) -> None:
+        if provider_descriptor is not None and provider_descriptor.provider_kind != "local_explanation":
+            raise ValueError("Local explanation provider has an invalid provider kind.")
+        self._provider_descriptor = provider_descriptor
+        self._expected_model_id = expected_model_id
 
     def explain(
         self,
@@ -79,6 +132,8 @@ class LocalExplanationService:
         model_id, feature_ids, columns, dataset = self._validate_binding(
             loaded_model_version, prediction_batch, metadata
         )
+        if self._expected_model_id is not None and model_id != self._expected_model_id:
+            raise ValueError("Trusted explanation provider does not match the loaded model.")
         row, values = self._locate_row(prediction_batch, row_id, len(columns))
         frame = pd.DataFrame([values], columns=columns, dtype=float)
         probability = float(loaded_model_version.predictor.predict_positive_proba(frame)[0])
@@ -98,12 +153,15 @@ class LocalExplanationService:
                 raw_value=float(values[index]),
                 shap_value=float(shap_values[index]),
                 abs_rank=0,
+                display_name_ru=metadata["feature_specs"][index].get("display_name_ru"),
+                description_ru=metadata["feature_specs"][index].get("description_ru"),
+                direction=("increases_output" if shap_values[index] > 0 else "decreases_output" if shap_values[index] < 0 else "neutral"),
             )
             for index, column in enumerate(columns)
         ]
         contributions.sort(key=lambda item: (-abs(item.shap_value), columns.index(item.column_name)))
         ranked = tuple(
-            LocalFeatureContribution(item.feature_id, item.column_name, item.raw_value, item.shap_value, rank)
+            LocalFeatureContribution(item.feature_id, item.column_name, item.raw_value, item.shap_value, rank, item.display_name_ru, item.description_ru, item.direction)
             for rank, item in enumerate(contributions, start=1)
         )
         payload = {
@@ -123,8 +181,20 @@ class LocalExplanationService:
             "raw_model_output": raw_model_output,
             "base_value": base_value,
             "features": ranked,
-            "explainer_id": _EXPLAINER_IDS[model_id],
-            "explainer_version": _EXPLAINER_VERSIONS[model_id],
+            "explainer_id": self._provider_descriptor.provider_id if self._provider_descriptor else _EXPLAINER_IDS[model_id],
+            "explainer_version": self._provider_descriptor.provider_version if self._provider_descriptor else _EXPLAINER_VERSIONS[model_id],
+            "source_kind": "model_version",
+            "source_artifact_id": metadata["experiment_artifact_id"],
+            "model_binding_id": loaded_model_version.summary.model_version_id,
+            "object_id": row.row_id,
+            "prediction_probability": float(row.probability),
+            "explanation_method_id": self._provider_descriptor.provider_id if self._provider_descriptor else _EXPLAINER_IDS[model_id],
+            "explanation_method_version": self._provider_descriptor.provider_version if self._provider_descriptor else _EXPLAINER_VERSIONS[model_id],
+            "output_space": "raw_margin",
+            "explained_output_value": raw_model_output,
+            "provider_id": self._provider_descriptor.provider_id if self._provider_descriptor else _EXPLAINER_IDS[model_id],
+            "provider_version": self._provider_descriptor.provider_version if self._provider_descriptor else _EXPLAINER_VERSIONS[model_id],
+            "provenance": {"feature_binding_hash": metadata["feature_set_hash"], "model_binding_id": loaded_model_version.summary.model_version_id},
         }
         return LocalExplanationEvidence(
             **payload,

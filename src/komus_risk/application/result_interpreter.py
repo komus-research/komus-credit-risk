@@ -83,7 +83,15 @@ class ResultInterpreterService:
             raise ValueError("Result interpreter requires LocalExplanationEvidence.")
         self._validate_role(recipient_role)
         prompt = self._load_prompt(recipient_role)
-        features = self._top_features(evidence, self._text_map(display_names_by_feature_id, "display_names_by_feature_id"), self._text_map(descriptions_by_feature_id, "descriptions_by_feature_id"))
+        # V2 metadata is evidence-bound. External maps only serve genuinely
+        # legacy evidence, which has no embedded trusted feature text.
+        if evidence.evidence_version == "local_explanation_v2":
+            display_names: Mapping[str, str] = {}
+            descriptions: Mapping[str, str] = {}
+        else:
+            display_names = self._text_map(display_names_by_feature_id, "display_names_by_feature_id")
+            descriptions = self._text_map(descriptions_by_feature_id, "descriptions_by_feature_id")
+        features = self._top_features(evidence, display_names, descriptions)
         payload = {
             "request_version": REQUEST_VERSION, "prompt_id": prompt.prompt_id, "prompt_version": prompt.prompt_version, "prompt_hash": prompt.prompt_hash,
             "recipient_role": recipient_role, "evidence_hash": evidence.evidence_hash, "model_version_id": evidence.model_version_id,
@@ -166,7 +174,7 @@ class ResultInterpreterService:
             raise ValueError("LocalExplanationEvidence feature abs_rank values must be unique and contiguous.")
         by_rank = {item.abs_rank: item for item in source}
         selected = (by_rank[rank] for rank in range(1, min(TOP_N, len(source)) + 1))
-        return tuple(InterpreterFeatureFact(item.feature_id, item.column_name, item.raw_value, item.shap_value, item.abs_rank, display_names.get(item.feature_id), descriptions.get(item.feature_id)) for item in selected)
+        return tuple(InterpreterFeatureFact(item.feature_id, item.column_name, item.raw_value, item.shap_value, item.abs_rank, item.display_name_ru if item.display_name_ru is not None else display_names.get(item.feature_id), item.description_ru if item.description_ru is not None else descriptions.get(item.feature_id)) for item in selected)
 
     @staticmethod
     def _client_payload(request: ResultInterpreterRequest) -> dict[str, Any]:

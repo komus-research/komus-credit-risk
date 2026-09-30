@@ -39,6 +39,11 @@ from .contracts import (
     RecommendedModelProfile,
 )
 from .persistence import builtin_gbdt_persistence_providers
+from .explainability import (
+    BuiltinNativeExplanationProvider,
+    GBDTMeanProbabilityExplanationProvider,
+    ModelExplanationProviderRegistry,
+)
 from .registry import ModelPluginRegistry
 
 
@@ -67,6 +72,12 @@ _XGBOOST_EXPLANATION_PROVIDER = ProviderDescriptor(
 _LIGHTGBM_EXPLANATION_PROVIDER = ProviderDescriptor(
     "lightgbm_native_local_shap", "1", "local_explanation",
     {"implementation": "native LightGBM pred_contrib"},
+)
+_GBDT_MEAN_EXPLANATION_PROVIDER = ProviderDescriptor(
+    "gbdt_mean_probability_shap",
+    "1",
+    "local_explanation",
+    {"implementation": "trusted model-agnostic probability SHAP", "output_space": "probability"},
 )
 
 
@@ -411,17 +422,32 @@ def builtin_model_plugins() -> tuple[ModelPlugin, ...]:
         _mean_schema(),
         _profile(GBDT_MEAN_MODEL_SPEC, GBDT_MEAN_PROFILE),
         mean_factory,
-        _capabilities(GBDT_MEAN_MODEL_SPEC, mean_provider, local_explanation_provider=None),
+        _capabilities(GBDT_MEAN_MODEL_SPEC, mean_provider, local_explanation_provider=_GBDT_MEAN_EXPLANATION_PROVIDER),
         _input_contract(GBDT_MEAN_MODEL_SPEC),
         persistence_provider=mean_provider,
+        local_explanation_provider=_GBDT_MEAN_EXPLANATION_PROVIDER,
     )
     return catboost, xgboost, lightgbm, mean
 
 
 def build_builtin_model_plugin_registry() -> ModelPluginRegistry:
     plugins = builtin_model_plugins()
+    explanation_providers = []
+    for plugin in plugins:
+        descriptor = plugin.local_explanation_provider
+        if descriptor is None:
+            continue
+        provider_type = (
+            GBDTMeanProbabilityExplanationProvider
+            if plugin.spec.model_id == "gbdt_mean"
+            else BuiltinNativeExplanationProvider
+        )
+        explanation_providers.append(provider_type(
+            descriptor, plugin.spec.model_id, plugin.spec.version, plugin.spec.adapter_version
+        ))
     registry = ModelPluginRegistry(
-        persistence_providers=builtin_gbdt_persistence_providers(plugins)
+        persistence_providers=builtin_gbdt_persistence_providers(plugins),
+        explanation_providers=ModelExplanationProviderRegistry(explanation_providers),
     )
     for plugin in plugins:
         registry.register(plugin)

@@ -8,6 +8,11 @@ from typing import Any, Protocol
 
 from komus_risk.artifacts import LoadedModelVersion, ModelVersionStore
 from komus_risk.data import TabularSnapshot
+from komus_risk.model_platform import (
+    ModelExplanationProviderRegistry,
+    ModelPluginRegistry,
+    TrustedExplanationContext,
+)
 
 from .local_explanation import LocalExplanationEvidence
 from .model_inference import ModelInferenceService, PredictionBatch
@@ -87,6 +92,7 @@ class LocalExplanationProvider(Protocol):
         loaded_model_version: LoadedModelVersion,
         prediction_batch: PredictionBatch,
         row_id: str,
+        explanation_context: TrustedExplanationContext | None = None,
     ) -> LocalExplanationEvidence: ...
 
 
@@ -99,7 +105,9 @@ class IntegrationWorkflowService:
         final_model_training_service: FinalModelTrainingService,
         model_version_store: ModelVersionStore,
         model_inference_service: ModelInferenceService,
-        local_explainers: Mapping[str, LocalExplanationProvider],
+        local_explainers: Mapping[str, LocalExplanationProvider] | None = None,
+        model_plugin_registry: ModelPluginRegistry | None = None,
+        explanation_providers: ModelExplanationProviderRegistry | None = None,
         result_interpreter_service: ResultInterpreterService | None = None,
         result_interpreter_client: ResultInterpreterClient | None = None,
         outbound_interpreter_policy: OutboundInterpreterPolicy | None = None,
@@ -108,7 +116,14 @@ class IntegrationWorkflowService:
         self.final_model_training_service = final_model_training_service
         self.model_version_store = model_version_store
         self.model_inference_service = model_inference_service
-        self.local_explainers = dict(local_explainers)
+        # Kept as a source-compatible argument for pre-UME callers. This map
+        # is deliberately not retained or consulted by the trusted workflow.
+        self.model_plugin_registry = model_plugin_registry
+        self.explanation_providers = explanation_providers or (
+            model_plugin_registry.explanation_providers if model_plugin_registry else None
+        )
+        if self.explanation_providers is not None and self.model_plugin_registry is None:
+            raise ValueError("Explanation provider registry requires the matching ModelPluginRegistry.")
         self.result_interpreter_service = result_interpreter_service
         self.result_interpreter_client = result_interpreter_client
         self.outbound_interpreter_policy = outbound_interpreter_policy
@@ -155,15 +170,40 @@ class IntegrationWorkflowService:
         loaded_model_version: LoadedModelVersion,
         prediction_batch: PredictionBatch,
         row_id: str,
+        explanation_context: TrustedExplanationContext | None = None,
     ) -> LocalExplanationEvidence:
         """Delegate only to the provider registered for the saved model family."""
-        provider = self.local_explainers.get(loaded_model_version.summary.model_id)
+        provider = self._explanation_provider(loaded_model_version.summary.model_id)
         if provider is None:
             raise ValueError("Local explanation is unsupported for this saved model version.")
-        return provider.explain(
+        arguments = {
+            "loaded_model_version": loaded_model_version,
+            "prediction_batch": prediction_batch,
+            "row_id": row_id,
+        }
+        if explanation_context is not None:
+            arguments["explanation_context"] = explanation_context
+        return provider.explain(**arguments)
+
+    def explain_batch(
+        self,
+        *,
+        loaded_model_version: LoadedModelVersion,
+        prediction_batch: PredictionBatch,
+        row_ids: tuple[str, ...],
+        explanation_context: TrustedExplanationContext,
+    ) -> tuple[LocalExplanationEvidence, ...]:
+        """Trusted fold-model batch boundary for future OOF global evidence."""
+        provider = self._explanation_provider(loaded_model_version.summary.model_id)
+        if provider is None:
+            raise ValueError("Local explanation is unsupported for this saved model version.")
+        if not isinstance(explanation_context, TrustedExplanationContext):
+            raise ValueError("Batch explanation requires trusted background context.")
+        return provider.explain_batch(
             loaded_model_version=loaded_model_version,
             prediction_batch=prediction_batch,
-            row_id=row_id,
+            row_ids=row_ids,
+            explanation_context=explanation_context,
         )
 
     def prepare_interpretation(
@@ -275,7 +315,7 @@ class IntegrationWorkflowService:
         )
         if loaded_model_version is None:
             explanation = CapabilityStatus("WAITING_FOR_INPUT", "MODEL_VERSION_MISSING")
-        elif loaded_model_version.summary.model_id not in self.local_explainers:
+        elif self._explanation_provider(loaded_model_version.summary.model_id) is None:
             explanation = CapabilityStatus("UNSUPPORTED", "LOCAL_EXPLAINER_NOT_REGISTERED")
         elif prediction_batch is None:
             explanation = CapabilityStatus("WAITING_FOR_INPUT", "PREDICTION_BATCH_MISSING")
@@ -289,6 +329,19 @@ class IntegrationWorkflowService:
             "local_explanation": explanation,
             "result_interpretation": self._result_interpretation_capability(local_explanation_evidence),
         }
+
+    def _explanation_provider(self, model_id: str):
+        """Resolve code only from trusted plugin/provider binding when present."""
+        if self.explanation_providers is not None:
+            try:
+                if self.model_plugin_registry is None:
+                    return None
+                return self.explanation_providers.validate_plugin_provider(
+                    self.model_plugin_registry.get(model_id)
+                )
+            except (KeyError, ValueError):
+                return None
+        return None
 
     def _result_interpretation_capability(
         self,

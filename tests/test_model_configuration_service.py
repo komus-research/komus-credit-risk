@@ -137,7 +137,8 @@ class ModelConfigurationServiceTests(unittest.TestCase):
             ),
         )
         registry = ModelPluginRegistry(
-            persistence_providers=self.registry.persistence_providers
+            persistence_providers=self.registry.persistence_providers,
+            explanation_providers=self.registry.explanation_providers,
         )
         registry.register(
             replace(

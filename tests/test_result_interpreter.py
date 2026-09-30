@@ -232,6 +232,76 @@ class ResultInterpreterTests(unittest.TestCase):
         self.assertEqual("Проверенное предметное описание", request.features[0].description_ru)
         self.assertIsNone(request.features[1].display_name_ru)
 
+    def test_normalized_v2_evidence_uses_one_generic_path_and_embedded_metadata(self) -> None:
+        trusted_features = (
+            replace(
+                self.evidence.features[0],
+                display_name_ru="Trusted feature name",
+                description_ru="Trusted feature description",
+            ),
+            *self.evidence.features[1:],
+        )
+        for model_id in ("catboost", "xgboost", "lightgbm", "gbdt_mean"):
+            with self.subTest(model_id=model_id):
+                evidence = replace(
+                    self.evidence,
+                    evidence_version="local_explanation_v2",
+                    model_id=model_id,
+                    features=trusted_features,
+                    source_kind="model_version",
+                    source_artifact_id="artifact-v2",
+                    model_binding_id=self.evidence.model_version_id,
+                    object_id=self.evidence.row_id,
+                    prediction_probability=self.evidence.probability,
+                    explanation_method_id="trusted-method",
+                    explanation_method_version="1",
+                    output_space="raw_margin",
+                    explained_output_value=self.evidence.raw_model_output,
+                    provider_id="trusted-provider",
+                    provider_version="1",
+                    provenance={"feature_binding_hash": "feature-set-1"},
+                )
+                request = self.service.build_request(
+                    evidence=evidence,
+                    display_names_by_feature_id={"feature-1": "Untrusted override"},
+                    descriptions_by_feature_id={"feature-1": "Invented description"},
+                )
+                self.assertEqual("Trusted feature name", request.features[0].display_name_ru)
+                self.assertEqual("Trusted feature description", request.features[0].description_ru)
+                client = FakeInterpreter()
+                self.service.interpret_request(request=request, client=client)
+                payload = client.received_payload or {}
+                self.assertNotIn(model_id, json.dumps(payload))
+                self.assertEqual(
+                    [item.feature_id for item in request.features],
+                    [item["feature_id"] for item in payload["top_features"]],
+                )
+                self.assertNotIn("Invented description", json.dumps(payload))
+
+    def test_v2_missing_embedded_text_ignores_external_metadata_maps(self) -> None:
+        evidence = replace(
+            self.evidence, evidence_version="local_explanation_v2",
+            source_kind="model_version", source_artifact_id="artifact-v2",
+            model_binding_id=self.evidence.model_version_id, object_id=self.evidence.row_id,
+            prediction_probability=self.evidence.probability,
+            explanation_method_id="method", explanation_method_version="1",
+            output_space="raw_margin", explained_output_value=self.evidence.raw_model_output,
+            provider_id="provider", provider_version="1",
+            provenance={"feature_binding_hash": "feature-set-1"},
+            features=(replace(self.evidence.features[0], display_name_ru=None, description_ru=None), *self.evidence.features[1:]),
+        )
+        request = self.service.build_request(
+            evidence=evidence,
+            display_names_by_feature_id={"feature-1": "Injected name"},
+            descriptions_by_feature_id={"feature-1": "Injected description"},
+        )
+        self.assertIsNone(request.features[0].display_name_ru)
+        self.assertIsNone(request.features[0].description_ru)
+        client = FakeInterpreter()
+        self.service.interpret_request(request=request, client=client)
+        self.assertNotIn("Injected name", json.dumps(client.received_payload))
+        self.assertNotIn("Injected description", json.dumps(client.received_payload))
+
     def test_client_receives_json_compatible_minimal_payload_and_instruction_boundaries(self) -> None:
         client = FakeInterpreter()
         response = self.service.interpret(evidence=self.evidence, client=client)

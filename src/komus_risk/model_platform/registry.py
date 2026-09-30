@@ -8,16 +8,19 @@ from komus_risk.model_platform.contracts import (
     ModelPlugin,
 )
 from komus_risk.model_platform.persistence import ModelPersistenceProviderRegistry
+from komus_risk.model_platform.explainability import ModelExplanationProviderRegistry
 
 
 class ModelPluginRegistry:
     """Stores compatible plugin registrations without replacing ``ModelRegistry``."""
 
     def __init__(
-        self, *, persistence_providers: ModelPersistenceProviderRegistry | None = None
+        self, *, persistence_providers: ModelPersistenceProviderRegistry | None = None,
+        explanation_providers: ModelExplanationProviderRegistry | None = None,
     ) -> None:
         self._plugins: dict[str, ModelPlugin] = {}
         self._persistence_providers = persistence_providers
+        self._explanation_providers = explanation_providers
 
     def register(
         self, plugin: ModelPlugin, *, registry_key: str | None = None
@@ -53,6 +56,11 @@ class ModelPluginRegistry:
     def persistence_providers(self) -> ModelPersistenceProviderRegistry | None:
         """Trusted executable providers, intentionally absent from catalog DTOs."""
         return self._persistence_providers
+
+    @property
+    def explanation_providers(self) -> ModelExplanationProviderRegistry | None:
+        """Trusted executable providers; catalog callers only see descriptors."""
+        return self._explanation_providers
 
     def _validate(self, plugin: ModelPlugin) -> None:
         spec = plugin.spec
@@ -124,6 +132,18 @@ class ModelPluginRegistry:
             except KeyError as error:
                 raise ValueError(
                     "persistence/loading executable provider is not registered."
+                ) from error
+        explanation = plugin.capability_manifest.get(CapabilityDomain.LOCAL_EXPLANATION)
+        if explanation.support is not CapabilitySupport.UNSUPPORTED:
+            if self._explanation_providers is None:
+                raise ValueError(
+                    "local explanation capability requires an executable trusted provider registry."
+                )
+            try:
+                self._explanation_providers.validate_plugin_provider(plugin)
+            except KeyError as error:
+                raise ValueError(
+                    "local explanation executable provider is not registered."
                 ) from error
 
     @staticmethod
