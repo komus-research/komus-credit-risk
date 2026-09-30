@@ -187,6 +187,26 @@ class ExperimentArtifactTests(unittest.TestCase):
         self.assertEqual(len(list((directory / "fold_models").glob("fold-*"))), self.config.folds)
         self.assertFalse((directory / "evidence" / "target.npy").exists())
 
+    def test_v3_fold_load_is_provider_bound_and_has_deterministic_opaque_identity(self) -> None:
+        provider = _RoundTripProvider()
+        saved = self.store.save(
+            config=self.config, dataset_contract=self.contract, population=self.population,
+            run_output=self._v3_output(), configuration_record=self._configuration_record(),
+            smoke_evidence=self._smoke_evidence(), fold_model_provider=provider,
+        )
+        first = self.store.load_oof_fold_model(saved.artifact_id, 1, provider=provider)
+        second = self.store.load_oof_fold_model(saved.artifact_id, 1, provider=provider)
+
+        self.assertEqual(first.model_binding_id, second.model_binding_id)
+        self.assertNotEqual(first.model_binding_id, "fold-1")
+        self.assertEqual(first.metadata["validation_row_positions"], [0, 3])
+        incompatible = _RoundTripProvider()
+        incompatible.descriptor = ProviderDescriptor(
+            "other_provider", "1", "persistence", {"model_id": "catboost"}
+        )
+        with self.assertRaisesRegex(ValueError, "provenance"):
+            self.store.load_oof_fold_model(saved.artifact_id, 1, provider=incompatible)
+
     def test_v3_semantic_y_true_mismatch_fails_closed_without_publication(self) -> None:
         output = self._v3_output()
         evidence = output.oof_evidence

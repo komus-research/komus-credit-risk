@@ -109,6 +109,15 @@ class _OOFContext:
     identifiers: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class _ResolvedOOFObject:
+    """Internal shared Object Detail identity resolution for Result V2 consumers."""
+
+    context: _OOFContext
+    index: int
+    object_id: str
+
+
 class OOFResultService:
     """Serves immutable V3 OOF facts without accessing a runner or final test data."""
 
@@ -211,20 +220,8 @@ class OOFResultService:
     ) -> OOFObjectDetail:
         context = self._context(artifact_id)
         value = self._threshold(threshold)
-        if not isinstance(object_id, str) or not object_id:
-            raise OOFResultError("OBJECT_NOT_FOUND")
-        matches = np.fromiter(
-            (
-                self._object_id(context, index) == object_id
-                for index in range(len(context.scores))
-            ),
-            dtype=bool,
-            count=len(context.scores),
-        )
-        positions = np.flatnonzero(matches)
-        if len(positions) != 1:
-            raise OOFResultError("OBJECT_NOT_FOUND")
-        index = int(positions[0])
+        resolved = _resolve_oof_object(context, object_id)
+        index = resolved.index
         predicted = bool(context.scores[index] >= value)
         return OOFObjectDetail(
             artifact_id=context.artifact.artifact_id,
@@ -483,3 +480,29 @@ class OOFResultService:
                 "row_position": int(context.row_positions[index]),
             }
         )
+
+
+def _resolve_oof_object(context: _OOFContext, object_id: str) -> _ResolvedOOFObject:
+    """Resolve the accepted BE2A public object identity exactly once."""
+    if not isinstance(object_id, str) or not object_id:
+        raise OOFResultError("OBJECT_NOT_FOUND")
+    matches = np.fromiter(
+        (
+            OOFResultService._object_id(context, index) == object_id
+            for index in range(len(context.scores))
+        ),
+        dtype=bool,
+        count=len(context.scores),
+    )
+    positions = np.flatnonzero(matches)
+    if len(positions) != 1:
+        raise OOFResultError("OBJECT_NOT_FOUND")
+    return _ResolvedOOFObject(context, int(positions[0]), object_id)
+
+
+def _load_oof_object(
+    artifact_store: ExperimentArtifactStore, artifact_id: str, object_id: str
+) -> _ResolvedOOFObject:
+    """Shared private read path preserving public Result V2 identity semantics."""
+    service = OOFResultService(artifact_store)
+    return _resolve_oof_object(service._context(artifact_id), object_id)

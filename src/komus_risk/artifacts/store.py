@@ -20,9 +20,10 @@ from komus_risk.model_platform import (
     SmokeEvidence,
     SmokeStatus,
 )
+from komus_risk.model_platform.contracts import ProviderDescriptor
 from komus_risk.model_platform.persistence import ModelPersistenceProvider
 
-from .contracts import LoadedExperimentArtifact
+from .contracts import LoadedExperimentArtifact, LoadedOOFFoldModel
 
 _SCHEMA_VERSION_V1 = "1"
 _SCHEMA_VERSION_V2 = "2"
@@ -195,6 +196,145 @@ class ExperimentArtifactStore:
         return self._load_directory(
             self.experiments / artifact_id, artifact_id, allow_temporary=False
         )
+
+    def load_oof_fold_model(
+        self,
+        artifact_id: str,
+        fold_number: int,
+        *,
+        provider: ModelPersistenceProvider,
+    ) -> LoadedOOFFoldModel:
+        """Reload exactly one V3 fold through a registered trusted provider.
+
+        Filesystem layout, hashes and declarative fold provenance are kept in
+        this persistence boundary.  Callers receive only an ephemeral loaded
+        predictor plus the immutable evidence needed to bind it.
+        """
+        artifact = self.load(artifact_id)
+        if artifact.manifest.get("artifact_schema_version") != _SCHEMA_VERSION_V3:
+            raise ValueError("OOF fold models require an Artifact V3 bundle.")
+        if (
+            isinstance(fold_number, bool)
+            or not isinstance(fold_number, int)
+            or not 1 <= fold_number <= artifact.config.folds
+        ):
+            raise ValueError("OOF fold number is invalid.")
+        evidence = artifact.run_output.oof_evidence
+        if evidence is None:
+            raise ValueError("OOF fold model evidence is incomplete.")
+        directory = self.experiments / artifact_id
+        fold_dir = directory / "fold_models" / f"fold-{fold_number:03d}"
+        native_dir = fold_dir / "native"
+        metadata = self._read_json(fold_dir / "metadata.json")
+        self._validate_oof_fold_load_metadata(
+            artifact=artifact,
+            fold_number=fold_number,
+            metadata=metadata,
+            provider=provider,
+        )
+        native_names = tuple(metadata["native_files"])
+        if (
+            tuple(provider.native_files()) != native_names
+            or any(
+                not (native_dir / name).is_file()
+                or self._raw_hash(native_dir / name) != metadata["native_hashes"][name]
+                for name in native_names
+            )
+        ):
+            raise ValueError("OOF fold native model evidence is invalid.")
+        try:
+            predictor = provider.load(native_dir, tuple(evidence.feature_columns))
+        except Exception as error:
+            raise ValueError("OOF fold predictor could not be loaded.") from error
+        if (
+            predictor.model_id != artifact.config.model_id
+            or tuple(predictor.feature_columns) != tuple(evidence.feature_columns)
+        ):
+            raise ValueError("OOF fold predictor does not match trusted evidence.")
+        return LoadedOOFFoldModel(
+            artifact_id=artifact.artifact_id,
+            fold_number=fold_number,
+            model_binding_id=self._oof_fold_binding_id(
+                artifact_id=artifact.artifact_id, metadata=metadata
+            ),
+            metadata=metadata,
+            predictor=predictor,
+        )
+
+    @staticmethod
+    def _oof_fold_binding_id(*, artifact_id: str, metadata: dict[str, Any]) -> str:
+        """Opaque deterministic identity for immutable persisted fold evidence."""
+        return stable_hash(
+            {
+                "binding_schema": "oof_fold_model_binding_v1",
+                "artifact_id": artifact_id,
+                "fold_number": metadata["fold_number"],
+                "provider": metadata["provider"],
+                "model_id": metadata["model_id"],
+                "model_version": metadata["model_version"],
+                "adapter_version": metadata["adapter_version"],
+                "feature_columns": metadata["feature_columns"],
+                "validation_row_positions": metadata["validation_row_positions"],
+                "native_hashes": metadata["native_hashes"],
+                "population_id": metadata["population_id"],
+                "population_fingerprint": metadata["population_fingerprint"],
+            }
+        )
+
+    def _validate_oof_fold_load_metadata(
+        self,
+        *,
+        artifact: LoadedExperimentArtifact,
+        fold_number: int,
+        metadata: dict[str, Any],
+        provider: ModelPersistenceProvider,
+    ) -> None:
+        evidence = artifact.run_output.oof_evidence
+        assert evidence is not None
+        record = artifact.configuration_record
+        expected_positions = np.asarray(artifact.run_output.row_positions)[
+            np.asarray(artifact.run_output.fold_assignments) == fold_number
+        ].tolist()
+        required = {
+            "fold_number", "fold_seed", "provider", "model_id", "model_version",
+            "adapter_version", "feature_columns", "validation_row_positions",
+            "native_files", "native_hashes", "population_id", "population_fingerprint",
+        }
+        try:
+            descriptor_data = metadata["provider"]
+            if not isinstance(descriptor_data, dict) or set(descriptor_data) != {
+                "provider_id", "provider_version", "provider_kind", "metadata"
+            }:
+                raise ValueError("invalid descriptor shape")
+            persisted_descriptor = ProviderDescriptor(**descriptor_data)
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("OOF fold persistence provider descriptor is invalid.") from error
+        if (
+            set(metadata) != required
+            or record is None
+            or metadata["fold_number"] != fold_number
+            or metadata["fold_seed"] != artifact.config.seed + fold_number
+            or persisted_descriptor != provider.descriptor
+            or (provider.model_id, provider.model_version, provider.adapter_version)
+            != (artifact.config.model_id, artifact.config.model_version, record.adapter_version)
+            or (metadata["model_id"], metadata["model_version"], metadata["adapter_version"])
+            != (provider.model_id, provider.model_version, provider.adapter_version)
+            or metadata["feature_columns"] != list(evidence.feature_columns)
+            or metadata["validation_row_positions"] != expected_positions
+            or metadata["population_id"] != artifact.population.population_id
+            or metadata["population_fingerprint"] != artifact.population.population_fingerprint
+            or not isinstance(metadata["native_files"], list)
+            or tuple(metadata["native_files"]) != tuple(provider.native_files())
+            or not isinstance(metadata["native_hashes"], dict)
+            or set(metadata["native_hashes"]) != set(metadata["native_files"])
+            or any(
+                not isinstance(name, str)
+                or not isinstance(digest, str)
+                or len(digest) != 64
+                for name, digest in metadata["native_hashes"].items()
+            )
+        ):
+            raise ValueError("OOF fold model provenance is invalid.")
 
     def _load_directory(
         self, directory: Path, artifact_id: str, *, allow_temporary: bool

@@ -21,6 +21,7 @@ from .local_explanation import (
     LocalFeatureContribution,
 )
 from .model_inference import ModelInferenceService, PredictionBatch, PredictionRow
+from .oof_explanation import OOFExplanationError, OOFExplanationService
 from .model_training import FinalModelTrainingService
 from .native_session import (
     NativeSessionSnapshot,
@@ -72,6 +73,8 @@ __all__ = [
     "LocalExplanationService",
     "LocalFeatureContribution",
     "ModelInferenceService",
+    "OOFExplanationError",
+    "OOFExplanationService",
     "NativeSessionSnapshot",
     "NativeSessionStore",
     "FeatureSelectionError",

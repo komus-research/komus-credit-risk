@@ -8,6 +8,7 @@ from typing import Any
 from komus_risk.contracts import DatasetContract, ExperimentConfig
 from komus_risk.experiments import EvaluationPopulation, ExperimentRunOutput
 from komus_risk.model_platform import ModelConfigurationRecord, SmokeEvidence
+from komus_risk.models.gbdt.native import NativePredictor
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,3 +34,22 @@ class LoadedExperimentArtifact:
             dataset_contract=self.dataset_contract,
             run_output=self.run_output,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedOOFFoldModel:
+    """Trusted, ephemeral evaluation evidence for one persisted V3 fold.
+
+    This is deliberately not a ``LoadedModelVersion``: fold models are only
+    evidence for the OOF evaluation population and must never enter the model
+    catalogue or the ModelVersion store.
+    """
+
+    artifact_id: str
+    fold_number: int
+    model_binding_id: str
+    metadata: dict[str, Any]
+    predictor: NativePredictor
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", dict(self.metadata))
