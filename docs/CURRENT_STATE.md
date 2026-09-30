@@ -1262,18 +1262,27 @@ prediction
 - external LLM запускается только explicit user action из-за cost/privacy boundary;
 - final/refit model fallback для OOF explanation запрещён.
 
-### UME-BE1 RESULT / NEXT
+### UME-BE1 / R2-BE2A RESULT / NEXT
 
 UME-BE1 принят Reviewer и закрыт.
 
 Source commit:
-2bc4e175911cec29bf3c21aa129a40609b0ee4b7.
+`2bc4e175911cec29bf3c21aa129a40609b0ee4b7`.
 
-Принятый implementation включает universal trusted provider boundary, exact OOF fold provenance для всех четырёх built-in моделей, LocalExplanationEvidence V2, bounded deterministic background, batch explanation path и generic Result Interpreter V2 path.
+Принятый implementation включает universal trusted provider boundary, exact OOF fold provenance для всех четырёх built-in моделей, `LocalExplanationEvidence V2`, bounded deterministic background, batch explanation path и generic Result Interpreter V2 path.
+
+R2-BE2A — **OOF Result Read Core — ACCEPTED / CLOSED**.
+
+Source commit:
+`81707dc14edf678db39a3ba71f5aad0c50c36eab`.
+
+Принятый `OOFResultService` читает immutable Artifact V3 и даёт public DTO для summary, explicit threshold metrics, random-access object list и object detail с Fold provenance. Threshold остаётся derived operating point; object identity — opaque deterministic ID; final test, Runner и filesystem internals в Result read path не входят.
 
 Следующий backend stage:
 
-**R2-BE2 — Result Read + OOF Explainability**.
+**R2-BE2B — Local OOF Explainability**.
+
+Следующий вопрос: можно ли по `artifact_id + object_id` восстановить exact persisted fold model, воспроизвести OOF score и получить validated `LocalExplanationEvidence V2` без final/refit fallback.
 
 Object Detail visual lock теперь покрывает два состояния: Local Explanation READY до вызова LLM (`05_result_object_detail_v1.png`) и LLM READY после успешной интерпретации (`06_result_object_detail_llm_v1.png`). После backend contracts — native Result implementation; отдельные loading/error и expanded-detail states уточняются только при необходимости.
 

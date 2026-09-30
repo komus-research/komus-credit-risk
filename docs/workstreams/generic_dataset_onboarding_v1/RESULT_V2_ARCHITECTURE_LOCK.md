@@ -286,15 +286,18 @@ Quality V1A — **ACCEPTED**, source commit `d3d001b4e6ab1a927b0289d1020c2415d7a
 
 R2-BE1 — OOF Evidence Artifact V3 — **ACCEPTED / CLOSED**, source commit `5e4fff6e38d4d31b6c24dc83c6b154cb9d0706ab`.
 
+UME-BE1 — Universal Model Explainability V1 — **ACCEPTED / CLOSED**, source commit `2bc4e175911cec29bf3c21aa129a40609b0ee4b7`.
+
+R2-BE2A — OOF Result Read Core — **ACCEPTED / CLOSED**, source commit `81707dc14edf678db39a3ba71f5aad0c50c36eab`.
+
+R2-BE2A реализует public read boundary для:
+- summary;
+- explicit threshold metrics;
+- random-access object list;
+- object detail с Fold provenance.
+
 Следующий backend stage:
 
-**UME-BE1 — Universal Model Explainability V1**
+**R2-BE2B — Local OOF Explainability**
 
-Source of truth:
-`docs/workstreams/generic_dataset_onboarding_v1/UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`.
-
-После ACCEPT UME-BE1:
-
-**R2-BE2 — Result Read + OOF Explainability**
-
-Frontend в UME-BE1 / R2-BE2 не расширять без отдельного Result implementation stage.
+Он соединяет accepted Result Read identity с exact persisted fold model и universal explanation provider boundary. Frontend не расширять до отдельного Result implementation stage.
