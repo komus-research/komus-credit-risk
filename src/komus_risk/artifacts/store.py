@@ -10,20 +10,23 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
+import pandas as pd
 
 from komus_risk.contracts import DatasetContract, ExperimentConfig, ExperimentResult
-from komus_risk.experiments import EvaluationPopulation, ExperimentRunOutput
+from komus_risk.experiments import EvaluationPopulation, ExperimentRunOutput, OOFResultEvidence
 from komus_risk.hashing import canonical_json, stable_hash
 from komus_risk.model_platform import (
     ModelConfigurationRecord,
     SmokeEvidence,
     SmokeStatus,
 )
+from komus_risk.model_platform.persistence import ModelPersistenceProvider
 
 from .contracts import LoadedExperimentArtifact
 
 _SCHEMA_VERSION_V1 = "1"
 _SCHEMA_VERSION_V2 = "2"
+_SCHEMA_VERSION_V3 = "3"
 _PAYLOAD_FILES_V1 = (
     "config.json",
     "dataset.json",
@@ -34,6 +37,12 @@ _PAYLOAD_FILES_V1 = (
     "evidence/row_positions.npy",
 )
 _PAYLOAD_FILES_V2 = _PAYLOAD_FILES_V1 + ("configuration.json", "smoke.json")
+_PAYLOAD_FILES_V3 = _PAYLOAD_FILES_V2 + (
+    "evidence/oof_y_true.npy",
+    "evidence/identifier_display.npy",
+    "evidence/model_input.npy",
+    "evidence/feature_binding.json",
+)
 
 
 class ExperimentArtifactStore:
@@ -52,11 +61,24 @@ class ExperimentArtifactStore:
         run_output: ExperimentRunOutput,
         configuration_record: ModelConfigurationRecord | None = None,
         smoke_evidence: SmokeEvidence | None = None,
+        fold_model_provider: ModelPersistenceProvider | None = None,
     ) -> LoadedExperimentArtifact:
         if (configuration_record is None) != (smoke_evidence is None):
             raise ValueError(
                 "MP-C artifacts require both configuration and smoke provenance."
             )
+        if run_output.oof_evidence is not None:
+            return self._save_v3(
+                config=config,
+                dataset_contract=dataset_contract,
+                population=population,
+                run_output=run_output,
+                configuration_record=configuration_record,
+                smoke_evidence=smoke_evidence,
+                provider=fold_model_provider,
+            )
+        if fold_model_provider is not None:
+            raise ValueError("Fold persistence provider is valid only for V3 evidence.")
         schema_version = (
             _SCHEMA_VERSION_V2
             if configuration_record is not None
@@ -112,6 +134,61 @@ class ExperimentArtifactStore:
             if temporary.exists():
                 shutil.rmtree(temporary)
 
+    def _save_v3(
+        self,
+        *,
+        config: ExperimentConfig,
+        dataset_contract: DatasetContract,
+        population: EvaluationPopulation,
+        run_output: ExperimentRunOutput,
+        configuration_record: ModelConfigurationRecord | None,
+        smoke_evidence: SmokeEvidence | None,
+        provider: ModelPersistenceProvider | None,
+    ) -> LoadedExperimentArtifact:
+        """Persist, reload and prove every fold before an artifact becomes visible."""
+        if configuration_record is None or smoke_evidence is None or provider is None:
+            raise ValueError("V3 evidence requires provenance and a trusted fold persistence provider.")
+        self._validate_v2_provenance(config, dataset_contract, population, configuration_record, smoke_evidence)
+        evidence = run_output.oof_evidence
+        assert evidence is not None
+        if (provider.model_id, provider.model_version, provider.adapter_version) != (
+            config.model_id, config.model_version, configuration_record.adapter_version,
+        ):
+            raise ValueError("Fold persistence provider identity does not match experiment.")
+        arrays = self._canonical_arrays(run_output)
+        arrays.update(self._canonical_v3_arrays(evidence))
+        self._validate_bundle(config, dataset_contract, population, run_output, arrays)
+        self._validate_v3_evidence(config, population, evidence, arrays)
+        payload = self._payload(config, dataset_contract, population, run_output.result, arrays, configuration_record, smoke_evidence)
+        payload["feature_binding"] = self._feature_binding(evidence)
+
+        self.experiments.mkdir(parents=True, exist_ok=True)
+        temporary = self.experiments / f".tmp-v3-{uuid4().hex}"
+        try:
+            (temporary / "evidence").mkdir(parents=True)
+            self._write_payload(temporary, payload, arrays)
+            self._write_json(temporary / "evidence" / "feature_binding.json", payload["feature_binding"])
+            self._write_fold_models(temporary, config, population, evidence, arrays, provider)
+            fold_hash = self._fold_models_hash(temporary)
+            self._validate_v3_canonical_result(run_output.result, arrays)
+            content_hashes = self._content_hashes(payload, arrays)
+            content_hashes["feature_binding"] = stable_hash(payload["feature_binding"])
+            content_hashes["fold_models"] = fold_hash
+            artifact_id = self._artifact_id(content_hashes, _SCHEMA_VERSION_V3)
+            target = self.experiments / artifact_id
+            if target.exists():
+                return self.load(artifact_id)
+            manifest = self._manifest(artifact_id, config, dataset_contract, population, run_output.result, content_hashes, temporary, _SCHEMA_VERSION_V3)
+            self._write_json(temporary / "manifest.json", manifest)
+            loaded = self._load_directory(temporary, artifact_id, allow_temporary=True)
+            if target.exists():
+                return self.load(artifact_id)
+            temporary.replace(target)
+            return loaded
+        finally:
+            if temporary.exists():
+                shutil.rmtree(temporary)
+
     def load(self, artifact_id: str) -> LoadedExperimentArtifact:
         if not self._is_artifact_id(artifact_id):
             raise ValueError("Invalid experiment artifact identifier.")
@@ -134,12 +211,7 @@ class ExperimentArtifactStore:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError("Experiment artifact manifest is invalid.") from error
         schema_version = self._validate_manifest(manifest, artifact_id)
-        payload_files = (
-            _PAYLOAD_FILES_V2
-            if schema_version == _SCHEMA_VERSION_V2
-            else _PAYLOAD_FILES_V1
-        )
-        for relative in payload_files:
+        for relative in manifest["files"]:
             path = directory / relative
             info = manifest["files"].get(relative)
             if not path.is_file() or not isinstance(info, dict):
@@ -163,12 +235,12 @@ class ExperimentArtifactStore:
                 ModelConfigurationRecord.from_dict(
                     self._read_json(directory / "configuration.json")
                 )
-                if schema_version == _SCHEMA_VERSION_V2
+                if schema_version in {_SCHEMA_VERSION_V2, _SCHEMA_VERSION_V3}
                 else None
             )
             smoke_evidence = (
                 SmokeEvidence.from_dict(self._read_json(directory / "smoke.json"))
-                if schema_version == _SCHEMA_VERSION_V2
+                if schema_version in {_SCHEMA_VERSION_V2, _SCHEMA_VERSION_V3}
                 else None
             )
             population = EvaluationPopulation(
@@ -193,13 +265,34 @@ class ExperimentArtifactStore:
                 population_id=population.population_id,
                 population_fingerprint=population.population_fingerprint,
             )
+            if schema_version == _SCHEMA_VERSION_V3:
+                binding = self._read_json(directory / "evidence/feature_binding.json")["features"]
+                run_output = ExperimentRunOutput(
+                    result=run_output.result,
+                    oof_positive_proba=run_output.oof_positive_proba,
+                    fold_assignments=run_output.fold_assignments,
+                    row_positions=run_output.row_positions,
+                    population_id=run_output.population_id,
+                    population_fingerprint=run_output.population_fingerprint,
+                    oof_evidence=OOFResultEvidence(
+                        y_true=np.load(directory / "evidence/oof_y_true.npy", allow_pickle=False),
+                        identifier_display=tuple(np.load(directory / "evidence/identifier_display.npy", allow_pickle=False).tolist()),
+                        model_input=np.load(directory / "evidence/model_input.npy", allow_pickle=False),
+                        feature_ids=tuple(item["feature_id"] for item in binding),
+                        feature_columns=tuple(item["column_name"] for item in binding),
+                        fold_models=(),
+                    ),
+                )
         except (KeyError, TypeError, ValueError, OSError) as error:
             raise ValueError("Experiment artifact typed payload is invalid.") from error
         if population_data.get("population_size") != len(population.row_positions):
             raise ValueError("Experiment artifact population size is invalid.")
         arrays = self._canonical_arrays(run_output)
+        if schema_version == _SCHEMA_VERSION_V3:
+            assert run_output.oof_evidence is not None
+            arrays.update(self._canonical_v3_arrays(run_output.oof_evidence))
         self._validate_bundle(config, dataset_contract, population, run_output, arrays)
-        if schema_version == _SCHEMA_VERSION_V2:
+        if schema_version in {_SCHEMA_VERSION_V2, _SCHEMA_VERSION_V3}:
             self._validate_v2_provenance(
                 config,
                 dataset_contract,
@@ -216,7 +309,16 @@ class ExperimentArtifactStore:
             configuration_record,
             smoke_evidence,
         )
+        if schema_version == _SCHEMA_VERSION_V3:
+            assert run_output.oof_evidence is not None
+            self._validate_v3_evidence(config, population, run_output.oof_evidence, arrays, require_models=False)
+            self._validate_v3_canonical_result(result, arrays)
+            self._validate_persisted_fold_models(directory, config, population, run_output.oof_evidence, arrays)
+            payload["feature_binding"] = self._feature_binding(run_output.oof_evidence)
         hashes = self._content_hashes(payload, arrays)
+        if schema_version == _SCHEMA_VERSION_V3:
+            hashes["feature_binding"] = stable_hash(payload["feature_binding"])
+            hashes["fold_models"] = self._fold_models_hash(directory)
         if (
             hashes != manifest["content_hashes"]
             or self._artifact_id(hashes, schema_version) != artifact_id
@@ -266,6 +368,193 @@ class ExperimentArtifactStore:
             ),
             "row_positions": integer(run_output.row_positions, "Row positions"),
         }
+
+    @staticmethod
+    def _canonical_v3_arrays(evidence: OOFResultEvidence) -> dict[str, np.ndarray]:
+        y_true = np.asarray(evidence.y_true)
+        input_matrix = np.asarray(evidence.model_input)
+        identifiers = np.asarray(evidence.identifier_display, dtype=str)
+        if y_true.ndim != 1 or not np.issubdtype(y_true.dtype, np.integer) or np.issubdtype(y_true.dtype, np.bool_):
+            raise ValueError("OOF y_true must be a one-dimensional integer array.")
+        if input_matrix.ndim != 2 or not np.issubdtype(input_matrix.dtype, np.number) or np.issubdtype(input_matrix.dtype, np.bool_):
+            raise ValueError("OOF model input must be a two-dimensional numeric matrix.")
+        if identifiers.ndim != 1:
+            raise ValueError("OOF identifier display must be a one-dimensional string array.")
+        return {
+            "oof_y_true": np.ascontiguousarray(y_true.astype("<i8", copy=False)),
+            "identifier_display": np.ascontiguousarray(identifiers),
+            "model_input": np.ascontiguousarray(input_matrix),
+        }
+
+    @staticmethod
+    def _feature_binding(evidence: OOFResultEvidence) -> dict[str, Any]:
+        if (
+            not evidence.feature_ids
+            or len(evidence.feature_ids) != len(evidence.feature_columns)
+            or len(set(evidence.feature_ids)) != len(evidence.feature_ids)
+            or len(set(evidence.feature_columns)) != len(evidence.feature_columns)
+            or any(not isinstance(value, str) or not value for value in (*evidence.feature_ids, *evidence.feature_columns))
+        ):
+            raise ValueError("OOF feature binding is invalid.")
+        return {"features": [
+            {"feature_id": feature_id, "column_name": column_name}
+            for feature_id, column_name in zip(evidence.feature_ids, evidence.feature_columns, strict=True)
+        ]}
+
+    def _validate_v3_evidence(
+        self,
+        config: ExperimentConfig,
+        population: EvaluationPopulation,
+        evidence: OOFResultEvidence,
+        arrays: dict[str, np.ndarray],
+        *,
+        require_models: bool = True,
+    ) -> None:
+        self._feature_binding(evidence)
+        n_rows = len(population.row_positions)
+        if (
+            evidence.feature_ids != config.feature_ids
+            or len(arrays["oof_y_true"]) != n_rows
+            or len(arrays["identifier_display"]) != n_rows
+            or arrays["model_input"].shape != (n_rows, len(evidence.feature_columns))
+            or not np.isfinite(arrays["model_input"]).all()
+            or not np.isin(arrays["oof_y_true"], (0, 1)).all()
+        ):
+            raise ValueError("OOF V3 row-aligned evidence is invalid.")
+        if require_models:
+            models = evidence.fold_models
+            if len(models) != config.folds or {item.fold_number for item in models} != set(range(1, config.folds + 1)):
+                raise ValueError("OOF V3 requires exactly one fitted model per fold.")
+            if any(item.fold_seed != config.seed + item.fold_number for item in models):
+                raise ValueError("OOF fold model seed provenance is invalid.")
+
+    @staticmethod
+    def _validate_v3_canonical_result(
+        result: ExperimentResult, arrays: dict[str, np.ndarray]
+    ) -> None:
+        """Require saved OOF labels and scores to reproduce canonical Result V1 metrics."""
+        threshold = 0.5
+        if result.confusion.get("threshold") != threshold:
+            raise ValueError("V3 canonical result threshold must equal 0.5.")
+
+        y_true = arrays["oof_y_true"]
+        predicted_positive = arrays["oof_positive_proba"] >= threshold
+        actual_positive = y_true == 1
+        tp = int(np.count_nonzero(actual_positive & predicted_positive))
+        tn = int(np.count_nonzero(~actual_positive & ~predicted_positive))
+        fp = int(np.count_nonzero(~actual_positive & predicted_positive))
+        fn = int(np.count_nonzero(actual_positive & ~predicted_positive))
+        expected_confusion = {"tp": tp, "tn": tn, "fp": fp, "fn": fn}
+        if any(result.confusion.get(name) != value for name, value in expected_confusion.items()):
+            raise ValueError("V3 OOF facts do not reproduce canonical ExperimentResult confusion.")
+
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        expected_metrics = {
+            "precision_at_0_5": precision,
+            "recall_at_0_5": recall,
+            "f1_at_0_5": f1,
+        }
+        for name, expected in expected_metrics.items():
+            actual = result.metrics.get(name)
+            if (
+                isinstance(actual, bool)
+                or not isinstance(actual, (int, float))
+                or not np.isfinite(actual)
+                or not np.isclose(actual, expected, rtol=1e-12, atol=1e-12)
+            ):
+                raise ValueError(
+                    f"V3 OOF facts do not reproduce canonical ExperimentResult metric {name}."
+                )
+
+    def _write_fold_models(
+        self,
+        directory: Path,
+        config: ExperimentConfig,
+        population: EvaluationPopulation,
+        evidence: OOFResultEvidence,
+        arrays: dict[str, np.ndarray],
+        provider: ModelPersistenceProvider,
+    ) -> None:
+        for item in evidence.fold_models:
+            provider.validate_fitted(item.adapter, parameters=dict(config.model_parameters), seed=item.fold_seed)
+            fold_dir = directory / "fold_models" / f"fold-{item.fold_number:03d}"
+            native_dir = fold_dir / "native"
+            native_names = provider.save(item.adapter, native_dir)
+            if tuple(native_names) != tuple(provider.native_files()):
+                raise ValueError("Fold persistence provider wrote an undeclared native file set.")
+            validation_mask = arrays["fold_assignments"] == item.fold_number
+            validation_positions = arrays["row_positions"][validation_mask]
+            if not len(validation_positions):
+                raise ValueError("OOF fold has no validation rows.")
+            metadata = {
+                "fold_number": item.fold_number,
+                "fold_seed": item.fold_seed,
+                "provider": provider.descriptor.to_dict(),
+                "model_id": config.model_id,
+                "model_version": config.model_version,
+                "adapter_version": provider.adapter_version,
+                "feature_columns": list(evidence.feature_columns),
+                "validation_row_positions": validation_positions.tolist(),
+                "native_files": list(native_names),
+                "native_hashes": {name: self._raw_hash(native_dir / name) for name in native_names},
+                "population_id": population.population_id,
+                "population_fingerprint": population.population_fingerprint,
+            }
+            self._write_json(fold_dir / "metadata.json", metadata)
+            try:
+                predictor = provider.load(native_dir, evidence.feature_columns)
+                replay = np.asarray(predictor.predict_positive_proba(pd.DataFrame(arrays["model_input"][validation_mask], columns=evidence.feature_columns)), dtype=float)
+            except Exception as error:
+                raise ValueError("Persisted fold model could not be reloaded.") from error
+            expected = arrays["oof_positive_proba"][validation_mask]
+            if replay.shape != expected.shape or not np.isfinite(replay).all() or not np.allclose(replay, expected, rtol=1e-12, atol=1e-12):
+                raise ValueError("Persisted fold model does not reproduce OOF probabilities.")
+
+    def _fold_models_hash(self, directory: Path) -> str:
+        base = directory / "fold_models"
+        if not base.is_dir():
+            raise ValueError("V3 fold model evidence is missing.")
+        files = sorted(path for path in base.rglob("*") if path.is_file())
+        if not files:
+            raise ValueError("V3 fold model evidence is empty.")
+        return stable_hash({path.relative_to(directory).as_posix(): self._raw_hash(path) for path in files})
+
+    def _validate_persisted_fold_models(
+        self,
+        directory: Path,
+        config: ExperimentConfig,
+        population: EvaluationPopulation,
+        evidence: OOFResultEvidence,
+        arrays: dict[str, np.ndarray],
+    ) -> None:
+        base = directory / "fold_models"
+        expected_names = {f"fold-{fold:03d}" for fold in range(1, config.folds + 1)}
+        if not base.is_dir() or {path.name for path in base.iterdir() if path.is_dir()} != expected_names:
+            raise ValueError("V3 fold model directories are invalid.")
+        for fold_number in range(1, config.folds + 1):
+            fold_dir = base / f"fold-{fold_number:03d}"
+            metadata = self._read_json(fold_dir / "metadata.json")
+            native_dir = fold_dir / "native"
+            expected_positions = arrays["row_positions"][arrays["fold_assignments"] == fold_number].tolist()
+            required = {"fold_number", "fold_seed", "provider", "model_id", "model_version", "adapter_version", "feature_columns", "validation_row_positions", "native_files", "native_hashes", "population_id", "population_fingerprint"}
+            if (
+                set(metadata) != required
+                or metadata["fold_number"] != fold_number
+                or metadata["fold_seed"] != config.seed + fold_number
+                or metadata["model_id"] != config.model_id
+                or metadata["model_version"] != config.model_version
+                or metadata["feature_columns"] != list(evidence.feature_columns)
+                or metadata["validation_row_positions"] != expected_positions
+                or metadata["population_id"] != population.population_id
+                or metadata["population_fingerprint"] != population.population_fingerprint
+                or not isinstance(metadata["provider"], dict)
+                or not isinstance(metadata["native_files"], list)
+                or set(metadata["native_hashes"]) != set(metadata["native_files"])
+                or any(self._raw_hash(native_dir / name) != digest for name, digest in metadata["native_hashes"].items())
+            ):
+                raise ValueError("V3 fold model provenance is invalid.")
 
     @staticmethod
     def _validate_bundle(
@@ -434,7 +723,13 @@ class ExperimentArtifactStore:
                     "size_bytes": (directory / relative).stat().st_size,
                 }
                 for relative in (
-                    _PAYLOAD_FILES_V2
+                    sorted(
+                        path.relative_to(directory).as_posix()
+                        for path in directory.rglob("*")
+                        if path.is_file() and path.name != "manifest.json"
+                    )
+                    if schema_version == _SCHEMA_VERSION_V3
+                    else _PAYLOAD_FILES_V2
                     if schema_version == _SCHEMA_VERSION_V2
                     else _PAYLOAD_FILES_V1
                 )
@@ -457,6 +752,7 @@ class ExperimentArtifactStore:
         if manifest["artifact_type"] != "experiment" or schema_version not in {
             _SCHEMA_VERSION_V1,
             _SCHEMA_VERSION_V2,
+            _SCHEMA_VERSION_V3,
         }:
             raise ValueError("Unsupported experiment artifact schema.")
         if manifest["artifact_id"] != artifact_id or not isinstance(
@@ -472,14 +768,27 @@ class ExperimentArtifactStore:
             "fold_assignments",
             "row_positions",
         }
-        if schema_version == _SCHEMA_VERSION_V2:
+        if schema_version in {_SCHEMA_VERSION_V2, _SCHEMA_VERSION_V3}:
             expected_hashes |= {"configuration", "smoke"}
+        if schema_version == _SCHEMA_VERSION_V3:
+            expected_hashes |= {"oof_y_true", "identifier_display", "model_input", "feature_binding", "fold_models"}
         if (
             not isinstance(manifest["content_hashes"], dict)
             or set(manifest["content_hashes"]) != expected_hashes
             or not isinstance(manifest["files"], dict)
         ):
             raise ValueError("Experiment artifact manifest hashes are invalid.")
+        required_files = (
+            _PAYLOAD_FILES_V3 if schema_version == _SCHEMA_VERSION_V3
+            else _PAYLOAD_FILES_V2 if schema_version == _SCHEMA_VERSION_V2
+            else _PAYLOAD_FILES_V1
+        )
+        if not set(required_files).issubset(manifest["files"]):
+            raise ValueError("Experiment artifact mandatory file list is invalid.")
+        if schema_version == _SCHEMA_VERSION_V3:
+            fold_files = [name for name in manifest["files"] if name.startswith("fold_models/")]
+            if not fold_files or any(not isinstance(name, str) for name in manifest["files"]):
+                raise ValueError("Experiment artifact fold model file list is invalid.")
         return schema_version
 
     @staticmethod

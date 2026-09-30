@@ -21,6 +21,7 @@ from sklearn.model_selection import StratifiedKFold
 
 from komus_risk.contracts import ExperimentConfig, ExperimentResult, FeatureUsageStatus
 from komus_risk.data import LoadedDataset
+from komus_risk.experiments.evidence import FoldModelEvidence, OOFResultEvidence
 from komus_risk.hashing import stable_hash
 from komus_risk.models import ModelAdapterFactory
 from komus_risk.registries import FeatureRegistry, ModelRegistry
@@ -62,6 +63,7 @@ class ExperimentRunOutput:
     row_positions: tuple[int, ...]
     population_id: str
     population_fingerprint: str
+    oof_evidence: OOFResultEvidence | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +119,7 @@ class ExperimentRunner:
         oof_positive_proba = np.full(len(population_frame), np.nan, dtype=float)
         fold_assignments = np.full(len(population_frame), -1, dtype=int)
         fold_metrics: list[dict[str, Any]] = []
+        fold_models: list[FoldModelEvidence] = []
         started_at = perf_counter()
         progress_overhead_seconds = 0.0
 
@@ -146,6 +149,7 @@ class ExperimentRunner:
                     "runtime_seconds": fold_runtime,
                 }
             )
+            fold_models.append(FoldModelEvidence(fold_number, fold_seed, adapter))
             progress_overhead_seconds += self._notify(
                 progress_listener, ExperimentProgressEvent("fold_completed", fold_number, config.folds)
             )
@@ -198,6 +202,16 @@ class ExperimentRunner:
             row_positions=population.row_positions,
             population_id=population.population_id,
             population_fingerprint=population.population_fingerprint,
+            oof_evidence=OOFResultEvidence(
+                y_true=y_binary.to_numpy(dtype=np.int64, copy=True),
+                identifier_display=tuple(
+                    str(value) for value in population_frame[contract.identifier_column]
+                ),
+                model_input=X.to_numpy(dtype=np.float64, copy=True),
+                feature_ids=tuple(spec.feature_id for spec in feature_specs),
+                feature_columns=tuple(predictor_columns),
+                fold_models=tuple(fold_models),
+            ),
         )
 
     @staticmethod

@@ -162,6 +162,13 @@ class ExperimentRunnerTests(unittest.TestCase):
         self.assertTrue(all(len(adapter.fit_calls) == 1 for adapter in self.factory.instances))
         self.assertEqual(len(output.result.fold_metrics), 3)
         self.assertEqual(output.result.comparison, {})
+        self.assertIsNotNone(output.oof_evidence)
+        assert output.oof_evidence is not None
+        np.testing.assert_array_equal(output.oof_evidence.y_true, self.dataframe["target"].to_numpy())
+        np.testing.assert_array_equal(output.oof_evidence.model_input[:, 0], self.dataframe["score"].to_numpy())
+        self.assertEqual(output.oof_evidence.identifier_display, tuple(self.dataframe["entity_id"]))
+        self.assertEqual(output.oof_evidence.feature_columns, ("score",))
+        self.assertEqual([item.fold_number for item in output.oof_evidence.fold_models], [1, 2, 3])
 
     def test_progress_sequence_is_observational_and_does_not_change_oof_evidence(self) -> None:
         without_listener = self.runner.run(self.loaded_dataset, self.config, self.population)

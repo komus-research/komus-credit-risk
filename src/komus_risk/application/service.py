@@ -233,6 +233,11 @@ class ExperimentApplicationService:
         run_output = runner.run(
             loaded_dataset, config, population, progress_listener=progress_listener
         )
+        fold_model_provider = None
+        persistence_providers = self._model_plugin_registry.persistence_providers
+        if persistence_providers is None or plugin.persistence_provider is None:
+            raise SmokeGateError("OOF_PERSISTENCE_REQUIRED")
+        fold_model_provider = persistence_providers.validate_plugin_provider(plugin)
         self._notify_progress(
             progress_listener,
             ExperimentProgressEvent("persistence_started", None, request.folds),
@@ -244,6 +249,7 @@ class ExperimentApplicationService:
             run_output=run_output,
             configuration_record=configuration_record,
             smoke_evidence=matching_smoke,
+            fold_model_provider=fold_model_provider,
         )
         self._notify_progress(
             progress_listener, ExperimentProgressEvent("completed", None, request.folds)

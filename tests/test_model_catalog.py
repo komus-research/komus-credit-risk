@@ -37,6 +37,7 @@ from komus_risk.model_platform import (
     ModelParameterSchema,
     ModelPlugin,
     ModelPluginRegistry,
+    ProviderDescriptor,
     ModelPresentationError,
     ModelPresentationProfile,
     ModelPresentationRegistry,
@@ -47,6 +48,7 @@ from komus_risk.model_platform import (
     builtin_model_presentation_registry,
 )
 from komus_risk.models import BinaryClassifierAdapter, ModelAdapterFactory
+from komus_risk.models.gbdt.native import NativePredictor
 from komus_risk.planning import ExperimentPlanningService
 from komus_risk.preparation import (
     PreparedDatasetContext,
@@ -72,7 +74,32 @@ class DummyCatalogFactory(ModelAdapterFactory):
         return DummyCatalogAdapter()
 
 
-def dummy_plugin(runtime_requirements: dict[str, Any] | None = None) -> ModelPlugin:
+_DUMMY_PERSISTENCE = ProviderDescriptor("dummy_catalog_test_persistence", "1", "persistence", {"model_id": "dummy_catalog"})
+
+
+class DummyCatalogPersistenceProvider:
+    descriptor = _DUMMY_PERSISTENCE
+    model_id = "dummy_catalog"
+    model_version = "1"
+    adapter_version = "1"
+
+    def native_files(self):
+        return ("model.bin",)
+
+    def validate_fitted(self, adapter, *, parameters, seed):
+        if not isinstance(adapter, DummyCatalogAdapter):
+            raise ValueError("wrong adapter")
+
+    def save(self, adapter, directory):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "model.bin").write_bytes(b"dummy")
+        return self.native_files()
+
+    def load(self, directory, feature_columns):
+        return NativePredictor("dummy_catalog", feature_columns, lambda X: np.full(len(X), 0.5))
+
+
+def dummy_plugin(runtime_requirements: dict[str, Any] | None = None, *, with_persistence: bool = False) -> ModelPlugin:
     spec = ModelSpec(
         "dummy_catalog",
         "Тестовая пятая модель",
@@ -117,8 +144,10 @@ def dummy_plugin(runtime_requirements: dict[str, Any] | None = None) -> ModelPlu
                     CapabilityDomain.CONFIGURATION,
                     CapabilityDomain.TARGETLESS_INFERENCE,
                     CapabilityDomain.SMOKE_TEST,
+                    *({CapabilityDomain.PERSISTENCE, CapabilityDomain.LOADING} if with_persistence else set()),
                 }
                 else CapabilitySupport.UNSUPPORTED,
+                provider_id=(_DUMMY_PERSISTENCE.provider_id if with_persistence and domain in {CapabilityDomain.PERSISTENCE, CapabilityDomain.LOADING} else None),
             )
             for domain in CapabilityDomain
         ),
@@ -132,12 +161,15 @@ def dummy_plugin(runtime_requirements: dict[str, Any] | None = None) -> ModelPlu
         ModelInputContract(
             "dummy_catalog", "1", "1", ("numeric",), "float32", False, "disabled", "cpu"
         ),
+        persistence_provider=_DUMMY_PERSISTENCE if with_persistence else None,
     )
 
 
 def _registry_with_dummy() -> ModelPluginRegistry:
     registry = build_builtin_model_plugin_registry()
-    registry.register(dummy_plugin())
+    assert registry.persistence_providers is not None
+    registry.persistence_providers.register(DummyCatalogPersistenceProvider())
+    registry.register(dummy_plugin(with_persistence=True))
     return registry
 
 

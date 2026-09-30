@@ -13,13 +13,46 @@ import numpy as np
 from komus_risk.artifacts import ExperimentArtifactStore
 from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.contracts import DatasetContract, ExperimentConfig, ExperimentResult
-from komus_risk.experiments import EvaluationPopulation, ExperimentRunOutput
+from komus_risk.experiments import EvaluationPopulation, ExperimentRunOutput, FoldModelEvidence, OOFResultEvidence
+from komus_risk.hashing import stable_hash
+from komus_risk.model_platform import ModelConfigurationRecord, ProviderDescriptor, SmokeEvidence, SmokePolicy, SmokeStatus
+from komus_risk.models.gbdt.native import NativePredictor
 
 
 _METRICS = {
     "gini": 0.2, "roc_auc": 0.6, "pr_auc": 0.55,
     "precision_at_0_5": 0.5, "recall_at_0_5": 0.4, "f1_at_0_5": 0.44,
 }
+
+
+class _RoundTripProvider:
+    """A trusted test double whose native payload replays the saved score column."""
+
+    model_id = "catboost"
+    model_version = "1"
+    adapter_version = "adapter-1"
+    descriptor = ProviderDescriptor("test_native_persistence", "1", "persistence", {"model_id": "catboost"})
+
+    def __init__(self, *, mismatch: bool = False) -> None:
+        self.mismatch = mismatch
+        self.load_calls = 0
+
+    def native_files(self) -> tuple[str, ...]:
+        return ("model.bin",)
+
+    def validate_fitted(self, adapter, *, parameters: dict, seed: int) -> None:
+        if not isinstance(adapter, object):
+            raise ValueError("missing fitted adapter")
+
+    def save(self, adapter, directory: Path) -> tuple[str, ...]:
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "model.bin").write_bytes(b"test-fold-model")
+        return self.native_files()
+
+    def load(self, directory: Path, feature_columns: tuple[str, ...]) -> NativePredictor:
+        self.load_calls += 1
+        offset = 0.01 if self.mismatch else 0.0
+        return NativePredictor("catboost", feature_columns, lambda X: X["score"].to_numpy(dtype=float) + offset)
 
 
 class ExperimentArtifactTests(unittest.TestCase):
@@ -129,6 +162,69 @@ class ExperimentArtifactTests(unittest.TestCase):
 
         self.assertFalse((Path(self.temp.name) / "experiments").exists())
 
+    def test_v3_persists_aligned_input_and_reloads_each_fold_model_before_publish(self) -> None:
+        output = self._v3_output()
+        saved = self.store.save(
+            config=self.config,
+            dataset_contract=self.contract,
+            population=self.population,
+            run_output=output,
+            configuration_record=self._configuration_record(),
+            smoke_evidence=self._smoke_evidence(),
+            fold_model_provider=_RoundTripProvider(),
+        )
+        loaded = self.store.load(saved.artifact_id)
+        evidence = loaded.run_output.oof_evidence
+        directory = Path(self.temp.name) / "experiments" / saved.artifact_id
+
+        self.assertEqual(loaded.manifest["artifact_schema_version"], "3")
+        self.assertIsNotNone(evidence)
+        assert evidence is not None
+        np.testing.assert_array_equal(evidence.y_true, np.array([0, 1, 1, 0, 0, 1]))
+        np.testing.assert_array_equal(evidence.model_input[:, 0], self.output.oof_positive_proba)
+        self.assertEqual(evidence.identifier_display, tuple(f"entity-{index}" for index in self.population.row_positions))
+        self.assertEqual(evidence.feature_columns, ("score",))
+        self.assertEqual(len(list((directory / "fold_models").glob("fold-*"))), self.config.folds)
+        self.assertFalse((directory / "evidence" / "target.npy").exists())
+
+    def test_v3_semantic_y_true_mismatch_fails_closed_without_publication(self) -> None:
+        output = self._v3_output()
+        evidence = output.oof_evidence
+        assert evidence is not None
+        wrong_y_true = np.array([1, 0, 1, 0, 0, 1])
+        mismatched = replace(
+            output,
+            oof_evidence=replace(evidence, y_true=wrong_y_true),
+        )
+        provider = _RoundTripProvider()
+        with self.assertRaisesRegex(ValueError, "canonical ExperimentResult confusion"):
+            self.store.save(
+                config=self.config,
+                dataset_contract=self.contract,
+                population=self.population,
+                run_output=mismatched,
+                configuration_record=self._configuration_record(),
+                smoke_evidence=self._smoke_evidence(),
+                fold_model_provider=provider,
+            )
+        self.assertEqual(provider.load_calls, self.config.folds)
+        experiments = Path(self.temp.name) / "experiments"
+        self.assertFalse(experiments.exists() and any(experiments.iterdir()))
+
+    def test_v3_probability_mismatch_fails_closed_without_publication(self) -> None:
+        with self.assertRaisesRegex(ValueError, "does not reproduce"):
+            self.store.save(
+                config=self.config,
+                dataset_contract=self.contract,
+                population=self.population,
+                run_output=self._v3_output(),
+                configuration_record=self._configuration_record(),
+                smoke_evidence=self._smoke_evidence(),
+                fold_model_provider=_RoundTripProvider(mismatch=True),
+            )
+        experiments = Path(self.temp.name) / "experiments"
+        self.assertFalse(experiments.exists() and any(experiments.iterdir()))
+
     def test_loaded_artifacts_build_comparison_subject_without_ml_call(self) -> None:
         reference = self.store.save(
             config=self.config, dataset_contract=self.contract, population=self.population, run_output=self.output,
@@ -154,6 +250,71 @@ class ExperimentArtifactTests(unittest.TestCase):
             experiment_id=f"fresh-{suffix}", result_id=f"result-fresh-{suffix}"
         )
         return self.store.save(config=config, dataset_contract=contract, population=population, run_output=output)
+
+    def _v3_output(self) -> ExperimentRunOutput:
+        canonical_result = replace(
+            self.output.result,
+            metrics={
+                **self.output.result.metrics,
+                "precision_at_0_5": 2 / 3,
+                "recall_at_0_5": 2 / 3,
+                "f1_at_0_5": 2 / 3,
+            },
+        )
+        return replace(
+            self.output,
+            result=canonical_result,
+            oof_evidence=OOFResultEvidence(
+                y_true=np.array([0, 1, 1, 0, 0, 1]),
+                identifier_display=tuple(f"entity-{index}" for index in self.population.row_positions),
+                model_input=self.output.oof_positive_proba.reshape(-1, 1),
+                feature_ids=("score",),
+                feature_columns=("score",),
+                fold_models=tuple(
+                    FoldModelEvidence(fold, self.config.seed + fold, object())
+                    for fold in range(1, self.config.folds + 1)
+                ),
+            ),
+        )
+
+    def _configuration_record(self) -> ModelConfigurationRecord:
+        value = {
+            "record_schema_version": "1", "model_id": self.config.model_id,
+            "model_version": self.config.model_version, "adapter_version": "adapter-1",
+            "plugin_contract_hash": "plugin-hash", "schema_id": "schema", "schema_version": "1",
+            "schema_hash": "schema-hash", "recommended_profile_id": "profile",
+            "recommended_profile_hash": "profile-hash", "mode": "RECOMMENDED",
+            "user_overrides": {}, "resolved_parameters": self.config.model_parameters,
+            "resolved_configuration_hash": "resolved-hash",
+        }
+        return ModelConfigurationRecord(**value, configuration_record_id=stable_hash(value))
+
+    def _smoke_evidence(self) -> SmokeEvidence:
+        policy = SmokePolicy()
+        base = {
+            "evidence_schema_version": "1", "status": SmokeStatus.PASS,
+            "context_id": "context", "dataset_id": self.contract.dataset_id,
+            "dataset_fingerprint": self.contract.dataset_fingerprint,
+            "feature_registry_id": self.contract.feature_registry_id,
+            "feature_registry_hash": self.contract.feature_registry_hash,
+            "population_id": self.population.population_id,
+            "population_fingerprint": self.population.population_fingerprint,
+            "population_row_positions_hash": stable_hash({"row_positions": list(self.population.row_positions)}),
+            "selected_feature_ids": self.config.feature_ids,
+            "selected_feature_set_hash": stable_hash({"ordered_feature_ids": list(self.config.feature_ids)}),
+            "plugin_contract_hash": "plugin-hash", "resolved_configuration_hash": "resolved-hash",
+            "configuration_record_id": self._configuration_record().configuration_record_id,
+            "seed": self.config.seed, "policy_id": policy.policy_id,
+            "policy_version": policy.policy_version, "policy_hash": policy.policy_hash,
+            "sampled_row_positions": self.population.row_positions,
+            "sampled_rows_hash": stable_hash({"row_positions": list(self.population.row_positions)}),
+            "failure_code": None,
+        }
+        identity = {
+            key: value for key, value in base.items()
+            if key not in {"status", "sampled_row_positions", "sampled_rows_hash", "failure_code"}
+        }
+        return SmokeEvidence(**base, smoke_identity=stable_hash(identity))
 
     @staticmethod
     def _parts(

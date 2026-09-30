@@ -32,10 +32,13 @@ from komus_risk.model_platform import (
     ModelParameterSchema,
     ModelPlugin,
     ModelPluginRegistry,
+    ModelPersistenceProviderRegistry,
     ParameterUiLevel,
     ParameterValueType,
     RecommendedModelProfile,
+    ProviderDescriptor,
 )
+from komus_risk.models.gbdt.native import NativePredictor
 from komus_risk.models import BinaryClassifierAdapter, ModelAdapterFactory
 from komus_risk.preparation import (
     PreparedDatasetContext,
@@ -67,6 +70,28 @@ class SyntheticFactory(ModelAdapterFactory):
         return SyntheticAdapter()
 
 
+class SyntheticPersistenceProvider:
+    descriptor = ProviderDescriptor("synthetic-test-persistence", "1", "persistence", {"model_id": "synthetic-model"})
+    model_id = "synthetic-model"
+    model_version = "1"
+    adapter_version = "adapter-1"
+
+    def native_files(self):
+        return ("model.bin",)
+
+    def validate_fitted(self, adapter, *, parameters, seed):
+        if not isinstance(adapter, SyntheticAdapter):
+            raise ValueError("wrong adapter")
+
+    def save(self, adapter, directory):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "model.bin").write_bytes(b"synthetic")
+        return self.native_files()
+
+    def load(self, directory, feature_columns):
+        return NativePredictor("synthetic-model", feature_columns, lambda X: X["score_a"].to_numpy(dtype=float))
+
+
 class ApplicationServiceTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = TemporaryDirectory()
@@ -85,7 +110,9 @@ class ApplicationServiceTests(unittest.TestCase):
         )
         self.registry.register(self.spec)
         self.factory = SyntheticFactory()
-        self.plugin_registry = ModelPluginRegistry()
+        self.plugin_registry = ModelPluginRegistry(
+            persistence_providers=ModelPersistenceProviderRegistry((SyntheticPersistenceProvider(),))
+        )
         self.plugin_registry.register(self._plugin())
         self.store = ExperimentArtifactStore(self.temp.name)
         self.context_authority = PreparedDatasetContextAuthority()
@@ -130,6 +157,7 @@ class ApplicationServiceTests(unittest.TestCase):
         profile = RecommendedModelProfile(
             "synthetic-profile", "1", "synthetic-model", "1", "adapter-1", self.profile
         )
+        provider = SyntheticPersistenceProvider.descriptor
         capabilities = ModelCapabilityManifest(
             "synthetic-model",
             "1",
@@ -143,8 +171,11 @@ class ApplicationServiceTests(unittest.TestCase):
                         CapabilityDomain.TRAINING,
                         CapabilityDomain.CONFIGURATION,
                         CapabilityDomain.SMOKE_TEST,
+                        CapabilityDomain.PERSISTENCE,
+                        CapabilityDomain.LOADING,
                     }
                     else CapabilitySupport.UNSUPPORTED,
+                    provider_id=(provider.provider_id if domain in {CapabilityDomain.PERSISTENCE, CapabilityDomain.LOADING} else None),
                 )
                 for domain in CapabilityDomain
             ),
@@ -165,6 +196,7 @@ class ApplicationServiceTests(unittest.TestCase):
                 "disabled",
                 "cpu",
             ),
+            persistence_provider=provider,
         )
 
     def _smoke(self, request: RunExperimentRequest) -> None:

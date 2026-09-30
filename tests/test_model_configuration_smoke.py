@@ -39,6 +39,7 @@ from komus_risk.model_platform import (
     builtin_model_presentation_registry,
 )
 from komus_risk.models import BinaryClassifierAdapter, ModelAdapterFactory
+from komus_risk.models.gbdt.native import NativePredictor
 from komus_risk.preparation import (
     ConfirmedColumnDecision,
     ConfirmedColumnStatus,
@@ -73,6 +74,30 @@ class _Factory(ModelAdapterFactory):
     def create(self, parameters, seed):
         self.create_calls += 1
         return _Adapter()
+
+
+class _PersistenceProvider:
+    model_id = "catboost"
+
+    def __init__(self, descriptor, model_version, adapter_version):
+        self.descriptor = descriptor
+        self.model_version = model_version
+        self.adapter_version = adapter_version
+
+    def native_files(self):
+        return ("model.bin",)
+
+    def validate_fitted(self, adapter, *, parameters, seed):
+        if not isinstance(adapter, _Adapter):
+            raise ValueError("wrong adapter")
+
+    def save(self, adapter, directory):
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "model.bin").write_bytes(b"smoke-adapter")
+        return self.native_files()
+
+    def load(self, directory, feature_columns):
+        return NativePredictor("catboost", feature_columns, lambda X: np.full(len(X), 0.5))
 
 
 def _request(**changes):
@@ -161,9 +186,13 @@ def _dataset():
 
 def _service(root):
     builtin = build_builtin_model_plugin_registry().get("catboost")
-    registry = ModelPluginRegistry(
-        persistence_providers=builtin_gbdt_persistence_providers((builtin,))
+    provider = _PersistenceProvider(
+        builtin.persistence_provider, builtin.spec.version, builtin.spec.adapter_version
     )
+    registry = ModelPluginRegistry(
+        persistence_providers=builtin_gbdt_persistence_providers(())
+    )
+    registry.persistence_providers.register(provider)
     factory = _Factory()
     factory.model_version = builtin.spec.version
     factory.adapter_version = builtin.spec.adapter_version
@@ -346,7 +375,7 @@ def test_smoke_gate_and_v2_provenance_round_trip():
             request=request,
             prepared_context=context,
         )
-        assert artifact.manifest["artifact_schema_version"] == "2"
+        assert artifact.manifest["artifact_schema_version"] == "3"
         assert (
             artifact.configuration_record is not None
             and artifact.smoke_evidence is not None
@@ -608,4 +637,4 @@ def test_trusted_generic_preparation_allows_smoke_and_full_run():
             request=_request(),
             prepared_context_id=trusted.context_id,
         )
-        assert artifact.manifest["artifact_schema_version"] == "2"
+        assert artifact.manifest["artifact_schema_version"] == "3"
