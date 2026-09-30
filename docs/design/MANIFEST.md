@@ -26,6 +26,8 @@
 | Результат модели V2 | `screens/result/02_result_model_overview_v2.png` | VISUAL LOCK; основной обзор завершённого experiment result |
 | Исследование порога V1 | `screens/result/03_threshold_explorer_v1.png` | VISUAL LOCK; threshold exploration по OOF scores без переобучения |
 | Объекты оценки V1 | `screens/result/04_result_objects_v2.png` | VISUAL LOCK; аналитический список OOF-объектов и ошибок |
+| Объект оценки V1 | `screens/result/05_result_object_detail_v1.png` | VISUAL LOCK; detail одного OOF-объекта, Local Explanation READY и LLM entry |
+| Объект оценки + LLM V1 | `screens/result/06_result_object_detail_llm_v1.png` | VISUAL LOCK; тот же detail после успешной LLM-интерпретации |
 
 ## Правила для V2 references
 
@@ -68,11 +70,15 @@
 - `screens/result/02_result_model_overview_v2.png` — accepted visual lock общего обзора результата;
 - `screens/result/03_threshold_explorer_v1.png` — accepted visual lock исследования threshold по OOF scores;
 - `screens/result/04_result_objects_v2.png` — accepted visual lock списка OOF-объектов;
+- `screens/result/05_result_object_detail_v1.png` — accepted visual lock detail одного OOF-объекта с Local Explanation READY и pre-action LLM block;
+- `screens/result/06_result_object_detail_llm_v1.png` — accepted visual lock того же Object Detail после successful LLM interpretation;
 - подробная UX/semantic спецификация: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`;
 - backend architecture lock: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_V2_ARCHITECTURE_LOCK.md`;
 - universal model explainability lock: `docs/workstreams/generic_dataset_onboarding_v1/UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`;
 - demo values в PNG не являются runtime truth и не хардкодятся;
-- `Result model → Threshold Explorer → Objects` — принятый visual flow; object detail / Local SHAP / LLM screen ещё не visual lock;
+- `Result model → Threshold Explorer → Objects → Object Detail` — принятый visual flow;
+- Object Detail visual lock включает Local Explanation READY и pre-action LLM entry; отдельный `06_result_object_detail_llm_v1.png` фиксирует LLM READY state;
+- loading/error variants Local Explanation и LLM пока не имеют отдельного visual lock;
 - для objects: target marker, threshold position и TP/TN/FP/FN — разные смыслы и не должны сливаться;
 - object table проектируется как scrollable/virtualizable view, а не как browser-side загрузка всей выборки;
 - Fold остаётся read-only OOF provenance с tooltip;

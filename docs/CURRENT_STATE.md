@@ -1272,4 +1272,4 @@ prediction
 
 **R2-BE2 — Result Read + OOF Explainability**.
 
-После backend contracts — visual lock Object Detail / Local Explanation / LLM presentation и затем native Result implementation.
+Object Detail visual lock теперь покрывает два состояния: Local Explanation READY до вызова LLM (`05_result_object_detail_v1.png`) и LLM READY после успешной интерпретации (`06_result_object_detail_llm_v1.png`). После backend contracts — native Result implementation; отдельные loading/error и expanded-detail states уточняются только при необходимости.

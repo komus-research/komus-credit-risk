@@ -6,6 +6,8 @@ Primary visual references:
 - `docs/design/screens/result/02_result_model_overview_v2.png`
 - `docs/design/screens/result/03_threshold_explorer_v1.png`
 - `docs/design/screens/result/04_result_objects_v2.png`
+- `docs/design/screens/result/05_result_object_detail_v1.png`
+- `docs/design/screens/result/06_result_object_detail_llm_v1.png`
 
 Эти PNG фиксируют композицию, визуальную иерархию и пользовательский поток Result V2.
 Фактические данные, доступность действий, persistence, provenance и API semantics определяются только принятыми backend/research contracts.
@@ -23,8 +25,8 @@ Canonical flow шага Result:
 → LLM-интерпретация по явному действию пользователя, если runtime capability доступна
 ```
 
-Первые три экрана имеют принятый visual lock.
-Detail screen объекта, Local Explanation presentation и LLM presentation пока не считаются visual lock, но их product semantics уже зафиксированы backend architecture.
+Пять текущих Result PNG имеют принятый visual lock.
+Для Object Detail отдельно зафиксированы два состояния: Local Explanation READY до вызова LLM и LLM interpretation READY после явного пользовательского действия. Loading/error variants и expanded technical/detail states пока не имеют отдельного visual lock.
 
 Result работает на persisted accepted experiment evidence.
 Final test не используется для threshold research, object filtering, selection/tuning или OOF explainability.
@@ -245,12 +247,31 @@ External LLM не запускается автоматически: после 
 
 Backend architecture Result V2 зафиксирована в `RESULT_V2_ARCHITECTURE_LOCK.md`: ExperimentArtifact V3, fold-model provenance, Local/Global OOF SHAP semantics, threshold read contract и Object List random-access contract.
 
-Пока не считаются **visual lock**:
-- композиция detail screen конкретного объекта;
-- визуальная форма Local Explanation на detail screen;
-- визуальная форма LLM presentation на detail screen.
+Object Detail имеет два принятых visual lock:
+- `05_result_object_detail_v1.png` — Local Explanation READY, LLM ещё не вызван;
+- `06_result_object_detail_llm_v1.png` — та же страница после успешной LLM-интерпретации.
 
-При этом product semantics detail уже зафиксированы:
+Они фиксируют:
+- summary конкретного OOF-объекта;
+- deterministic FN/TP/TN/FP explanation;
+- Local Explanation success-state в режиме «Кратко»;
+- направление вкладов: pink увеличивает model score, cyan уменьшает;
+- обязательный агрегат «Остальные признаки»;
+- понятную «Начальную оценку модели» как SHAP reference point с info-tooltip;
+- LLM entry с выбором роли и явным действием пользователя;
+- LLM READY state: «Краткий вывод / Что увеличило оценку / Что уменьшило оценку / Что важно учитывать»;
+- действие «Сформировать заново» после успешной интерпретации;
+- collapsed «Данные объекта» и «Технические сведения».
+
+LLM-текст обязан опираться только на validated Local Explanation evidence текущего объекта: он не добавляет отсутствующие в SHAP признаки, факты или причинные утверждения.
+
+Пока не имеют отдельного visual lock:
+- loading/error state Local Explanation;
+- expanded «Подробно»;
+- loading/error state LLM;
+- expanded «Данные объекта» / «Технические сведения».
+
+Product semantics detail зафиксированы:
 - basic OOF result показывается сразу;
 - Local Explanation запускается автоматически;
 - loading не блокирует основной экран;
@@ -264,7 +285,7 @@ Backend architecture Result V2 зафиксирована в `RESULT_V2_ARCHITEC
 ## 9. Acceptance для реализации visual layer
 
 Developer должен:
-1. использовать три текущих visual lock PNG;
+1. использовать пять текущих visual lock PNG;
 2. не хардкодить демонстрационные значения;
 3. сохранить semantic colors и marker matrix;
 4. не смешивать target fact, threshold position и classification outcome;
