@@ -6,7 +6,7 @@ ExperimentArtifact and ModelVersion records remain outside this session layer.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from secrets import token_urlsafe
@@ -113,6 +113,11 @@ class _NativeAnalysisSession:
     inspection_token: str | None = None
     selected_feature_ids: tuple[str, ...] | None = None
     features_completed: bool = False
+    selected_model_id: str | None = None
+    model_configuration_mode: str = "RECOMMENDED"
+    model_user_overrides: dict[str, Any] = field(default_factory=dict)
+    hidden_model_ids: set[str] = field(default_factory=set)
+    algorithm_completed: bool = False
 
     def snapshot(self) -> NativeSessionSnapshot:
         return NativeSessionSnapshot(
@@ -137,6 +142,8 @@ class _NativeAnalysisSession:
             return "#/analysis/data/confirmation"
         if self.data_substep == "PREPARED" and self.prepared_context_id:
             if self.features_completed:
+                if self.algorithm_completed:
+                    return "#/analysis/quality"
                 return "#/analysis/algorithm"
             return "#/analysis/features"
         return "#/analysis/data/file"
@@ -187,6 +194,7 @@ class NativeSessionStore:
             session.prepared_context_id = None
             session.selected_feature_ids = None
             session.features_completed = False
+            self._clear_algorithm_state(session)
             session.current_step = 0
             session.data_substep = (
                 "ROLES"
@@ -437,6 +445,7 @@ class NativeSessionStore:
             session.prepared_context_id = context_id
             session.selected_feature_ids = tuple(selected_feature_ids)
             session.features_completed = False
+            self._clear_algorithm_state(session)
             session.current_step = 1
             session.data_substep = "PREPARED"
             session.analysis_active = True
@@ -463,6 +472,7 @@ class NativeSessionStore:
                 if session.features_completed:
                     session.features_completed = False
                     session.current_step = 1
+                session.algorithm_completed = False
             return session.snapshot()
 
     def continue_from_features(self, session_id: str) -> NativeSessionSnapshot:
@@ -472,6 +482,74 @@ class NativeSessionStore:
                 raise NativeSessionTransitionError()
             session.features_completed = True
             session.current_step = 2
+            return session.snapshot()
+
+    def algorithm_state(self, session_id: str) -> tuple[str, tuple[str, ...], str | None, str, dict[str, Any], set[str], bool]:
+        with self._lock:
+            session = self._session(session_id)
+            if not (session.data_substep == "PREPARED" and session.prepared_context_id and session.features_completed and session.selected_feature_ids):
+                raise NativeSessionTransitionError()
+            return (session.prepared_context_id, session.selected_feature_ids, session.selected_model_id,
+                    session.model_configuration_mode, dict(session.model_user_overrides), set(session.hidden_model_ids), session.algorithm_completed)
+
+    def select_model(self, session_id: str, model_id: str) -> NativeSessionSnapshot:
+        with self._lock:
+            session = self._require_algorithm(session_id)
+            if session.selected_model_id == model_id:
+                return session.snapshot()
+            session.selected_model_id = model_id
+            session.model_configuration_mode = "RECOMMENDED"
+            session.model_user_overrides = {}
+            session.algorithm_completed = False
+            session.current_step = 2
+            return session.snapshot()
+
+    def set_algorithm_configuration(self, session_id: str, mode: str, overrides: dict[str, Any]) -> NativeSessionSnapshot:
+        with self._lock:
+            session = self._require_algorithm(session_id)
+            if mode not in {"RECOMMENDED", "ADVANCED"}:
+                raise ValueError("INVALID_CONFIGURATION_MODE")
+            canonical_overrides = dict(overrides) if mode == "ADVANCED" else {}
+            if (
+                session.model_configuration_mode == mode
+                and session.model_user_overrides == canonical_overrides
+            ):
+                return session.snapshot()
+            session.model_configuration_mode = mode
+            session.model_user_overrides = canonical_overrides
+            session.algorithm_completed = False
+            session.current_step = 2
+            return session.snapshot()
+
+    def hide_model(self, session_id: str, model_id: str) -> NativeSessionSnapshot:
+        with self._lock:
+            session = self._require_algorithm(session_id)
+            if model_id in session.hidden_model_ids:
+                return session.snapshot()
+            session.hidden_model_ids.add(model_id)
+            if session.selected_model_id == model_id:
+                session.selected_model_id = None
+                session.model_configuration_mode = "RECOMMENDED"
+                session.model_user_overrides = {}
+                session.algorithm_completed = False
+                session.current_step = 2
+            return session.snapshot()
+
+    def restore_model(self, session_id: str, model_id: str) -> NativeSessionSnapshot:
+        with self._lock:
+            session = self._require_algorithm(session_id)
+            if model_id not in session.hidden_model_ids:
+                return session.snapshot()
+            session.hidden_model_ids.discard(model_id)
+            return session.snapshot()
+
+    def continue_from_algorithm(self, session_id: str) -> NativeSessionSnapshot:
+        with self._lock:
+            session = self._require_algorithm(session_id)
+            if session.selected_model_id is None:
+                raise NativeSessionTransitionError()
+            session.algorithm_completed = True
+            session.current_step = 3
             return session.snapshot()
 
     def abort_confirmation_materialization(
@@ -535,6 +613,7 @@ class NativeSessionStore:
             session.prepared_context_id = None
             session.selected_feature_ids = None
             session.features_completed = False
+            self._clear_algorithm_state(session)
             session.confirmation_operation_token = None
             session.data_substep = "FILE"
             session.inspection_progress = None
@@ -550,6 +629,24 @@ class NativeSessionStore:
             return self._sessions[session_id]
         except KeyError as exc:
             raise KeyError("Unknown native analysis session.") from exc
+
+    @staticmethod
+    def _clear_algorithm_state(session: _NativeAnalysisSession) -> None:
+        session.selected_model_id = None
+        session.model_configuration_mode = "RECOMMENDED"
+        session.model_user_overrides = {}
+        session.algorithm_completed = False
+
+    def _require_algorithm(self, session_id: str) -> _NativeAnalysisSession:
+        session = self._session(session_id)
+        if not (
+            session.data_substep == "PREPARED"
+            and session.prepared_context_id
+            and session.features_completed
+            and session.selected_feature_ids
+        ):
+            raise NativeSessionTransitionError()
+        return session
 
 
 def _now() -> datetime:

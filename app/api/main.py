@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal
 from fastapi import Cookie, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from komus_risk.application import (
@@ -25,6 +25,8 @@ from komus_risk.application.native_session import (
     DatasetInspectionStage,
     NativeSessionTransitionError,
 )
+from komus_risk.model_platform import build_builtin_model_plugin_registry
+from komus_risk.planning import ExperimentPlanningService
 from app.upload_staging import cleanup_staged_upload, stage_upload_bytes
 
 SESSION_COOKIE_NAME = "axion_session"
@@ -157,6 +159,17 @@ class FeatureSelectionPatch(BaseModel):
     selected_feature_ids: list[str]
 
 
+class ModelSelectionPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model_id: str
+
+
+class AlgorithmConfigurationPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    configuration_mode: Literal["RECOMMENDED", "ADVANCED"]
+    user_overrides: dict[str, Any] = Field(default_factory=dict)
+
+
 def _session_response(snapshot: NativeSessionSnapshot) -> SessionResponse:
     return SessionResponse(
         current_step=snapshot.current_step,
@@ -178,12 +191,15 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None) -> FastAPI:
     """Create the native HTTP adapter without constructing ML or Streamlit runtime."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
     context_authority = PreparedDatasetContextAuthority()
     feature_selection = FeatureSelectionService()
+    planning = planning_service or ExperimentPlanningService(
+        model_plugin_registry=build_builtin_model_plugin_registry()
+    )
     api = FastAPI(title="AXION Native API", version="0.0.1")
     api.mount("/native-assets", StaticFiles(directory=ASSETS_DIRECTORY), name="native-assets")
 
@@ -240,6 +256,25 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
             features=[FeatureRowResponse(feature_id=item.feature_id, display_name_ru=item.display_name_ru, description_ru=item.description_ru, column_name=item.column_name, group_id=item.group_id, display_order=item.display_order) for item in view.features],
         )
 
+    def algorithm_response(session_id: str) -> dict[str, Any]:
+        try:
+            context_id, selected_ids, selected_model_id, mode, overrides, hidden, _ = store.algorithm_state(session_id)
+            context = context_authority.resolve(context_id)
+        except Exception as exc:
+            raise HTTPException(status_code=409, detail={"code": "FEATURES_CONTINUE_REQUIRED", "message": "Сначала подтвердите выбор признаков."}) from exc
+        try:
+            catalog = [entry.to_dict() for entry in planning.list_models()]
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail={"code": "MODEL_CATALOG_UNAVAILABLE", "message": "Не удалось получить каталог алгоритмов."}) from exc
+        return {"dataset_name": context.loaded_dataset.contract.dataset_name, "selected_feature_count": len(selected_ids), "available_feature_count": len([spec for spec in context.feature_registry.ordered_features() if spec.usage_status.value == "model_allowed"]), "selected_model_id": selected_model_id, "configuration_mode": mode, "user_overrides": overrides, "hidden_model_ids": sorted(hidden), "models": catalog}
+
+    def available_model(session_id: str, model_id: str) -> dict[str, Any]:
+        payload = algorithm_response(session_id)
+        found = next((item for item in payload["models"] if item["model_id"] == model_id), None)
+        if found is None or found["state"] != "AVAILABLE" or model_id in payload["hidden_model_ids"]:
+            raise HTTPException(status_code=422, detail={"code": "MODEL_NOT_SELECTABLE", "message": "Выбранный алгоритм сейчас недоступен."})
+        return payload
+
     @api.get("/api/v1/features", response_model=FeaturesResponse)
     def get_features(response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> FeaturesResponse:
         resolved_session_id, _ = resolve_session(response, session_id)
@@ -270,6 +305,55 @@ def create_app(*, session_store: NativeSessionStore | None = None) -> FastAPI:
             raise HTTPException(status_code=422, detail={"code": exc.code, "message": "Выберите хотя бы один разрешённый признак."}) from None
         except NativeSessionTransitionError:
             raise HTTPException(status_code=409, detail={"code": "PREPARED_CONTEXT_REQUIRED", "message": "Сначала завершите подготовку данных."}) from None
+
+    @api.get("/api/v1/algorithm")
+    def get_algorithm(response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> dict[str, Any]:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        return algorithm_response(resolved_session_id)
+
+    @api.patch("/api/v1/algorithm/model")
+    def patch_algorithm_model(request: ModelSelectionPatch, response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> dict[str, Any]:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        available_model(resolved_session_id, request.model_id)
+        store.select_model(resolved_session_id, request.model_id)
+        return algorithm_response(resolved_session_id)
+
+    @api.patch("/api/v1/algorithm/configuration")
+    def patch_algorithm_configuration(request: AlgorithmConfigurationPatch, response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> dict[str, Any]:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        state = algorithm_response(resolved_session_id)
+        selected = state["selected_model_id"]
+        model = next((item for item in state["models"] if item["model_id"] == selected), None)
+        if model is None or model["state"] != "AVAILABLE" or selected in state["hidden_model_ids"]:
+            raise HTTPException(status_code=422, detail={"code": "MODEL_NOT_SELECTABLE", "message": "Сначала выберите доступный алгоритм."})
+        parameters = {item["parameter_path"]: item for item in model["parameter_schema"]["parameters"] if item["editable"]}
+        clean = {} if request.configuration_mode == "RECOMMENDED" else {key: value for key, value in request.user_overrides.items() if key in parameters and value != parameters[key]["recommended_value"]}
+        store.set_algorithm_configuration(resolved_session_id, request.configuration_mode, clean)
+        return algorithm_response(resolved_session_id)
+
+    @api.post("/api/v1/algorithm/models/{model_id}/hide")
+    def hide_algorithm_model(model_id: str, response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> dict[str, Any]:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        state = algorithm_response(resolved_session_id)
+        if not any(item["model_id"] == model_id for item in state["models"]):
+            raise HTTPException(status_code=404, detail={"code": "UNKNOWN_MODEL", "message": "Алгоритм отсутствует в каталоге."})
+        store.hide_model(resolved_session_id, model_id)
+        return algorithm_response(resolved_session_id)
+
+    @api.post("/api/v1/algorithm/models/{model_id}/restore")
+    def restore_algorithm_model(model_id: str, response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> dict[str, Any]:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        store.restore_model(resolved_session_id, model_id)
+        return algorithm_response(resolved_session_id)
+
+    @api.post("/api/v1/algorithm/continue", response_model=SessionResponse)
+    def continue_algorithm(response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> SessionResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        state = algorithm_response(resolved_session_id)
+        if state["selected_model_id"] is None:
+            raise HTTPException(status_code=422, detail={"code": "MODEL_SELECTION_REQUIRED", "message": "Выберите алгоритм."})
+        available_model(resolved_session_id, state["selected_model_id"])
+        return _session_response(store.continue_from_algorithm(resolved_session_id))
 
     @api.post("/api/v1/analysis/new", response_model=NewAnalysisResponse)
     def new_analysis(

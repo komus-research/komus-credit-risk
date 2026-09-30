@@ -3,7 +3,7 @@ export type NativeSession = {
   analysis_active: boolean
   data_substep: 'FILE' | 'ROLES' | 'CONFIRMATION' | 'PREPARED'
   has_meaningful_temporary_work: boolean
-  resume_route: '#/home' | '#/analysis/data/file' | '#/analysis/data/roles' | '#/analysis/data/confirmation' | '#/analysis/features' | '#/analysis/algorithm'
+  resume_route: '#/home' | '#/analysis/data/file' | '#/analysis/data/roles' | '#/analysis/data/confirmation' | '#/analysis/features' | '#/analysis/algorithm' | '#/analysis/quality'
 }
 
 export type NewAnalysisResponse = NativeSession & { status: 'STARTED' | 'CONFIRMATION_REQUIRED' }
@@ -124,3 +124,26 @@ export function patchFeatureSelection(selected_feature_ids: string[]): Promise<F
   return fetch('/api/v1/features/selection', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ selected_feature_ids }) }).then(featureResponse)
 }
 export function continueFeatures(): Promise<NativeSession> { return fetch('/api/v1/features/continue', { method: 'POST' }).then(sessionResponse) }
+
+export type CatalogParameter = { parameter_path: string; display_name_ru: string; description_ru: string; value_type: 'boolean' | 'integer' | 'float' | 'enum'; nullable: boolean; editable: boolean; recommended_value: unknown; bounds: { minimum?: number; maximum?: number }; choices: unknown[]; ui_level: string; group_id: string; display_order: number; visibility_condition: { parameter_path?: string; equals_value?: unknown } | null }
+export type CatalogModel = {
+  model_id: string; display_name_ru: string; description_ru: string; state: string; task_types: string[]
+  capabilities: Array<{ domain: string; support: string; provider_id?: string | null; requirements?: unknown }>
+  parameter_schema: { schema_id: string; schema_version: string; schema_hash: string; parameters: CatalogParameter[] }
+  model_version: string; adapter_version: string; plugin_contract_hash: string
+  recommended_profile: { profile_id: string; profile_version: string; profile_hash: string }
+  input_contract: { prepared_predictor_kinds: string[]; prepared_dtype: string; missing_values_supported: boolean; categorical_handling: string; runtime_kind: string }
+  runtime_requirements: unknown
+  [key: string]: unknown
+}
+export type AlgorithmState = { dataset_name: string; selected_feature_count: number; available_feature_count: number; selected_model_id: string | null; configuration_mode: 'RECOMMENDED' | 'ADVANCED'; user_overrides: Record<string, unknown>; hidden_model_ids: string[]; models: CatalogModel[] }
+async function algorithmResponse(response: Response): Promise<AlgorithmState> {
+  if (!response.ok) { const body = await response.json().catch(() => null) as { detail?: { message?: string; code?: string } } | null; throw new NativeApiError(body?.detail?.message ?? 'Не удалось обновить алгоритм.', response.status, body?.detail?.code) }
+  return response.json() as Promise<AlgorithmState>
+}
+export const getAlgorithm = () => fetch('/api/v1/algorithm').then(algorithmResponse)
+export const selectAlgorithmModel = (model_id: string) => fetch('/api/v1/algorithm/model', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_id }) }).then(algorithmResponse)
+export const patchAlgorithmConfiguration = (configuration_mode: 'RECOMMENDED' | 'ADVANCED', user_overrides: Record<string, unknown>) => fetch('/api/v1/algorithm/configuration', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ configuration_mode, user_overrides }) }).then(algorithmResponse)
+export const hideAlgorithmModel = (model_id: string) => fetch(`/api/v1/algorithm/models/${encodeURIComponent(model_id)}/hide`, { method: 'POST' }).then(algorithmResponse)
+export const restoreAlgorithmModel = (model_id: string) => fetch(`/api/v1/algorithm/models/${encodeURIComponent(model_id)}/restore`, { method: 'POST' }).then(algorithmResponse)
+export const continueAlgorithm = () => fetch('/api/v1/algorithm/continue', { method: 'POST' }).then(sessionResponse)

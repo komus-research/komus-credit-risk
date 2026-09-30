@@ -7,6 +7,7 @@ export const routes = {
   confirmation: '#/analysis/data/confirmation',
   features: '#/analysis/features',
   algorithm: '#/analysis/algorithm',
+  quality: '#/analysis/quality',
 } as const
 
 export type CanonicalRoute = typeof routes[keyof typeof routes]
@@ -33,6 +34,7 @@ export function guardedRoute(route: CanonicalRoute, session: NativeSession): Can
   }
   if (route === routes.confirmation) return session.resume_route
   if (route === routes.features) return session.data_substep === 'PREPARED' ? route : session.resume_route
-  if (route === routes.algorithm) return session.resume_route === routes.algorithm ? route : session.resume_route
+  if (route === routes.algorithm) return session.data_substep === 'PREPARED' && session.current_step >= 2 ? route : session.resume_route
+  if (route === routes.quality) return session.resume_route === routes.quality ? route : session.resume_route
   return routes.home
 }
