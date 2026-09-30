@@ -1154,7 +1154,7 @@ UX максимально автоматический:
 - **Result V2 UX / Visual Lock — ACCEPTED**:
   - `docs/design/screens/result/02_result_model_overview_v2.png`;
   - `docs/design/screens/result/03_threshold_explorer_v1.png`;
-  - `docs/design/screens/result/04_result_objects_v1.png`;
+  - `docs/design/screens/result/04_result_objects_v2.png` — текущий visual lock Objects; возвращён обязательный фильтр «Диапазон оценки модели» (`min_score` / `max_score`);
   - `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`.
 - **Result V2 backend architecture — ACCEPTED / LOCKED**:
   - `docs/workstreams/generic_dataset_onboarding_v1/RESULT_V2_ARCHITECTURE_LOCK.md`.

@@ -25,7 +25,7 @@
 | Результат V1 | `screens/result/01_result_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Результат модели V2 | `screens/result/02_result_model_overview_v2.png` | VISUAL LOCK; основной обзор завершённого experiment result |
 | Исследование порога V1 | `screens/result/03_threshold_explorer_v1.png` | VISUAL LOCK; threshold exploration по OOF scores без переобучения |
-| Объекты оценки V1 | `screens/result/04_result_objects_v1.png` | VISUAL LOCK; аналитический список OOF-объектов и ошибок |
+| Объекты оценки V1 | `screens/result/04_result_objects_v2.png` | VISUAL LOCK; аналитический список OOF-объектов и ошибок |
 
 ## Правила для V2 references
 
@@ -67,7 +67,7 @@
 
 - `screens/result/02_result_model_overview_v2.png` — accepted visual lock общего обзора результата;
 - `screens/result/03_threshold_explorer_v1.png` — accepted visual lock исследования threshold по OOF scores;
-- `screens/result/04_result_objects_v1.png` — accepted visual lock списка OOF-объектов;
+- `screens/result/04_result_objects_v2.png` — accepted visual lock списка OOF-объектов;
 - подробная UX/semantic спецификация: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`;
 - backend architecture lock: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_V2_ARCHITECTURE_LOCK.md`;
 - universal model explainability lock: `docs/workstreams/generic_dataset_onboarding_v1/UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`;

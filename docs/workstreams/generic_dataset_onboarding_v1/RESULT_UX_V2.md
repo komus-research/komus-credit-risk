@@ -5,7 +5,7 @@ Status: **UX / VISUAL LOCK — ACCEPTED / BACKEND ARCHITECTURE LOCKED**
 Primary visual references:
 - `docs/design/screens/result/02_result_model_overview_v2.png`
 - `docs/design/screens/result/03_threshold_explorer_v1.png`
-- `docs/design/screens/result/04_result_objects_v1.png`
+- `docs/design/screens/result/04_result_objects_v2.png`
 
 Эти PNG фиксируют композицию, визуальную иерархию и пользовательский поток Result V2.
 Фактические данные, доступность действий, persistence, provenance и API semantics определяются только принятыми backend/research contracts.
@@ -88,7 +88,7 @@ Threshold Explorer не выбирает «лучший» или business-optima
 
 ## 4. Экран «Объекты оценки»
 
-Visual lock: `04_result_objects_v1.png`.
+Visual lock: `04_result_objects_v2.png`.
 
 Назначение:
 аналитик исследует отдельные OOF-объекты, ошибки модели и переход к detail screen.
@@ -175,6 +175,22 @@ Public list contract, server-side filtering/sorting и random-access semantics �
 - TP/TN/FP/FN;
 - score range;
 - sorting.
+
+#### Обязательный control «Диапазон оценки модели»
+
+На экране «Объекты оценки» обязательно присутствует явный control **«Диапазон оценки модели»**.
+
+Canonical UX:
+- dual-handle slider по диапазону `[0,00; 1,00]`;
+- рядом отображаются точные текущие `min_score` и `max_score`;
+- обе границы включительные;
+- изменение диапазона фильтрует текущий OOF object list через public backend query contract;
+- control не меняет score, threshold или модель;
+- default state — полный диапазон `0,00–1,00`;
+- никаких скрытых cutoffs или автоматической подмены диапазона quick-view пресетами.
+
+Backend semantics уже зафиксирована как `min_score` / `max_score` в `RESULT_V2_ARCHITECTURE_LOCK.md`.
+Если текущий visual reference не показывает этот control, это считается известным visual omission: при следующем обновлении макета control нужно вернуть, а не удалять capability из реализации.
 
 Точная backend-supported семантика «пограничные», «высокая оценка модели» и иных derived filters
 должна быть задана public contract. UI не придумывает скрытые формулы.
