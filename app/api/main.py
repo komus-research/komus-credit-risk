@@ -18,16 +18,17 @@ from komus_risk.application import (
     NativeDatasetOnboardingService,
     NativeSessionSnapshot,
     NativeSessionStore,
+    NativeQualityService,
 )
-from komus_risk.preparation import DatasetPreparationError, PreparedDatasetContextAuthority
+from komus_risk.preparation import DatasetPreparationError
 from komus_risk.application.native_session import (
     DatasetInspectionProgress,
     DatasetInspectionStage,
     NativeSessionTransitionError,
 )
-from komus_risk.model_platform import build_builtin_model_plugin_registry
 from komus_risk.planning import ExperimentPlanningService
 from app.upload_staging import cleanup_staged_upload, stage_upload_bytes
+from app.native_runtime import create_native_experiment_runtime
 
 SESSION_COOKIE_NAME = "axion_session"
 ASSETS_DIRECTORY = Path(__file__).resolve().parent.parent / "assets"
@@ -170,6 +171,13 @@ class AlgorithmConfigurationPatch(BaseModel):
     user_overrides: dict[str, Any] = Field(default_factory=dict)
 
 
+class QualitySettingsPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    folds: int | None = None
+    seed: int | None = None
+
+
 def _session_response(snapshot: NativeSessionSnapshot) -> SessionResponse:
     return SessionResponse(
         current_step=snapshot.current_step,
@@ -192,13 +200,19 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
 
 
 def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None) -> FastAPI:
-    """Create the native HTTP adapter without constructing ML or Streamlit runtime."""
+    """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
-    context_authority = PreparedDatasetContextAuthority()
+    runtime = create_native_experiment_runtime()
+    context_authority = runtime.prepared_context_authority
     feature_selection = FeatureSelectionService()
-    planning = planning_service or ExperimentPlanningService(
-        model_plugin_registry=build_builtin_model_plugin_registry()
+    planning = planning_service or runtime.planning_service
+    quality = NativeQualityService(
+        session_store=store,
+        planning_service=planning,
+        application_service=runtime.application_service,
+        prepared_context_authority=context_authority,
+        supported_protocol=runtime.supported_protocol,
     )
     api = FastAPI(title="AXION Native API", version="0.0.1")
     api.mount("/native-assets", StaticFiles(directory=ASSETS_DIRECTORY), name="native-assets")
@@ -354,6 +368,39 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             raise HTTPException(status_code=422, detail={"code": "MODEL_SELECTION_REQUIRED", "message": "Выберите алгоритм."})
         available_model(resolved_session_id, state["selected_model_id"])
         return _session_response(store.continue_from_algorithm(resolved_session_id))
+
+    def quality_response(session_id: str) -> dict[str, Any]:
+        try:
+            return quality.state(session_id)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "ALGORITHM_CONTINUE_REQUIRED", "message": "Сначала завершите выбор алгоритма."},
+            ) from exc
+
+    @api.get("/api/v1/quality")
+    def get_quality(response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> dict[str, Any]:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        return quality_response(resolved_session_id)
+
+    @api.patch("/api/v1/quality/settings")
+    def patch_quality_settings(request: QualitySettingsPatch, response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> dict[str, Any]:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        current = quality_response(resolved_session_id)
+        seed = current["settings"]["seed"] if request.seed is None else request.seed
+        folds = current["settings"]["folds"] if request.folds is None else request.folds
+        try:
+            return quality.update_settings(resolved_session_id, seed=seed, folds=folds)
+        except ValueError as exc:
+            code = str(exc)
+            message = "Количество частей проверки меньше допустимого." if code == "INVALID_FOLDS" else "Seed должен быть целым числом."
+            raise HTTPException(status_code=422, detail={"code": code, "message": message}) from None
+
+    @api.post("/api/v1/quality/preflight")
+    async def run_quality_preflight(response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> dict[str, Any]:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        quality_response(resolved_session_id)
+        return await run_in_threadpool(quality.preflight, resolved_session_id)
 
     @api.post("/api/v1/analysis/new", response_model=NewAnalysisResponse)
     def new_analysis(

@@ -1,6 +1,75 @@
+import { useEffect, useState } from 'react'
+import { getQuality, NativeApiError, patchQualitySettings, runQualityPreflight, type QualityState } from '../api/session'
 import { Sidebar } from '../components/Sidebar'
 import { navigate, routes } from '../routing'
 
 export function QualityPage({ onHome }: { onHome: () => void }) {
-  return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace algorithm-boundary"><p className="eyebrow">Шаг 4 из 5</p><section className="panel"><h1>Проверка качества</h1><p>Алгоритм и его конфигурация сохранены. Проверка качества будет добавлена на следующем этапе.</p><button className="secondary-action" onClick={() => navigate(routes.algorithm)}>Назад к алгоритму</button></section></main></div>
+  const [data, setData] = useState<QualityState | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [foldsDraft, setFoldsDraft] = useState('')
+  const [seedDraft, setSeedDraft] = useState('')
+  const parseInteger = (value: string): number | null => /^-?\d+$/.test(value.trim()) && Number.isSafeInteger(Number(value)) ? Number(value) : null
+  const parsedFolds = parseInteger(foldsDraft)
+  const parsedSeed = parseInteger(seedDraft)
+  const draftChanged = Boolean(data && (parsedFolds === null || parsedSeed === null || parsedFolds !== data.settings.folds || parsedSeed !== data.settings.seed))
+  const draftValid = parsedFolds !== null && parsedSeed !== null && Boolean(data && parsedFolds >= data.supported_protocol.minimum_folds)
+
+  const preflight = (cancelled: () => boolean = () => false) => {
+    setBusy(true)
+    setError(null)
+    setData(current => current ? { ...current, preflight: { ...current.preflight, status: 'RUNNING', identity: null, failure_code: null, message: 'Выполняем предварительную проверку…' }, can_start_training: false } : current)
+    void runQualityPreflight().then(value => !cancelled() && setData(value)).catch(reason => !cancelled() && setError(reason instanceof Error ? reason.message : 'Не удалось выполнить предварительную проверку.')).finally(() => !cancelled() && setBusy(false))
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    void getQuality().then(next => {
+      if (cancelled) return
+      setData(next)
+      setFoldsDraft(String(next.settings.folds))
+      setSeedDraft(String(next.settings.seed))
+      if (next.preflight.status !== 'PASS' && next.preflight.status !== 'RUNNING') preflight(() => cancelled)
+    }).catch(reason => !cancelled && setError(reason instanceof Error ? reason.message : 'Не удалось загрузить проверку.'))
+    return () => { cancelled = true }
+  }, [])
+
+  const applySettings = () => {
+    if (!data || !draftValid || parsedFolds === null || parsedSeed === null || !draftChanged || busy) return
+    setBusy(true); setError(null)
+    void patchQualitySettings({ folds: parsedFolds, seed: parsedSeed }).then(next => {
+      setData(next)
+      setFoldsDraft(String(next.settings.folds))
+      setSeedDraft(String(next.settings.seed))
+      setData(current => current ? { ...current, preflight: { ...current.preflight, status: 'RUNNING', identity: null, failure_code: null, message: 'Выполняем предварительную проверку…' }, can_start_training: false } : current)
+      return runQualityPreflight()
+    }).then(setData).catch(reason => setError(reason instanceof NativeApiError ? reason.message : reason instanceof Error ? reason.message : 'Не удалось сохранить настройки.')).finally(() => setBusy(false))
+  }
+  const steps = ['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат']
+  const checks: Array<[string, string]> = [
+    ['Данные готовы', 'Подтверждённый набор данных доступен для запуска.'], ['Выбранные признаки корректны', 'Выбранный набор признаков доступен алгоритму.'], ['Алгоритм доступен', 'Алгоритм и необходимые компоненты доступны.'], ['Настройки совместимы', 'Конфигурация успешно проверена.'], ['Пробное обучение выполнено', 'Модель успешно обучилась на небольшой контрольной выборке.'], ['Пробный прогноз получен', 'Прогнозы получены в корректном формате.'],
+  ]
+  const passed = data?.preflight.status === 'PASS'
+  return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace quality-workspace">
+    <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{steps.map((name, index) => <li key={name} className={index < 3 ? 'completed' : index === 3 ? 'active' : ''}><span>{index < 3 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
+    <header className="quality-header"><p className="eyebrow">Шаг 4 из 5</p><h1>Проверка перед запуском</h1><p>Проверьте выбранную конфигурацию. AXION автоматически убедится, что всё готово к обучению.</p></header>
+    {error && <p className="feature-warning">{error}</p>}
+    {!data && !error && <p className="feature-loading">Загружаем конфигурацию…</p>}
+    {data && <>
+      <section className="quality-summary panel"><h2>Что будет использовано</h2><div className="quality-summary-grid">
+        <article><span>▧</span><div><small>Данные</small><strong>{data.summary.dataset_name}</strong><em>{data.summary.population_size.toLocaleString('ru-RU')} строк</em></div></article>
+        <article><span>▥</span><div><small>Признаки</small><strong>{data.summary.selected_feature_count} выбрано</strong></div><button className="text-action" onClick={() => navigate(routes.features)}>Изменить</button></article>
+        <article><span>◇</span><div><small>Алгоритм</small><strong>{data.summary.selected_model_display_name_ru}</strong></div><button className="text-action" onClick={() => navigate(routes.algorithm)}>Изменить</button></article>
+        <article><span>⚙</span><div><small>Настройки алгоритма</small><strong>{data.summary.configuration_mode === 'ADVANCED' ? 'Расширенные' : 'Рекомендуемые'}</strong></div><button className="text-action" onClick={() => navigate(routes.algorithm)}>Изменить</button></article>
+      </div></section>
+      <section className={`quality-preflight panel ${passed ? 'passed' : ''}`}><div className="quality-title"><div><h2>Проверка перед запуском</h2><p>AXION автоматически проверяет совместимость данных, признаков и алгоритма и выполняет небольшой пробный запуск.</p></div><span className={passed ? 'quality-pass-label' : 'quality-pending-label'}>{passed ? '✓ Предварительная проверка завершена' : data.preflight.status === 'RUNNING' || busy ? '◌ Выполняем предварительную проверку…' : data.preflight.message ?? data.plan.safe_validation_state}</span></div>
+        {passed && <div className="quality-checks">{checks.map(([name, description]) => <div key={name}><b>✓</b><strong>{name}</strong><span>{description}</span></div>)}</div>}
+        {!passed && <div className="quality-waiting">{data.preflight.status === 'FAIL' ? <>{data.preflight.message}<button className="secondary-action" disabled={busy} onClick={() => preflight()}>Повторить проверку</button></> : 'Выполняем предварительную проверку…'}</div>}
+        {passed && <div className="quality-success"><b>✓</b><div><h2>Готово к запуску</h2><p>Предварительная проверка подтверждает техническую готовность конфигурации.</p><p>Качество модели будет рассчитано во время полноценной проверки.</p><p>После обучения AXION автоматически рассчитает метрики качества.</p></div></div>}
+      </section>
+      <details className="quality-details panel"><summary><span>⚙</span><div><strong>Дополнительные настройки</strong><small>Рекомендуемые параметры уже выбраны автоматически.</small></div></summary><div className="quality-settings"><label>Количество частей проверки<input type="text" inputMode="numeric" value={foldsDraft} disabled={busy} onChange={e => setFoldsDraft(e.target.value)} /></label><label>Seed<input type="text" inputMode="numeric" value={seedDraft} disabled={busy} onChange={e => setSeedDraft(e.target.value)} /></label><button className="secondary-action" disabled={busy || !draftChanged || !draftValid} onClick={applySettings}>Применить настройки</button><p>Протокол: {data.supported_protocol.protocol_id} v{data.supported_protocol.protocol_version} · {data.supported_protocol.evaluation_level}</p></div>{draftChanged && !draftValid && <p className="quality-validation">Введите целые числа; число частей проверки должно быть не меньше {data.supported_protocol.minimum_folds}.</p>}</details>
+      <details className="quality-details panel"><summary><span>▧</span><div><strong>Технические сведения</strong><small>Информация о протоколе проверки, используемых данных и других технических деталях.</small></div></summary><dl><div><dt>Protocol</dt><dd>{data.supported_protocol.protocol_id} v{data.supported_protocol.protocol_version}</dd></div><div><dt>Folds / seed</dt><dd>{data.settings.folds} / {data.settings.seed}</dd></div><div><dt>Model</dt><dd>{data.summary.selected_model_id}</dd></div><div><dt>Plan / smoke</dt><dd>{data.plan.status} / {data.preflight.status}</dd></div>{data.preflight.identity && <div><dt>Smoke identity</dt><dd>{data.preflight.identity}</dd></div>}</dl></details>
+      <footer className="quality-footer"><button className="secondary-action" onClick={() => navigate(routes.algorithm)}>← Назад к алгоритму</button><div><button className="primary-action" disabled>Начать обучение →</button>{passed && <small>Запуск обучения будет подключён на следующем подэтапе Quality.</small>}</div></footer>
+    </>}
+  </main></div>
 }

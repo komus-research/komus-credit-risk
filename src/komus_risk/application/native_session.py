@@ -41,6 +41,19 @@ class DatasetInspectionStatus(StrEnum):
     ERROR = "ERROR"
 
 
+class QualityPlanStatus(StrEnum):
+    IDLE = "IDLE"
+    VALID = "VALID"
+    INVALID = "INVALID"
+
+
+class QualityPreflightStatus(StrEnum):
+    IDLE = "IDLE"
+    RUNNING = "RUNNING"
+    PASS = "PASS"
+    FAIL = "FAIL"
+
+
 class DatasetInspectionStage(StrEnum):
     """Truthful stages emitted around existing inspection operations."""
 
@@ -118,6 +131,14 @@ class _NativeAnalysisSession:
     model_user_overrides: dict[str, Any] = field(default_factory=dict)
     hidden_model_ids: set[str] = field(default_factory=set)
     algorithm_completed: bool = False
+    quality_seed: int | None = None
+    quality_folds: int | None = None
+    quality_plan_status: QualityPlanStatus = QualityPlanStatus.IDLE
+    quality_preflight_status: QualityPreflightStatus = QualityPreflightStatus.IDLE
+    quality_preflight_operation_token: str | None = None
+    quality_preflight_identity: str | None = None
+    quality_preflight_failure_code: str | None = None
+    quality_completed: bool = False
 
     def snapshot(self) -> NativeSessionSnapshot:
         return NativeSessionSnapshot(
@@ -473,6 +494,7 @@ class NativeSessionStore:
                     session.features_completed = False
                     session.current_step = 1
                 session.algorithm_completed = False
+                self._clear_quality_state(session)
             return session.snapshot()
 
     def continue_from_features(self, session_id: str) -> NativeSessionSnapshot:
@@ -501,6 +523,7 @@ class NativeSessionStore:
             session.model_configuration_mode = "RECOMMENDED"
             session.model_user_overrides = {}
             session.algorithm_completed = False
+            self._clear_quality_state(session)
             session.current_step = 2
             return session.snapshot()
 
@@ -518,6 +541,7 @@ class NativeSessionStore:
             session.model_configuration_mode = mode
             session.model_user_overrides = canonical_overrides
             session.algorithm_completed = False
+            self._clear_quality_state(session)
             session.current_step = 2
             return session.snapshot()
 
@@ -532,6 +556,7 @@ class NativeSessionStore:
                 session.model_configuration_mode = "RECOMMENDED"
                 session.model_user_overrides = {}
                 session.algorithm_completed = False
+                self._clear_quality_state(session)
                 session.current_step = 2
             return session.snapshot()
 
@@ -551,6 +576,68 @@ class NativeSessionStore:
             session.algorithm_completed = True
             session.current_step = 3
             return session.snapshot()
+
+    def quality_state(self, session_id: str, *, default_seed: int, default_folds: int) -> tuple[str, tuple[str, ...], str, str, dict[str, Any], int, int, QualityPlanStatus, QualityPreflightStatus, str | None, str | None, str | None]:
+        """Return Quality's trusted scientific draft and transient readiness state."""
+        with self._lock:
+            session = self._session(session_id)
+            if not (session.data_substep == "PREPARED" and session.prepared_context_id and session.features_completed and session.selected_feature_ids and session.algorithm_completed and session.selected_model_id):
+                raise NativeSessionTransitionError()
+            if session.quality_seed is None:
+                session.quality_seed = default_seed
+            if session.quality_folds is None:
+                session.quality_folds = default_folds
+            return (session.prepared_context_id, session.selected_feature_ids, session.selected_model_id,
+                    session.model_configuration_mode, dict(session.model_user_overrides),
+                    session.quality_seed, session.quality_folds, session.quality_plan_status,
+                    session.quality_preflight_status, session.quality_preflight_identity,
+                    session.quality_preflight_failure_code, session.quality_preflight_operation_token)
+
+    def set_quality_settings(self, session_id: str, *, seed: int, folds: int) -> NativeSessionSnapshot:
+        with self._lock:
+            session = self._require_quality(session_id)
+            if session.quality_seed == seed and session.quality_folds == folds:
+                return session.snapshot()
+            session.quality_seed = seed
+            session.quality_folds = folds
+            self._clear_quality_state(session, preserve_settings=True)
+            return session.snapshot()
+
+    def begin_quality_preflight(self, session_id: str, *, default_seed: int, default_folds: int) -> tuple[str, tuple[str, tuple[str, ...], str, str, dict[str, Any], int, int]]:
+        with self._lock:
+            session = self._require_quality(session_id)
+            if session.quality_seed is None:
+                session.quality_seed = default_seed
+            if session.quality_folds is None:
+                session.quality_folds = default_folds
+            token = token_urlsafe(24)
+            session.quality_preflight_operation_token = token
+            session.quality_plan_status = QualityPlanStatus.IDLE
+            session.quality_preflight_status = QualityPreflightStatus.RUNNING
+            session.quality_preflight_identity = None
+            session.quality_preflight_failure_code = None
+            captured = (
+                session.prepared_context_id,
+                session.selected_feature_ids,
+                session.selected_model_id,
+                session.model_configuration_mode,
+                dict(session.model_user_overrides),
+                session.quality_seed,
+                session.quality_folds,
+            )
+            return token, captured
+
+    def set_quality_preflight(self, session_id: str, *, operation_token: str, plan_status: QualityPlanStatus, preflight_status: QualityPreflightStatus, identity: str | None = None, failure_code: str | None = None) -> bool:
+        with self._lock:
+            session = self._session(session_id)
+            if not operation_token or session.quality_preflight_operation_token != operation_token:
+                return False
+            self._require_quality(session_id)
+            session.quality_plan_status = plan_status
+            session.quality_preflight_status = preflight_status
+            session.quality_preflight_identity = identity
+            session.quality_preflight_failure_code = failure_code
+            return True
 
     def abort_confirmation_materialization(
         self, session_id: str, operation_token: str
@@ -636,6 +723,25 @@ class NativeSessionStore:
         session.model_configuration_mode = "RECOMMENDED"
         session.model_user_overrides = {}
         session.algorithm_completed = False
+        NativeSessionStore._clear_quality_state(session)
+
+    @staticmethod
+    def _clear_quality_state(session: _NativeAnalysisSession, *, preserve_settings: bool = False) -> None:
+        if not preserve_settings:
+            session.quality_seed = None
+            session.quality_folds = None
+        session.quality_plan_status = QualityPlanStatus.IDLE
+        session.quality_preflight_status = QualityPreflightStatus.IDLE
+        session.quality_preflight_operation_token = None
+        session.quality_preflight_identity = None
+        session.quality_preflight_failure_code = None
+        session.quality_completed = False
+
+    def _require_quality(self, session_id: str) -> _NativeAnalysisSession:
+        session = self._require_algorithm(session_id)
+        if not (session.algorithm_completed and session.selected_model_id):
+            raise NativeSessionTransitionError()
+        return session
 
     def _require_algorithm(self, session_id: str) -> _NativeAnalysisSession:
         session = self._session(session_id)

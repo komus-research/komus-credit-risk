@@ -49,6 +49,7 @@ from .result_interpreter_prompts import (
     ResultInterpreterPromptsError,
 )
 from .service import ExperimentApplicationService, SmokeGateError
+from .native_quality import NativeQualityService, QualityProtocol
 
 __all__ = [
     "RESULT_INTERPRETER_ROLES",
@@ -91,4 +92,6 @@ __all__ = [
     "LoadedResultInterpreterPrompt",
     "RunExperimentRequest",
     "SmokeGateError",
+    "NativeQualityService",
+    "QualityProtocol",
 ]

@@ -147,3 +147,22 @@ export const patchAlgorithmConfiguration = (configuration_mode: 'RECOMMENDED' | 
 export const hideAlgorithmModel = (model_id: string) => fetch(`/api/v1/algorithm/models/${encodeURIComponent(model_id)}/hide`, { method: 'POST' }).then(algorithmResponse)
 export const restoreAlgorithmModel = (model_id: string) => fetch(`/api/v1/algorithm/models/${encodeURIComponent(model_id)}/restore`, { method: 'POST' }).then(algorithmResponse)
 export const continueAlgorithm = () => fetch('/api/v1/algorithm/continue', { method: 'POST' }).then(sessionResponse)
+
+export type QualityState = {
+  summary: { dataset_name: string; population_size: number; selected_feature_count: number; selected_model_id: string; selected_model_display_name_ru: string; configuration_mode: 'RECOMMENDED' | 'ADVANCED' }
+  supported_protocol: { protocol_id: string; protocol_version: string; evaluation_level: string; minimum_folds: number; default_folds: number; default_seed: number }
+  settings: { folds: number; seed: number }
+  plan: { status: 'IDLE' | 'VALID' | 'INVALID'; safe_validation_state: string }
+  preflight: { status: 'IDLE' | 'RUNNING' | 'PASS' | 'FAIL'; identity: string | null; failure_code: string | null; message: string | null }
+  can_start_training: boolean
+}
+async function qualityResponse(response: Response): Promise<QualityState> {
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { message?: string; code?: string } } | null
+    throw new NativeApiError(payload?.detail?.message ?? 'Не удалось загрузить проверку перед запуском.', response.status, payload?.detail?.code)
+  }
+  return response.json() as Promise<QualityState>
+}
+export const getQuality = () => fetch('/api/v1/quality').then(qualityResponse)
+export const runQualityPreflight = () => fetch('/api/v1/quality/preflight', { method: 'POST' }).then(qualityResponse)
+export const patchQualitySettings = (settings: Partial<{ folds: number; seed: number }>) => fetch('/api/v1/quality/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }).then(qualityResponse)

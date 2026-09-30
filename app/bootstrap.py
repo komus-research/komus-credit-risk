@@ -34,10 +34,8 @@ from komus_risk.contracts import FeatureGroup, FeatureSpec, FeatureUsageStatus
 from komus_risk.data import LoadedDataset, ReadyDatasetAdapter, TabularSnapshot
 from komus_risk.experiments import EvaluationPopulation
 from app.result_interpreter_runtime import compose_result_interpreter_runtime
-from komus_risk.model_platform import (
-    build_builtin_model_plugin_registry,
-    builtin_model_presentation_registry,
-)
+from app.experiment_runtime import compose_experiment_models
+from komus_risk.model_platform import builtin_model_presentation_registry
 from komus_risk.models import (
     ModelAdapterFactory,
 )
@@ -600,12 +598,11 @@ def create_runtime(
     result_interpreter_factories: Mapping[str, Callable[[str, str], Any]] | None = None,
 ) -> PrototypeRuntime:
     """Wire existing model, planning, application, persistence and comparison services."""
-    plugin_registry = build_builtin_model_plugin_registry()
+    model_runtime = compose_experiment_models()
+    plugin_registry = model_runtime.plugin_registry
     plugins = plugin_registry.list()
-    factories = {plugin.spec.model_id: plugin.factory for plugin in plugins}
-    registry = ModelRegistry()
-    for plugin in plugins:
-        registry.register(plugin.spec)
+    factories = model_runtime.model_factories
+    registry = model_runtime.model_registry
     persistence_provider_registry = plugin_registry.persistence_providers
     if persistence_provider_registry is None:  # pragma: no cover - builtin invariant
         raise RuntimeError("Builtin model plugins require persistence providers.")
