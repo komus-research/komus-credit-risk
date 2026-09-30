@@ -9,6 +9,7 @@ Primary visual references:
 - `docs/design/screens/models/02_algorithm_detail_highlight_v1.png`
 - `docs/design/screens/models/03_model_version_detail_v1.png`
 - `docs/design/screens/models/04_saved_model_inference_v1.png`
+- `docs/design/screens/models/05_saved_model_inference_result_v1.png` — DESIGN REFERENCE; threshold lifecycle/persistence pending Architect decision
 
 ## 1. Product model
 
@@ -274,3 +275,26 @@ Future backend implementation must provide a trusted application contract for:
 - opening object-level explanations from those prediction results.
 
 The UI must not infer compatibility from column count alone and must not silently remap missing model features.
+
+## 10. Saved Model Inference Result V1 — current design reference
+
+Reference:
+
+`05_saved_model_inference_result_v1.png`
+
+The owner accepted the screen composition and current visual language. It is intentionally recorded as a **DESIGN REFERENCE**, not yet a full semantic visual lock, because threshold lifecycle/persistence is awaiting a separate Architect decision.
+
+Stable semantics already visible in the reference:
+- targetless inference result shows immutable model scores for new objects;
+- no TP/TN/FP/FN, Recall, Precision, F1 or OOF quality may be inferred for the new dataset without target;
+- table exposes identifier, model score and position relative to an explicit analytical threshold;
+- score range filters the list and does not change scores or retrain the model;
+- object-level Local Explanation / SHAP and Result Interpreter are downstream capabilities after selecting an object;
+- the current summary uses plain counts for objects above/below threshold plus percentages and score range.
+
+Open Architect decision:
+- whether inference result is automatically persisted as immutable result evidence;
+- whether threshold is transient view state or a persisted scenario over one immutable result;
+- what the top action `Сохранить` means;
+- where the initial targetless-inference threshold comes from;
+- `Изменить порог` must not be implemented as a model retraining action unless a future accepted decision explicitly changes this.

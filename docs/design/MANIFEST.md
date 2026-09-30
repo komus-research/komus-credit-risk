@@ -27,6 +27,7 @@
 | Модели — алгоритм / подсветка метрик V1 | `screens/models/02_algorithm_detail_highlight_v1.png` | VISUAL LOCK; optional relative metric highlighting для текущего filtered list |
 | Модели — сохранённая модель V1 | `screens/models/03_model_version_detail_v1.png` | VISUAL LOCK; detail одной сохранённой ModelVersion, её OOF quality, данные, признаки и действия |
 | Модели — анализ новых данных V1 | `screens/models/04_saved_model_inference_v1.png` | VISUAL LOCK; применение сохранённой ModelVersion к новому совместимому dataset без переобучения |
+| Модели — результат анализа новых данных V1 | `screens/models/05_saved_model_inference_result_v1.png` | DESIGN REFERENCE; композиция принята, threshold lifecycle/persistence ждёт отдельный Architect decision |
 | Новый анализ — проверка качества V1 | `screens/new-analysis/05_quality_v1.png` | VISUAL LOCK; основной reference для native Quality V1 |
 | Результат V1 | `screens/result/01_result_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Результат модели V2 | `screens/result/02_result_model_overview_v2.png` | VISUAL LOCK; основной обзор завершённого experiment result |
@@ -64,6 +65,7 @@
 - `screens/models/02_algorithm_detail_highlight_v1.png` — accepted optional highlight-state того же Algorithm Detail;
 - `screens/models/03_model_version_detail_v1.png` — accepted visual lock detail одной сохранённой ModelVersion;
 - `screens/models/04_saved_model_inference_v1.png` — accepted visual lock применения сохранённой ModelVersion к новым данным без retraining;
+- `screens/models/05_saved_model_inference_result_v1.png` — current design reference targetless inference result; threshold lifecycle/persistence intentionally not locked yet;
 - canonical distinction: Algorithm/ModelPlugin ≠ trained ModelVersion;
 - Metric Highlight default OFF и сравнивает OOF Gini / ROC-AUC / PR-AUC только относительно текущего filtered list, отдельно по каждой колонке;
 - highlighting не является ranking, winner selection, final-test evidence или business verdict;

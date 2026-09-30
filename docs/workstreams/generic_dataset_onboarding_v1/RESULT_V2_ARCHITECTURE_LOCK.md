@@ -290,14 +290,17 @@ UME-BE1 — Universal Model Explainability V1 — **ACCEPTED / CLOSED**, source 
 
 R2-BE2A — OOF Result Read Core — **ACCEPTED / CLOSED**, source commit `81707dc14edf678db39a3ba71f5aad0c50c36eab`.
 
-R2-BE2A реализует public read boundary для:
+R2-BE2B — Local OOF Explainability — **ACCEPTED / CLOSED**, source commit `1ee6e10f581e5281fc63f21a6a86c7cffcfe0e05`.
+
+Принятый backend теперь покрывает:
 - summary;
 - explicit threshold metrics;
 - random-access object list;
-- object detail с Fold provenance.
+- object detail с Fold provenance;
+- exact persisted fold model reload;
+- strict OOF probability replay;
+- validated `LocalExplanationEvidence V2` через trusted `explain_batch()` path.
 
-Следующий backend stage:
+Final/refit fallback для OOF explanation отсутствует.
 
-**R2-BE2B — Local OOF Explainability**
-
-Он соединяет accepted Result Read identity с exact persisted fold model и universal explanation provider boundary. Frontend не расширять до отдельного Result implementation stage.
+Следующий отдельный backend вопрос — Global OOF SHAP aggregate. Frontend не расширять до отдельного Result implementation stage.
