@@ -21,6 +21,12 @@
 | Новый анализ — признаки | `screens/new-analysis/03_features_v1.png` | Рабочий референс выбора признаков |
 | Новый анализ — алгоритм | `screens/new-analysis/04_algorithm_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Новый анализ — алгоритм V2 | `screens/new-analysis/04_algorithm_v2.png` | VISUAL LOCK; основной reference для native Algorithm V2 |
+| Подключить алгоритм V1 | `screens/algorithm/01_connect_algorithm_v1.png` | VISUAL LOCK; trusted algorithm/plugin onboarding, доступен из «Новый анализ → Алгоритм» и «Модели» |
+| Модели — библиотека V1 | `screens/models/01_models_hub_v1.png` | VISUAL LOCK; общий каталог сохранённых ModelVersion + вкладка «Алгоритмы» |
+| Модели — алгоритм V1 | `screens/models/02_algorithm_detail_v1.png` | VISUAL LOCK; конкретный algorithm/plugin и история его сохранённых ModelVersion |
+| Модели — алгоритм / подсветка метрик V1 | `screens/models/02_algorithm_detail_highlight_v1.png` | VISUAL LOCK; optional relative metric highlighting для текущего filtered list |
+| Модели — сохранённая модель V1 | `screens/models/03_model_version_detail_v1.png` | VISUAL LOCK; detail одной сохранённой ModelVersion, её OOF quality, данные, признаки и действия |
+| Модели — анализ новых данных V1 | `screens/models/04_saved_model_inference_v1.png` | VISUAL LOCK; применение сохранённой ModelVersion к новому совместимому dataset без переобучения |
 | Новый анализ — проверка качества V1 | `screens/new-analysis/05_quality_v1.png` | VISUAL LOCK; основной reference для native Quality V1 |
 | Результат V1 | `screens/result/01_result_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Результат модели V2 | `screens/result/02_result_model_overview_v2.png` | VISUAL LOCK; основной обзор завершённого experiment result |
@@ -48,7 +54,21 @@
 - действие **«Удалить подключённую модель»** доступно только для реально импортированных пользовательских моделей;
 - встроенные модели можно скрыть из рабочего списка, но не удалять из registry;
 - демонстрационный `Проект: Анализ контрагентов 2026` не является runtime-данными и не должен хардкодиться;
-- общий layout, `Подключить модель`, меню `⋯`, `Рекомендуемые / Расширенные`, блок `Технические сведения` и footer сохранить.
+- общий layout, действие `Подключить алгоритм`, меню `⋯`, `Рекомендуемые / Расширенные`, блок `Технические сведения` и footer сохранить;
+- отдельный trusted-plugin flow зафиксирован в `screens/algorithm/01_connect_algorithm_v1.png` и `CONNECT_ALGORITHM_UX_V1.md`; он не является импортом обученной ModelVersion.
+
+### Models V1
+
+- `screens/models/01_models_hub_v1.png` — accepted visual lock общего каталога сохранённых ModelVersion;
+- `screens/models/02_algorithm_detail_v1.png` — accepted visual lock истории обучений конкретного algorithm/plugin;
+- `screens/models/02_algorithm_detail_highlight_v1.png` — accepted optional highlight-state того же Algorithm Detail;
+- `screens/models/03_model_version_detail_v1.png` — accepted visual lock detail одной сохранённой ModelVersion;
+- `screens/models/04_saved_model_inference_v1.png` — accepted visual lock применения сохранённой ModelVersion к новым данным без retraining;
+- canonical distinction: Algorithm/ModelPlugin ≠ trained ModelVersion;
+- Metric Highlight default OFF и сравнивает OOF Gini / ROC-AUC / PR-AUC только относительно текущего filtered list, отдельно по каждой колонке;
+- highlighting не является ranking, winner selection, final-test evidence или business verdict;
+- backend browse/list/history contract пока не реализован; UI не сканирует filesystem и не фабрикует catalog rows/counts;
+- product semantics: `docs/workstreams/generic_dataset_onboarding_v1/MODELS_UX_V1.md`.
 
 ### Quality V1
 

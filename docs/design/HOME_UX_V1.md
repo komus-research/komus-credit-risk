@@ -104,8 +104,9 @@ Standalone «открытие модели из хранилища» в Home V1 
 
 ### Quick Start — «Открыть модель»
 
-В V1 disabled/future.
-Причина: persisted ModelVersion можно загрузить только по уже известному ID; accepted browse/list/open flow отсутствует.
+В текущем runtime disabled/future.
+Причина: persisted ModelVersion можно загрузить только по уже известному ID; trusted browse/list/open backend flow ещё не реализован.
+Product/visual lock будущего каталога уже принят в `docs/workstreams/generic_dataset_onboarding_v1/MODELS_UX_V1.md`, но это не разрешает обходить application boundary сканированием filesystem.
 Нельзя просить Streamlit искать модели по filesystem.
 
 ### Quick Start — «Продолжить последний проект»
@@ -139,7 +140,7 @@ ExperimentArtifact не считается Project по умолчанию.
 | --- | --- |
 | Главная | Active route. Открывает Home и ничего не сбрасывает. |
 | Новый анализ | Active action. Запускает explicit new-analysis transition. |
-| Модели | Disabled/future. Standalone model catalog отсутствует. |
+| Модели | В текущем runtime остаётся disabled до trusted browse/list backend contract. Product/visual lock каталога уже принят в `MODELS_UX_V1.md`. |
 | Проекты / История | Disabled/future. Project/history contract отсутствует. |
 | Настройки | Disabled/future. Глобального settings contract нет. |
 

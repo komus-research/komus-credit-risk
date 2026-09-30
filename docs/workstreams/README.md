@@ -68,6 +68,8 @@ Canonical downstream flow:
 - [generic_dataset_onboarding_v1/SPEC.md](generic_dataset_onboarding_v1/SPEC.md)
 - [generic_dataset_onboarding_v1/FEATURE_SELECTION_UX_V1.md](generic_dataset_onboarding_v1/FEATURE_SELECTION_UX_V1.md)
 - [generic_dataset_onboarding_v1/ALGORITHM_UX_V1.md](generic_dataset_onboarding_v1/ALGORITHM_UX_V1.md)
+- [generic_dataset_onboarding_v1/CONNECT_ALGORITHM_UX_V1.md](generic_dataset_onboarding_v1/CONNECT_ALGORITHM_UX_V1.md)
+- [generic_dataset_onboarding_v1/MODELS_UX_V1.md](generic_dataset_onboarding_v1/MODELS_UX_V1.md)
 - [generic_dataset_onboarding_v1/QUALITY_UX_V1.md](generic_dataset_onboarding_v1/QUALITY_UX_V1.md)
 
 Текущий product status:
@@ -77,6 +79,8 @@ Canonical downstream flow:
 - Данные / Подтверждение — UX/VISUAL LOCK;
 - Native Features V1 — CLOSED / ACCEPTED;
 - Native Algorithm V2 — CLOSED / ACCEPTED, source commit `e85994017fd08c1dadede0694700f1847cf72f2b`;
+- Connect Algorithm V1 — PRODUCT / VISUAL LOCK ACCEPTED, backend implementation pending; один flow из `Новый анализ → Алгоритм` и `Модели`;
+- Models UX V1 — PRODUCT / VISUAL LOCK ACCEPTED, backend implementation pending; Models Hub + Algorithm Detail + optional Metric Highlight + ModelVersion Detail + Saved Model Inference;
 - Quality V1 — UX/VISUAL LOCK ACCEPTED, next implementation stage.
 
 Quality V1 использует автоматический backend preflight и одну primary CTA **«Начать обучение»**; technical smoke не является quality verdict.

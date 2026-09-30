@@ -1,6 +1,6 @@
 # Universal Model Explainability V1 — Architecture Lock
 
-Status: **ACCEPTED ARCHITECTURE LOCK / IMPLEMENTATION PENDING**
+Status: **ACCEPTED / IMPLEMENTED — UME-BE1 CLOSED**
 
 Основание: owner requirement — любая модель, доступная пользователю как полноценная модель AXION, обязана иметь единый путь:
 
@@ -328,22 +328,21 @@ Global explanation описывает поведение модели, не пр
 
 R2-BE1 — OOF Evidence Artifact V3: **ACCEPTED / CLOSED**.
 
-Следующий backend stage:
+UME-BE1 — Universal Model Explainability V1: **ACCEPTED / CLOSED**.
 
-**UME-BE1 — Universal Model Explainability V1**
-
-Scope:
-1. ModelExplanationProvider + registry.
-2. ModelPlugin fail-closed provider binding.
+Реализовано и принято:
+1. `ModelExplanationProvider` + trusted registry.
+2. `ModelPlugin` fail-closed provider binding.
 3. FULLY_SUPPORTED readiness rule.
-4. LocalExplanationEvidence V2.
-5. Existing CatBoost / XGBoost / LightGBM через новый registry.
-6. GBDT Mean probability-space provider.
-7. Result Interpreter adaptation.
-8. Generic connected-model validation contract.
-9. Tests.
+4. `LocalExplanationEvidence V2`.
+5. CatBoost / XGBoost / LightGBM через universal provider boundary.
+6. GBDT Mean probability-space provider с exact OOF fold binding и reconstruction gates.
+7. Result Interpreter adaptation к trusted V2 evidence.
+8. Deterministic bounded outer-train background policy.
+9. Trusted batch explanation path для будущего Global OOF.
+10. Regression coverage для foreign artifact/fold/model/context и metadata injection.
 
-После ACCEPT UME-BE1:
+Следующий backend stage:
 
 **R2-BE2 — Result Read + OOF Explainability**
 
@@ -353,7 +352,7 @@ Scope:
 - Global OOF explanation;
 - public Result API.
 
-Connect Model UI/onboarding можно реализовать позже без пересмотра explainability architecture.
+Connect Algorithm UI/onboarding и Models UX реализуются отдельными stages без пересмотра принятой explainability architecture.
 ## 12. Acceptance
 
 - UI не знает model family.

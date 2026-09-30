@@ -71,7 +71,7 @@ The following decisions are preserved and are not reopened:
 8. hidden models are session-only presentation preference;
 9. hiding the currently selected model requires confirmation;
 10. hidden models can be restored;
-11. «Подключить модель» is reserved for a future trusted-plugin flow only;
+11. future trusted-plugin action is named «Подключить алгоритм»; its separate accepted product/visual lock is `CONNECT_ALGORITHM_UX_V1.md`;
 12. Algorithm is separate from Quality;
 13. technical details remain collapsed;
 14. no model-specific icons, descriptions, badges, parameters or validation rules are hardcoded in Streamlit;
@@ -336,16 +336,30 @@ Historical results remain identifiable regardless of current hidden state.
 
 ---
 
-## 12. Future «Подключить модель»
+## 12. Future «Подключить алгоритм»
 
 Reserve layout space near hidden-model management for future:
 
-> **+ Подключить модель**
+> **+ Подключить алгоритм**
 
-No active V1 action.
+Algorithm UX V1 itself still does not implement this action.
+The accepted future flow is specified separately in:
 
-V1 must not upload arbitrary model code, install packages, load untrusted
-pickle, dynamically import user classes or register arbitrary adapters from UI.
+`docs/workstreams/generic_dataset_onboarding_v1/CONNECT_ALGORITHM_UX_V1.md`
+
+and visual reference:
+
+`docs/design/screens/algorithm/01_connect_algorithm_v1.png`.
+
+Canonical semantics:
+- connect a trusted algorithm / ModelPlugin, not a trained ModelVersion;
+- same flow is reachable both from current analysis → Algorithm and from «Модели»;
+- successful return goes back to the entry context;
+- editable «Название в AXION» is only a display alias and does not replace trusted model/plugin identity;
+- no dataset, feature-count, metrics or trained-model facts exist at this stage.
+
+The future flow must not upload arbitrary model code, install untrusted packages,
+load untrusted pickle, dynamically import user classes or register arbitrary adapters from UI.
 
 ---
 
@@ -819,7 +833,7 @@ Algorithm UX V1 is accepted only if:
 28. Algorithm does not train or run smoke;
 29. Algorithm → Quality forwards accepted mode/override fields;
 30. Quality owns protocol/seed/folds/smoke/run readiness;
-31. no active arbitrary «Подключить модель» path exists;
+31. no active arbitrary plugin-install path exists; future «Подключить алгоритм» follows the separate trusted Connect Algorithm contract;
 32. existing backend contracts remain unchanged.
 
 ---

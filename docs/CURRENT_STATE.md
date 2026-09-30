@@ -1235,7 +1235,7 @@ Final verification перед commit:
 Известный `test_model_presentation.py` contract-hash baseline mismatch подтверждён как pre-existing на base и не создан R2-BE1.
 ### Universal Model Explainability V1
 
-Статус архитектуры: **ACCEPTED / LOCKED**, implementation ещё не выполнена.
+Статус: **ACCEPTED / IMPLEMENTED — UME-BE1 CLOSED**.
 
 Source of truth:
 `docs/workstreams/generic_dataset_onboarding_v1/UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`.
@@ -1255,21 +1255,77 @@ prediction
 - CatBoost / XGBoost / LightGBM переводятся на universal provider boundary без изменения пользовательской semantics;
 - прежний постоянный `GBDT Mean SHAP = UNSUPPORTED` superseded;
 - GBDT Mean должен получить validated probability-space ensemble explanation с единым background/masking contract и reconstruction checks;
-- future `Connect Model` допускает только native artifacts + declarative manifest + уже trusted plugin/providers; arbitrary executable Python/pickle из browser запрещён;
+- future `Connect Algorithm` допускает только trusted package/manifest + зарегистрированные trusted plugin/providers; arbitrary executable Python/pickle из browser запрещён;
 - model-family-independent `LocalExplanationEvidence V2` является единым входом для Result Interpreter;
 - Object Detail показывает basic OOF facts сразу и автоматически запускает Local Explanation;
 - explanation loading не блокирует основной detail;
 - external LLM запускается только explicit user action из-за cost/privacy boundary;
 - final/refit model fallback для OOF explanation запрещён.
 
-### NEXT
+### UME-BE1 RESULT / NEXT
+
+UME-BE1 принят Reviewer и закрыт.
+
+Source commit:
+2bc4e175911cec29bf3c21aa129a40609b0ee4b7.
+
+Принятый implementation включает universal trusted provider boundary, exact OOF fold provenance для всех четырёх built-in моделей, LocalExplanationEvidence V2, bounded deterministic background, batch explanation path и generic Result Interpreter V2 path.
 
 Следующий backend stage:
-
-**UME-BE1 — Universal Model Explainability V1**.
-
-После ACCEPT UME-BE1:
 
 **R2-BE2 — Result Read + OOF Explainability**.
 
 Object Detail visual lock теперь покрывает два состояния: Local Explanation READY до вызова LLM (`05_result_object_detail_v1.png`) и LLM READY после успешной интерпретации (`06_result_object_detail_llm_v1.png`). После backend contracts — native Result implementation; отдельные loading/error и expanded-detail states уточняются только при необходимости.
+
+---
+
+## Connect Algorithm V1 — product / visual lock accepted / 2026-09-30
+
+Status: **ACCEPTED PRODUCT / VISUAL LOCK — BACKEND IMPLEMENTATION PENDING**.
+
+Visual source of truth:
+`docs/design/screens/algorithm/01_connect_algorithm_v1.png`.
+
+UX/source of truth:
+`docs/workstreams/generic_dataset_onboarding_v1/CONNECT_ALGORITHM_UX_V1.md`.
+
+Canonical semantics:
+- подключается trusted algorithm / `ModelPlugin`, а не уже обученная `ModelVersion`;
+- один algorithm/plugin можно затем многократно обучать на разных datasets / feature sets / configurations, создавая отдельные ModelVersion;
+- editable «Название в AXION» — только display alias и не меняет trusted plugin/model identity;
+- на connect screen нет dataset, feature-count, quality metrics и trained-model facts;
+- один и тот же Connect Algorithm flow имеет две точки входа: `Новый анализ → Алгоритм` и `Модели`;
+- после success/cancel возврат идёт в исходный entry context;
+- capability check покрывает training/configuration/persistence/loading/inference/Local Explanation/Result Interpreter compatibility;
+- arbitrary `.py` / untrusted pickle / dynamic executable upload из browser запрещён;
+- строка «Понятное объяснение» означает compatibility с Result Interpreter contract, а не факт включённого external LLM provider или выполненного LLM call.
+
+Implementation Connect Algorithm V1 не входил в UME-BE1 и остаётся отдельным будущим stage.
+
+---
+
+## Models UX V1 — product / visual lock accepted / 2026-09-30
+
+Status: **ACCEPTED PRODUCT / VISUAL LOCK — BACKEND IMPLEMENTATION PENDING**.
+
+Visual source of truth:
+- `docs/design/screens/models/01_models_hub_v1.png` — Models Hub / «Обученные модели»;
+- `docs/design/screens/models/02_algorithm_detail_v1.png` — Algorithm Detail default state;
+- `docs/design/screens/models/02_algorithm_detail_highlight_v1.png` — Algorithm Detail with Metric Highlight enabled;
+- `docs/design/screens/models/03_model_version_detail_v1.png` — ModelVersion Detail для одной сохранённой обученной модели;
+- `docs/design/screens/models/04_saved_model_inference_v1.png` — применение сохранённой ModelVersion к новым данным без переобучения.
+
+UX/source of truth:
+`docs/workstreams/generic_dataset_onboarding_v1/MODELS_UX_V1.md`.
+
+Canonical semantics:
+- Algorithm / ModelPlugin и trained ModelVersion — разные сущности;
+- Models Hub даёт плоский каталог сохранённых ModelVersion и отдельную вкладку «Алгоритмы»;
+- Algorithm Detail отвечает на сценарий «помню алгоритм, не помню dataset/run» и показывает все сохранённые ModelVersion этого алгоритма;
+- catalog metrics явно OOF-labelled и не считаются final-test evidence, ranking или automatic winner selection;
+- optional «Подсветка метрик» default OFF; при ON OOF Gini / ROC-AUC / PR-AUC сравниваются отдельно по колонкам относительно текущего filtered list;
+- «Новый анализ с <algorithm>» только preselects algorithm и не запускает training автоматически;
+- «Подключить алгоритм» использует единый Connect Algorithm flow из «Новый анализ → Алгоритм» и «Модели»;
+- current backend всё ещё не имеет trusted public browse/list/history contract для всех persisted ModelVersion; runtime implementation не должна сканировать filesystem.
+
+ModelVersion Detail V1 и Saved Model Inference V1 теперь visual lock. Inference flow использует exact saved ModelVersion, показывает dataset обучения отдельно от нового dataset, допускает отсутствие target, проверяет trusted feature binding/types/order и не переобучает модель. Primary runtime CTA для однозначного действия — короткий `▶ Анализ`. Следующий models-design gap — post-inference result для новых данных.
