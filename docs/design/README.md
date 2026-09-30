@@ -30,6 +30,13 @@
 
 Для шага **«Проверка качества»** принят Visual Lock `screens/new-analysis/05_quality_v1.png`: pre-run state строится как автоматическая проверка готовности с одной primary CTA **«Начать обучение»**; технический smoke не выдаётся за quality metric evaluation.
 
+Для Result V2 приняты три visual lock:
+- `screens/result/02_result_model_overview_v2.png` — общий обзор результата;
+- `screens/result/03_threshold_explorer_v1.png` — исследование threshold по OOF scores;
+- `screens/result/04_result_objects_v1.png` — список OOF-объектов и ошибок.
+
+Поведение Result V2 и границы реализации зафиксированы в `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`. Макеты не являются источником backend semantics и не разрешают hardcode демонстрационных данных.
+
 Дизайн отдельных экранов уточняется по факту реализации, но без самовольной смены общего визуального языка.
 
 

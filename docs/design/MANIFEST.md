@@ -22,7 +22,10 @@
 | Новый анализ — алгоритм | `screens/new-analysis/04_algorithm_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Новый анализ — алгоритм V2 | `screens/new-analysis/04_algorithm_v2.png` | VISUAL LOCK; основной reference для native Algorithm V2 |
 | Новый анализ — проверка качества V1 | `screens/new-analysis/05_quality_v1.png` | VISUAL LOCK; основной reference для native Quality V1 |
-| Результат | `screens/result/01_result_v1.png` | Рабочий референс итогового экрана |
+| Результат V1 | `screens/result/01_result_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
+| Результат модели V2 | `screens/result/02_result_model_overview_v2.png` | VISUAL LOCK; основной обзор завершённого experiment result |
+| Исследование порога V1 | `screens/result/03_threshold_explorer_v1.png` | VISUAL LOCK; threshold exploration по OOF scores без переобучения |
+| Объекты оценки V1 | `screens/result/04_result_objects_v1.png` | VISUAL LOCK; аналитический список OOF-объектов и ошибок |
 
 ## Правила для V2 references
 
@@ -59,6 +62,20 @@
 - demo `dataset_2026.xlsx`, `30`, `CatBoost` и другие значения PNG не являются runtime truth и не хардкодятся;
 - после старта этот же шаг превращается в progress state и показывает только реальные backend events; fake percentages/ETA запрещены;
 - функциональный контракт: `docs/workstreams/generic_dataset_onboarding_v1/QUALITY_UX_V1.md`.
+
+### Result V2
+
+- `screens/result/02_result_model_overview_v2.png` — accepted visual lock общего обзора результата;
+- `screens/result/03_threshold_explorer_v1.png` — accepted visual lock исследования threshold по OOF scores;
+- `screens/result/04_result_objects_v1.png` — accepted visual lock списка OOF-объектов;
+- подробная UX/semantic спецификация: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`;
+- backend architecture lock: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_V2_ARCHITECTURE_LOCK.md`;
+- demo values в PNG не являются runtime truth и не хардкодятся;
+- `Result model → Threshold Explorer → Objects` — принятый visual flow; object detail / Local SHAP / LLM screen ещё не visual lock;
+- для objects: target marker, threshold position и TP/TN/FP/FN — разные смыслы и не должны сливаться;
+- object table проектируется как scrollable/virtualizable view, а не как browser-side загрузка всей выборки;
+- Fold остаётся read-only OOF provenance с tooltip;
+- отсутствующие backend/public contracts не додумываются из макета: Developer должен остановиться и поднять точный gap.
 
 ## Приоритет источников для UI
 
