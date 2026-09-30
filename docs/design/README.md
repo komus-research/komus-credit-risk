@@ -38,7 +38,7 @@
 - `screens/models/02_algorithm_detail_highlight_v1.png` — тот же Algorithm Detail с опциональной относительной подсветкой OOF Gini / ROC-AUC / PR-AUC;
 - `screens/models/03_model_version_detail_v1.png` — detail конкретной сохранённой ModelVersion с OOF quality, dataset/features, saved configuration и дальнейшими действиями;
 - `screens/models/04_saved_model_inference_v1.png` — применение сохранённой ModelVersion к новым данным после trusted compatibility check, без переобучения;
-- `screens/models/05_saved_model_inference_result_v1.png` — текущий design reference результата targetless inference; композиция принята владельцем, lifecycle/persistence threshold отдельно уточняется Architect decision.
+- `screens/models/05_saved_model_inference_result_v1.png` — accepted Visual Lock результата targetless inference; immutable inference Result отделён от mutable saved view configuration. Runtime action — `Сохранить конфигурацию`; reset доступен условно через `⋯`; default threshold без saved config = 0,50.
 
 Product semantics и backend gap зафиксированы в `docs/workstreams/generic_dataset_onboarding_v1/MODELS_UX_V1.md`.
 

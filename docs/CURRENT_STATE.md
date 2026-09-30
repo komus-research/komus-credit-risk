@@ -1325,7 +1325,8 @@ Visual source of truth:
 - `docs/design/screens/models/02_algorithm_detail_v1.png` — Algorithm Detail default state;
 - `docs/design/screens/models/02_algorithm_detail_highlight_v1.png` — Algorithm Detail with Metric Highlight enabled;
 - `docs/design/screens/models/03_model_version_detail_v1.png` — ModelVersion Detail для одной сохранённой обученной модели;
-- `docs/design/screens/models/04_saved_model_inference_v1.png` — применение сохранённой ModelVersion к новым данным без переобучения.
+- `docs/design/screens/models/04_saved_model_inference_v1.png` — применение сохранённой ModelVersion к новым данным без переобучения;
+- `docs/design/screens/models/05_saved_model_inference_result_v1.png` — **VISUAL LOCK** targetless inference Result; canonical action `Сохранить конфигурацию`, conditional reset в `⋯`; demo threshold `0.37` допустим как saved-view state, no-config default = `0.50`.
 
 UX/source of truth:
 `docs/workstreams/generic_dataset_onboarding_v1/MODELS_UX_V1.md`.
@@ -1340,4 +1341,17 @@ Canonical semantics:
 - «Подключить алгоритм» использует единый Connect Algorithm flow из «Новый анализ → Алгоритм» и «Модели»;
 - current backend всё ещё не имеет trusted public browse/list/history contract для всех persisted ModelVersion; runtime implementation не должна сканировать filesystem.
 
-ModelVersion Detail V1 и Saved Model Inference V1 теперь visual lock. Inference flow использует exact saved ModelVersion, показывает dataset обучения отдельно от нового dataset, допускает отсутствие target, проверяет trusted feature binding/types/order и не переобучает модель. Primary runtime CTA для однозначного действия — короткий `▶ Анализ`. Следующий models-design gap — post-inference result для новых данных.
+ModelVersion Detail V1 и Saved Model Inference V1 — visual lock. Targetless inference flow использует exact saved ModelVersion, показывает dataset обучения отдельно от нового dataset, допускает отсутствие target, проверяет trusted feature binding/types/order и не переобучает модель. Primary runtime CTA — короткий `▶ Анализ`.
+
+Saved Model Inference Result lifecycle теперь **ACCEPTED / LOCKED**:
+- успешный inference автоматически создаёт immutable persisted `SavedModelInferenceResult` с exact ModelVersion/input provenance, object identities и immutable scores;
+- threshold не входит в immutable Result и не является свойством ModelVersion;
+- `Изменить порог` работает inline и меняет только above/below classification, counts, filters/sorting; scores не пересчитываются, новый Result/run не создаётся;
+- targetless Result не имеет TP/TN/FP/FN, Recall/Precision/F1 без `y_true`;
+- initial threshold без saved configuration = technical `0.50`, не «оптимальный» и не автоматически перенесённый OOF/business threshold;
+- V1 вводит отдельную mutable `SavedInferenceResultViewConfiguration`: одна активная конфигурация на `inference_result_id`, без scenario history;
+- `Сохранить конфигурацию` сохраняет текущие threshold, score-range min/max, `Все/Выше/Ниже`, sort и identifier search; при следующем открытии того же Result они восстанавливаются автоматически;
+- `Сбросить настройки` показывается в `⋯` только при наличии saved configuration, удаляет её и возвращает defaults `0.50 / 0.00–1.00 / Все / SCORE_DESC / пустой поиск`;
+- saved view configuration не содержит scores, model parameters, row/detail navigation или scroll/offset и никогда не меняет `SavedModelInferenceResult`/`ModelVersion`.
+
+Следующий implementation gap для этого flow — trusted persistence/read contract `SavedModelInferenceResult`, threshold-derived Result view и лёгкий save/load/reset contract для одной view configuration на Result.

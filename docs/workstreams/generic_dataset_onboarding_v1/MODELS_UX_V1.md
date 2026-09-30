@@ -9,7 +9,7 @@ Primary visual references:
 - `docs/design/screens/models/02_algorithm_detail_highlight_v1.png`
 - `docs/design/screens/models/03_model_version_detail_v1.png`
 - `docs/design/screens/models/04_saved_model_inference_v1.png`
-- `docs/design/screens/models/05_saved_model_inference_result_v1.png` — DESIGN REFERENCE; threshold lifecycle/persistence pending Architect decision
+- `docs/design/screens/models/05_saved_model_inference_result_v1.png` — VISUAL LOCK; saved targetless inference Result with `Сохранить конфигурацию`; demo threshold `0.37` represents a changed/saved view, while no-config default remains `0.50`
 
 ## 1. Product model
 
@@ -276,13 +276,13 @@ Future backend implementation must provide a trusted application contract for:
 
 The UI must not infer compatibility from column count alone and must not silently remap missing model features.
 
-## 10. Saved Model Inference Result V1 — current design reference
+## 10. Saved Model Inference Result V1 — visual lock
 
 Reference:
 
 `05_saved_model_inference_result_v1.png`
 
-The owner accepted the screen composition and current visual language. It is intentionally recorded as a **DESIGN REFERENCE**, not yet a full semantic visual lock, because threshold lifecycle/persistence is awaiting a separate Architect decision.
+The owner accepted the final screen composition and current visual language. This PNG is the **VISUAL LOCK** for Saved Model Inference Result V1. The top action is `Сохранить конфигурацию`. Conditional `Сбросить настройки` remains inside the existing `⋯` menu and therefore does not need a separate always-visible control in the locked base state. Demo threshold `0.37` represents a changed/saved view; runtime default without saved configuration remains `0.50`.
 
 Stable semantics already visible in the reference:
 - targetless inference result shows immutable model scores for new objects;
@@ -292,9 +292,104 @@ Stable semantics already visible in the reference:
 - object-level Local Explanation / SHAP and Result Interpreter are downstream capabilities after selecting an object;
 - the current summary uses plain counts for objects above/below threshold plus percentages and score range.
 
-Open Architect decision:
-- whether inference result is automatically persisted as immutable result evidence;
-- whether threshold is transient view state or a persisted scenario over one immutable result;
-- what the top action `Сохранить` means;
-- where the initial targetless-inference threshold comes from;
-- `Изменить порог` must not be implemented as a model retraining action unless a future accepted decision explicitly changes this.
+### Accepted inference-result / saved view-configuration lifecycle
+
+Canonical model:
+
+```text
+Saved ModelVersion
++ targetless inference dataset
+→ immutable SavedModelInferenceResult
+    ├─ object identities
+    └─ immutable model scores
+
+SavedModelInferenceResult
+    ↓
+mutable SavedInferenceResultViewConfiguration
+    ├─ threshold
+    ├─ score range
+    ├─ above/below/all filter
+    ├─ sort
+    └─ search
+```
+
+Accepted semantics:
+- successful inference automatically persists one immutable `SavedModelInferenceResult` with exact `ModelVersion`, targetless dataset identity/fingerprint, input-contract provenance, object identities and immutable scores;
+- changing threshold, filters, score range, sorting or search never creates a new prediction run or duplicate Result, never changes scores and never retrains/reconfigures the ModelVersion;
+- `Изменить порог` is an inline analytical control on the current Result;
+- targetless threshold derives only `выше / ниже порога`, counts, shares, filters and threshold-relative sorting; no TP/TN/FP/FN, Recall, Precision or F1 are available without `y_true`;
+- threshold is not a property of `ModelVersion`; a future approved operating-threshold policy would be a separate explicit contract;
+- initial V1 threshold is technical default `0.50`, explicitly described as an analytical boundary, not an automatically selected business/optimal threshold;
+- accepted OOF diagnostic threshold does not automatically become targetless inference threshold.
+
+### Saved configuration V1
+
+The Result header action is:
+
+**`Сохранить конфигурацию`**
+
+It saves the current analytical view settings for this exact inference Result. V1 stores one active saved configuration per `inference_result_id`; repeated save updates/replaces that configuration instead of creating scenario history.
+
+Minimum V1 fields:
+
+```text
+inference_result_id
+threshold
+min_score
+max_score
+position_filter   # ALL / ABOVE / BELOW
+sort              # accepted list sort
+search            # current identifier search text
+updated_at
+```
+
+Not part of saved configuration:
+- immutable scores/object rows themselves;
+- model parameters or ModelVersion state;
+- training/inference rerun;
+- selected object/detail route;
+- scroll position / offset / transient loading state.
+
+When the same Result is opened later:
+- if a saved configuration exists, AXION restores it automatically;
+- if none exists, AXION opens defaults: threshold `0.50`, score range `0.00–1.00`, `Все`, score descending, empty search.
+
+### Reset settings
+
+`Сбросить настройки` is available only when a saved configuration exists for the current Result. It should live in the existing `⋯` menu rather than compete with the primary action.
+
+Reset behavior:
+- delete the saved view configuration for this Result;
+- immediately restore the V1 defaults;
+- keep the immutable `SavedModelInferenceResult` and all scores untouched.
+
+A lightweight undo/toast is allowed, but a blocking confirmation dialog is not required for V1 because no prediction evidence is deleted.
+
+### Dirty/saved state
+
+If the user changes any saved field after the last save, `Сохранить конфигурацию` becomes actionable again. After successful save, the UI may briefly show `Конфигурация сохранена` and return to the normal button state.
+
+Canonical distinction:
+
+```text
+SavedModelInferenceResult R123  # immutable prediction evidence
+└─ Saved view configuration     # mutable convenience state
+   threshold = 0.37
+   range = 0.10–0.85
+   filter = ABOVE
+   sort = SCORE_DESC
+```
+
+Saving/changing this configuration does not create another prediction Result.
+
+Implementation direction:
+- `SavedModelInferenceResultService` owns create/load of immutable inference evidence;
+- a small Result-view service derives threshold counts/list/filter from explicit current view state;
+- a separate lightweight configuration persistence boundary stores/loads/resets one saved view configuration per Result;
+- the configuration layer must never mutate `SavedModelInferenceResult` or `ModelVersion`.
+
+Visual lock notes for `05_saved_model_inference_result_v1.png`:
+- `Сохранить конфигурацию` is the canonical top action;
+- `Сбросить настройки` is conditional inside `⋯` and appears only when a saved configuration exists;
+- `0.37` in the locked PNG is demo saved-view state; default without saved configuration is `0.50`;
+- the accepted composition must not be reinterpreted as a new prediction run when view settings change.
