@@ -1,6 +1,6 @@
 # KOMUS — CURRENT STATE
 
-Дата фиксации: **2026-09-28**
+Дата фиксации: **2026-09-30**
 
 Этот файл содержит только актуальное подтверждённое состояние проекта.
 Он обновляется после принятого исследовательского этапа или существенного изменения требований.
@@ -1141,3 +1141,60 @@ UX максимально автоматический:
 1. Реализовать Native Quality V1 строго по `QUALITY_UX_V1.md` и `05_quality_v1.png`.
 2. Параллельно завершить UX-проектирование Result V2 без изменения backend до отдельного architecture lock.
 3. Затем закрыть native `Результат` и end-to-end flow.
+
+---
+
+## Native Product State — Result V2 lock / 2026-09-30
+
+Этот раздел supersede-ит блок NEXT из предыдущей актуализации 2026-09-30.
+
+### ACCEPTED / CURRENT
+
+- **Native Quality V1A — ACCEPTED**, source commit `d3d001b4e6ab1a927b0289d1020c2415d7a41448`; implementation reviewed, pushed и branch synchronized.
+- **Result V2 UX / Visual Lock — ACCEPTED**:
+  - `docs/design/screens/result/02_result_model_overview_v2.png`;
+  - `docs/design/screens/result/03_threshold_explorer_v1.png`;
+  - `docs/design/screens/result/04_result_objects_v1.png`;
+  - `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`.
+- **Result V2 backend architecture — ACCEPTED / LOCKED**:
+  - `docs/workstreams/generic_dataset_onboarding_v1/RESULT_V2_ARCHITECTURE_LOCK.md`.
+- Design + architecture package committed and pushed as `d9fe4f5f1978cf309f720db9d97cc2ce2bf76d3d`.
+
+### Result V2 locked flow
+
+```text
+Результат модели
+→ Исследование порога
+→ Объекты оценки
+→ Объект оценки
+→ Local OOF SHAP
+→ LLM-интерпретация, если поддерживается
+```
+### Locked backend decisions
+
+- canonical persisted Result source: immutable `ExperimentArtifact V3`;
+- fold-specific OOF models сохраняются как evaluation evidence внутри artifact, а не как final `ModelVersion`;
+- OOF prediction нельзя объяснять SHAP final/refit модели;
+- `OOFResultService` владеет summary / threshold / object list / object detail;
+- `OOFExplanationService` владеет Local OOF SHAP / Global OOF SHAP aggregate;
+- threshold работает только как derived operating point над immutable `y_true + OOF score` и не запускает training;
+- Object List использует server-side random access `offset/limit`, search/filter/sort/count contract; page number не является domain concept;
+- frontend не загружает полный OOF result, не читает artifact files/Runner internals и может использовать virtualized/windowed rendering;
+- Fold остаётся provenance конкретного OOF prediction;
+- final test не входит в OOF Result V3 evidence.
+
+### NEXT
+
+Следующий backend stage:
+
+**R2-BE1 — OOF Evidence Artifact V3**.
+
+Единственный вопрос stage:
+
+> можем ли мы после run доказуемо восстановить каждый OOF score и его exact fold predictor?
+
+После ACCEPT R2-BE1:
+
+**R2-BE2 — Result Read + OOF Explainability**.
+
+Frontend в R2-BE1 / R2-BE2 не расширять без отдельного Result implementation stage.
