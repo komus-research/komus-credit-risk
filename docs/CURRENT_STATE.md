@@ -1101,3 +1101,43 @@ LLM остаётся Result Interpreter, а не кредитным предик
 `docs/design/screens/new-analysis/03_features_v1.png`.
 
 До его завершения будущие product workstreams не должны вытеснять текущий core flow.
+
+---
+
+## Native Product State — актуализация 2026-09-30
+
+Этот раздел supersede-ит native product order из актуализации 2026-09-29.
+
+### ACCEPTED / CURRENT
+
+- **Native Features V1 — ACCEPTED**, source commit `5cce24b539d262159bfd6ede5aa8c1515c92410e`.
+- **Algorithm V2 UX + Visual Lock — ACCEPTED**: `docs/workstreams/generic_dataset_onboarding_v1/ALGORITHM_UX_V1.md` + `docs/design/screens/new-analysis/04_algorithm_v2.png`.
+- **Native Algorithm V2 — ACCEPTED**, source commit `e85994017fd08c1dadede0694700f1847cf72f2b`; Reviewer принял accumulated implementation после corrective fixes.
+- **Quality V1 UX + Visual Lock — ACCEPTED / READY FOR IMPLEMENTATION**:
+  - `docs/workstreams/generic_dataset_onboarding_v1/QUALITY_UX_V1.md`;
+  - `docs/design/screens/new-analysis/05_quality_v1.png`.
+
+### Quality V1 — owner decisions
+
+Шаг 4 сохраняет название `Проверка качества`, но pre-run page называется **«Проверка перед запуском»**.
+
+UX максимально автоматический:
+
+1. показывается read-only summary: dataset / selected features / algorithm / configuration mode;
+2. backend автоматически валидирует plan и matching technical preflight;
+3. existing smoke policy использует deterministic stratified bounded sample до 128 строк и real `fit()` + `predict_positive_proba()`;
+4. separate CTA `Проверить настройки` отсутствует;
+5. PASS отображается как **«Готово к запуску»** и означает только техническую готовность;
+6. единственная primary CTA — **«Начать обучение»**;
+7. folds/seed/protocol скрыты в collapsed `Дополнительные настройки` и остаются backend-authoritative;
+8. после старта тот же шаг показывает только реальные progress events full OOF experiment;
+9. quality metrics не показываются до full run и не смешиваются со smoke;
+10. после успешного persisted experiment открывается `Результат`.
+
+Старая future-идея `Single-company preflight` superseded: пользователь не выбирает одну компанию. Backend сам формирует bounded sample; frontend не управляет smoke sample и не вычисляет stale state.
+
+### NEXT
+
+1. Реализовать Native Quality V1 строго по `QUALITY_UX_V1.md` и `05_quality_v1.png`.
+2. Параллельно завершить UX-проектирование Result V2 без изменения backend до отдельного architecture lock.
+3. Затем закрыть native `Результат` и end-to-end flow.

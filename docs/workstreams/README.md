@@ -67,15 +67,19 @@ Canonical downstream flow:
 
 - [generic_dataset_onboarding_v1/SPEC.md](generic_dataset_onboarding_v1/SPEC.md)
 - [generic_dataset_onboarding_v1/FEATURE_SELECTION_UX_V1.md](generic_dataset_onboarding_v1/FEATURE_SELECTION_UX_V1.md)
+- [generic_dataset_onboarding_v1/ALGORITHM_UX_V1.md](generic_dataset_onboarding_v1/ALGORITHM_UX_V1.md)
+- [generic_dataset_onboarding_v1/QUALITY_UX_V1.md](generic_dataset_onboarding_v1/QUALITY_UX_V1.md)
 
 Текущий product status:
 
 - Данные / Файл — UX/VISUAL LOCK;
 - Данные / Роли колонок — UX/VISUAL LOCK;
 - Данные / Подтверждение — UX/VISUAL LOCK;
-- Признаки — UX/VISUAL LOCK.
+- Native Features V1 — CLOSED / ACCEPTED;
+- Native Algorithm V2 — CLOSED / ACCEPTED, source commit `e85994017fd08c1dadede0694700f1847cf72f2b`;
+- Quality V1 — UX/VISUAL LOCK ACCEPTED, next implementation stage.
 
-Экран «Алгоритм» поставлен на паузу до завершения backend blockers.
+Quality V1 использует автоматический backend preflight и одну primary CTA **«Начать обучение»**; technical smoke не является quality verdict.
 
 ## Active backend workstreams
 
@@ -117,8 +121,10 @@ Gap закрыт: Materializer V2 переносит trusted Analyzer technical 
 
 1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
 2. Feature Grouping Propagation V1 — **CLOSED / ACCEPTED**.
-3. Текущий следующий шаг — UX экрана «Алгоритм».
-4. Затем «Проверка качества → Результат» и финальный product E2E.
+3. Native Features V1 — **CLOSED / ACCEPTED**.
+4. Native Algorithm V2 — **CLOSED / ACCEPTED**.
+5. Native Quality V1 — **NEXT**, UX/VISUAL LOCK ACCEPTED.
+6. Затем `Результат` и финальный native product E2E.
 
 ## Later
 

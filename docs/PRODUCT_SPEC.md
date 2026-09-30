@@ -355,6 +355,25 @@ Backend не содержит собственной копии алгоритм
 
 `Данные → Признаки → Алгоритм → Проверка качества → Результат`.
 
+### Quality V1 — проверка перед запуском
+
+Шаг `Проверка качества` в pre-run состоянии является автоматической контрольной точкой, а не обязательной второй формой технических настроек.
+
+Основной UX:
+
+- read-only сводка фактических данных / выбранных признаков / алгоритма / режима конфигурации;
+- backend-authoritative plan validation;
+- автоматический matching technical preflight (`smoke`) на bounded deterministic sample;
+- отдельной primary-кнопки `Проверить настройки` нет;
+- successful state — `Готово к запуску`;
+- smoke PASS означает только техническую готовность, а не качество модели;
+- одна primary CTA — **`Начать обучение`**;
+- folds/seed/protocol находятся в collapsed `Дополнительные настройки` и приходят от backend supported protocol;
+- после запуска этот же шаг показывает реальные progress events full OOF experiment;
+- quality metrics появляются только после полноценного experiment и относятся к `Результат`.
+
+Принятая backend smoke policy использует deterministic stratified sample до 128 строк, real `fit()` + `predict_positive_proba()` и проверки shape/finite/range. Matching smoke PASS обязателен перед каждым full experiment.
+
 На `Результат` добавляется блок **«Применить модель к новым данным»**.
 
 ### III-C1 — локальное применение модели
@@ -610,7 +629,7 @@ Imported Model Package может участвовать в controlled compariso
 
 ### Подтверждённые будущие product capabilities
 
-- **Single-company preflight** перед дорогим full run: техническая проверка входа/smoke/inference compatibility, но не metric validation.
+- **Automatic pre-run technical preflight** перед дорогим full run: backend сам выбирает bounded deterministic sample и выполняет matching smoke (`fit` + `predict`) без ручного выбора одной компании; это не metric validation и не quality verdict.
 - **Recommended / Advanced model settings** поверх versioned backend parameter schema; frontend не хардкодит ranges/логику конкретной библиотеки.
 - **Bulk model explanation** для выбранных model results там, где это разрешают privacy policy и доступные evidence; это не означает одновременный запуск четырёх ролей для одной строки.
 - **Generic-first product semantics**: никакого обязательного hardcode `INN`, `DefMark`, `Q_B1_norm`, `Q_B2_norm` или конкретных feature names.

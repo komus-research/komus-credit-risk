@@ -511,3 +511,29 @@ Stage 14 xRFM V1 **был разрешён** как narrow controlled reopen с 
 ### Stage 14 xRFM V1 — hardware closeout
 
 Environment PASS и pre-run implementation ACCEPT, но первый разрешённый Smoke остановлен hardware guard до `model.fit()`: фактически 6 physical cores, 15.34 GiB RAM и 4.14 GiB available RAM против contract 8 cores, 32 GiB RAM и 16 GiB available перед feasibility. Статус `STOPPED_BY_COMPUTE_COST / HARDWARE_CONSTRAINT`; training/prediction/OOF отсутствуют, quality `UNKNOWN`, final test unused. Это не mathematical ceiling и не evidence качества xRFM. Ordinary model-only search на 47 признаках снова остановлен; reopening возможен только по принятым evidence/hypothesis conditions.
+
+---
+
+## 16. Native AXION UX state — 2026-09-30
+
+Актуальный product flow:
+
+`Данные → Признаки → Алгоритм → Проверка качества → Результат`.
+
+Native Features V1 принят и зафиксирован source commit `5cce24b539d262159bfd6ede5aa8c1515c92410e`.
+
+Native Algorithm V2 принят Reviewer и зафиксирован source commit `e85994017fd08c1dadede0694700f1847cf72f2b`; UX/spec + Visual Lock остаются source of truth для этого шага.
+
+Следующий implementation stage — Quality V1:
+
+- visual: `docs/design/screens/new-analysis/05_quality_v1.png`;
+- functional UX: `docs/workstreams/generic_dataset_onboarding_v1/QUALITY_UX_V1.md`;
+- pre-run page: **«Проверка перед запуском»**;
+- automatic backend plan/preflight;
+- deterministic bounded smoke до 128 строк;
+- successful technical state: **«Готово к запуску»**;
+- одна primary CTA: **«Начать обучение»**;
+- smoke ≠ quality evaluation;
+- full-run progress остаётся на шаге 4 и использует только реальные progress events.
+
+Старая идея ручного `Single-company preflight` больше не является целевым UX.

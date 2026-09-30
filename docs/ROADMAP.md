@@ -731,9 +731,10 @@ Source:
 1. Configurable Model Platform V1 — **CLOSED / ACCEPTED**.
 2. Feature Grouping Propagation V1 — **CLOSED / ACCEPTED**.
 3. **N2b2 — Human Confirmation + Prepared Context — CLOSED / ACCEPTED**.
-4. **NEXT — Native Features V1** по принятому reference `docs/design/screens/new-analysis/03_features_v1.png`.
-5. Затем — экран «Алгоритм».
-6. Затем — «Проверка качества → Результат» и финальный native product E2E.
+4. **Native Features V1 — CLOSED / ACCEPTED**, source commit `5cce24b539d262159bfd6ede5aa8c1515c92410e`.
+5. **Native Algorithm V2 — CLOSED / ACCEPTED**, source commit `e85994017fd08c1dadede0694700f1847cf72f2b`; UX/spec и Visual Lock `docs/design/screens/new-analysis/04_algorithm_v2.png` приняты.
+6. **NEXT — Native Quality V1**, UX/VISUAL LOCK ACCEPTED: `docs/design/screens/new-analysis/05_quality_v1.png` + `docs/workstreams/generic_dataset_onboarding_v1/QUALITY_UX_V1.md`.
+7. Затем — `Результат` и финальный native product E2E; Result V2 UX проектируется отдельно до architecture/backend изменений.
 
 ---
 
@@ -788,11 +789,13 @@ LLM не выбирает «лучшую модель» за пользоват�
 - imported package допускается к controlled comparison только при достаточной metadata/provenance;
 - model artifact без нужной metadata не выдаётся за сопоставимый experiment.
 
-### D. Single-company preflight
+### D. Automatic pre-run technical preflight
 
-Будущая capability: **«Проверить на одной компании»** перед дорогим full training/run, если это технически применимо.
+Старая формулировка **«Проверить на одной компании»** superseded решением Quality V1.
 
-Это технический/UX preflight: проверка схемы, подготовки входа, smoke/inference compatibility и раннее выявление технических ошибок. Это **не** metric validation и не доказательство качества модели.
+Backend foundation уже принят в Configurable Model Platform V1: перед каждым full experiment требуется matching technical smoke PASS. Smoke автоматически использует deterministic stratified bounded sample (`max_rows=128`), real `fit()` + `predict_positive_proba()` и fail-closed проверки результата.
+
+Native Quality V1 делает preflight автоматическим UX: пользователь не выбирает компанию/строки и не нажимает отдельную кнопку «Проверить настройки». После PASS экран показывает **«Готово к запуску»**, а единственная primary CTA — **«Начать обучение»**. Smoke не является metric validation и ничего не утверждает о predictive quality.
 
 ### E. Flexible model settings UX
 

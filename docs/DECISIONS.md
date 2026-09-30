@@ -901,3 +901,48 @@ Review closure:
 Будущий product runtime AXION: `React + TypeScript + Vite → FastAPI → native application/session layer → existing Python application/core`.
 
 Нативная миграция начата, но N0 — только foundation: канонический переход ещё не выполнен, а Home/N1 ещё не реализован. FastAPI остаётся только публичным HTTP adapter и не владеет semantics анализа. Native session state process-local и владеет только временным состоянием workflow; сохраняемые ExperimentArtifact и ModelVersion остаются вне него. Streamlit остаётся frozen compatibility frontend до достижения native functional parity; N0 его не удаляет и не изменяет.
+
+## D-087 — Quality V1: автоматический preflight перед full experiment
+
+Дата: 2026-09-30.
+
+Owner принял UX шага 4 `Проверка качества` как контрольную точку **перед запуском**, а не как вторую обязательную форму ручных настроек.
+
+Решение:
+
+- visual lock: `docs/design/screens/new-analysis/05_quality_v1.png`;
+- functional lock: `docs/workstreams/generic_dataset_onboarding_v1/QUALITY_UX_V1.md`;
+- page title pre-run: **«Проверка перед запуском»**;
+- AXION автоматически готовит/валидирует experiment plan и matching technical preflight;
+- отдельной primary-кнопки **«Проверить настройки»** нет;
+- существующий backend smoke использует deterministic stratified bounded sample до 128 строк, real `fit()` + `predict_positive_proba()` и является обязательным gate перед full experiment;
+- пользователь не выбирает отдельную компанию/строки: прежняя future-идея `Single-company preflight` superseded;
+- smoke PASS означает только техническую готовность, не predictive quality;
+- success state: **«Готово к запуску»**;
+- единственная primary CTA: **«Начать обучение»**;
+- protocol/folds/seed находятся в collapsed `Дополнительные настройки` и остаются backend-authoritative;
+- после старта этот же шаг показывает real experiment progress; fake percentages/ETA запрещены;
+- quality metrics появляются только после полноценного OOF experiment / в Result.
+
+## D-088 — Native Algorithm V2 принят
+
+Дата: 2026-09-30.
+
+Native Algorithm V2 получил финальный Reviewer `ACCEPT` после corrective fixes и зафиксирован source commit `e85994017fd08c1dadede0694700f1847cf72f2b`.
+
+Принято:
+
+- model catalog читается через `ExperimentPlanningService.list_models()`;
+- fresh Algorithm не выбирает модель автоматически;
+- доступны backend-driven Recommended / Advanced и sparse overrides;
+- hidden models остаются session-only presentation preference;
+- no-op повторный выбор той же модели/конфигурации не инвалидирует уже достигнутый Quality state;
+- presentation-only hide/restore невыбранной модели не инвалидирует scientific state;
+- реальная смена model/config и hide выбранной модели инвалидируют Algorithm completion fail-closed;
+- capabilities в пользовательском UI показываются только при `SUPPORTED`; unsupported capability не превращается в положительное утверждение;
+- stale/unavailable selection блокирует переход дальше без auto-replacement;
+- `visibility_condition` использует effective value controlling parameter;
+- Technical Details строятся из backend `ModelCatalogEntry`, а не frontend hardcode;
+- `#/analysis/quality` в этом stage остаётся только boundary: training, smoke и Quality logic не входят в Algorithm V2.
+
+После ACCEPT следующий implementation stage — Native Quality V1 по `QUALITY_UX_V1.md` и `05_quality_v1.png`.
