@@ -19,12 +19,12 @@ Canonical flow шага Result:
 → Исследование порога
 → Объекты оценки
 → Объект оценки
-→ Local SHAP
-→ LLM-интерпретация, если поддерживается
+→ Local Explanation автоматически
+→ LLM-интерпретация по явному действию пользователя, если runtime capability доступна
 ```
 
 Первые три экрана имеют принятый visual lock.
-Detail screen объекта, Local SHAP и LLM presentation пока не считаются visual lock.
+Detail screen объекта, Local Explanation presentation и LLM presentation пока не считаются visual lock, но их product semantics уже зафиксированы backend architecture.
 
 Result работает на persisted accepted experiment evidence.
 Final test не используется для threshold research, object filtering, selection/tuning или OOF explainability.
@@ -195,7 +195,7 @@ UI не обходит research/protocol invariants ради «гибкости�
 
 ## 6. OOF provenance / explainability boundary
 
-Для конкретного OOF object нельзя показывать Local SHAP от другой модели,
+Для конкретного OOF object нельзя показывать Local Explanation от другой модели,
 если prediction был сформирован fold-specific model.
 
 Canonical invariant:
@@ -203,8 +203,14 @@ Canonical invariant:
 object → OOF prediction → fold identity → model/artifact identity → explanation identity
 ```
 
-Точный artifact/public contract определяется Architect.
-До принятия такого решения Developer не делает shortcut через final/refit model.
+Artifact/provenance contract зафиксирован в `RESULT_V2_ARCHITECTURE_LOCK.md`.
+Universal provider/explanation contract зафиксирован в `UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`.
+
+Object Detail показывает basic OOF facts сразу, а Local Explanation запускает автоматически отдельным request и показывает neutral loading state. Основной detail не блокируется вычислением explanation.
+
+Final/refit model fallback запрещён.
+
+External LLM не запускается автоматически: после READY Local Explanation пользователь явно запускает «Сформировать объяснение», если external-data policy и provider capability это разрешают.
 ## 7. Source-of-truth priority
 
 Для Result V2:
@@ -223,11 +229,21 @@ object → OOF prediction → fold identity → model/artifact identity → expl
 
 Backend architecture Result V2 зафиксирована в `RESULT_V2_ARCHITECTURE_LOCK.md`: ExperimentArtifact V3, fold-model provenance, Local/Global OOF SHAP semantics, threshold read contract и Object List random-access contract.
 
-Пока не считаются visual/product lock:
-- detail screen конкретного объекта;
-- presentation Local SHAP на detail screen;
-- LLM presentation на detail screen;
-- persistence пользовательских threshold scenarios, если для неё позже появится отдельная продуктовая потребность.
+Пока не считаются **visual lock**:
+- композиция detail screen конкретного объекта;
+- визуальная форма Local Explanation на detail screen;
+- визуальная форма LLM presentation на detail screen.
+
+При этом product semantics detail уже зафиксированы:
+- basic OOF result показывается сразу;
+- Local Explanation запускается автоматически;
+- loading не блокирует основной экран;
+- validated explanation появляется на том же detail;
+- explanation failure fail-closed и не подменяется final/refit model;
+- LLM запускается только явным действием пользователя;
+- UX не ветвится по CatBoost / XGBoost / LightGBM / GBDT Mean.
+
+Открытым остаётся persistence пользовательских threshold scenarios, если для неё позже появится отдельная продуктовая потребность.
 
 ## 9. Acceptance для реализации visual layer
 

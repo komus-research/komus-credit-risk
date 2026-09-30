@@ -19,3 +19,7 @@
 17. Objects table — scrollable/virtualizable analytical view со sticky header; classic numbered pagination не является canonical UX.
 18. Fold в Objects остаётся read-only OOF provenance с tooltip; точные Result backend/public contracts определяются отдельно Architect и не выводятся из PNG.
 19. Профессиональный принцип AXION: скрывать сложность можно, удалять реально поддерживаемую аналитическую возможность — нельзя; advanced controls допустимо убирать на второй уровень UI.
+20. Object Detail показывает basic OOF result сразу; Local Explanation запускается автоматически отдельным request и не блокирует основной экран.
+21. Для любой модели, доступной как полноценная модель AXION, обязателен validated путь `prediction → Local Explanation → Result Interpreter`; UI не ветвится по model family.
+22. External LLM не запускается автоматически: после готового Local Explanation пользователь явно вызывает «Сформировать объяснение», если policy/provider capability доступна.
+23. Прежний `GBDT Mean SHAP = UNSUPPORTED` superseded Universal Model Explainability V1: целевая semantics — validated probability-space ensemble explanation с fail-closed reconstruction checks.

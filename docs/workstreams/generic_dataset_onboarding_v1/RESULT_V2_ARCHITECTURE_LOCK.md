@@ -84,7 +84,8 @@ OOF prediction → final/refit model SHAP
 ```
 
 CatBoost / XGBoost / LightGBM Local OOF SHAP поддерживаются при валидном provenance.
-GBDT Mean OOF SHAP остаётся UNSUPPORTED.
+
+Прежнее решение `GBDT Mean OOF SHAP = UNSUPPORTED` superseded архитектурным lock `UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`: после UME-BE1 GBDT Mean должен иметь validated probability-space Local Explanation через universal provider boundary.
 ## 4. Threshold semantics
 
 Canonical stored facts:
@@ -240,8 +241,9 @@ mean(abs(SHAP))
 Это:
 - cross-validated aggregate OOF local attributions;
 - не final-model SHAP;
-- не causal importance;
-- не GBDT Mean explanation.
+- не causal importance.
+
+После UME-BE1 тот же aggregate contract применяется и к GBDT Mean через validated probability-space ensemble explanation.
 
 При невалидном fold весь aggregate fail closed.
 ## 10. Lifecycle / errors
@@ -280,15 +282,19 @@ Stable error families включают:
 
 ## 12. Implementation order
 
-Quality V1A уже ACCEPTED и pushed:
-`d3d001b4e6ab1a927b0289d1020c2415d7a41448`.
+Quality V1A — **ACCEPTED**, source commit `d3d001b4e6ab1a927b0289d1020c2415d7a41448`.
 
-Следующий stage:
+R2-BE1 — OOF Evidence Artifact V3 — **ACCEPTED / CLOSED**, source commit `5e4fff6e38d4d31b6c24dc83c6b154cb9d0706ab`.
 
-**R2-BE1 — OOF Evidence Artifact V3**
+Следующий backend stage:
 
-После ACCEPT:
+**UME-BE1 — Universal Model Explainability V1**
+
+Source of truth:
+`docs/workstreams/generic_dataset_onboarding_v1/UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`.
+
+После ACCEPT UME-BE1:
 
 **R2-BE2 — Result Read + OOF Explainability**
 
-Frontend в этих двух backend cycles не трогать.
+Frontend в UME-BE1 / R2-BE2 не расширять без отдельного Result implementation stage.

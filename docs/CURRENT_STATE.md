@@ -1198,3 +1198,78 @@ UX максимально автоматический:
 **R2-BE2 — Result Read + OOF Explainability**.
 
 Frontend в R2-BE1 / R2-BE2 не расширять без отдельного Result implementation stage.
+
+---
+
+## Native Product State — R2-BE1 ACCEPT + Universal Explainability Lock / 2026-09-30
+
+Этот раздел supersede-ит предыдущий NEXT для Result V2.
+
+### R2-BE1 — OOF Evidence Artifact V3
+
+Статус: **ACCEPTED / CLOSED**.
+
+Source commit:
+`5e4fff6e38d4d31b6c24dc83c6b154cb9d0706ab`.
+
+Принято:
+- ExperimentArtifact schema V3;
+- persisted `oof_y_true`;
+- `identifier_display`;
+- exact aligned model-input matrix selected predictors;
+- ordered feature binding;
+- ровно `config.folds` persisted evaluation models;
+- trusted persistence-provider chain;
+- reload/replay каждого fold model до publication;
+- OOF probability reproduction fail-closed;
+- canonical Result validation при threshold 0.5: TP/TN/FP/FN + Precision/Recall/F1;
+- semantic mismatch блокирует publication;
+- V1/V2 artifacts остаются readable и не мутируются.
+
+Final verification перед commit:
+- targeted/integration: **42 PASS + 12 subtests PASS**;
+- corrective artifact test independently: **10 PASS + 9 subtests PASS**;
+- `git diff --check`: **PASS**;
+- Reviewer final verdict: **ACCEPT**.
+
+Известный `test_model_presentation.py` contract-hash baseline mismatch подтверждён как pre-existing на base и не создан R2-BE1.
+### Universal Model Explainability V1
+
+Статус архитектуры: **ACCEPTED / LOCKED**, implementation ещё не выполнена.
+
+Source of truth:
+`docs/workstreams/generic_dataset_onboarding_v1/UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`.
+
+Owner requirement:
+любая модель, доступная пользователю как полноценная модель AXION, должна иметь validated путь:
+
+```text
+prediction
+→ Local Explanation
+→ Result Interpreter
+```
+
+Зафиксировано:
+- executable explanation providers разрешаются только через trusted `ModelExplanationProviderRegistry`;
+- prediction-only model не становится `AVAILABLE` в основном Result flow;
+- CatBoost / XGBoost / LightGBM переводятся на universal provider boundary без изменения пользовательской semantics;
+- прежний постоянный `GBDT Mean SHAP = UNSUPPORTED` superseded;
+- GBDT Mean должен получить validated probability-space ensemble explanation с единым background/masking contract и reconstruction checks;
+- future `Connect Model` допускает только native artifacts + declarative manifest + уже trusted plugin/providers; arbitrary executable Python/pickle из browser запрещён;
+- model-family-independent `LocalExplanationEvidence V2` является единым входом для Result Interpreter;
+- Object Detail показывает basic OOF facts сразу и автоматически запускает Local Explanation;
+- explanation loading не блокирует основной detail;
+- external LLM запускается только explicit user action из-за cost/privacy boundary;
+- final/refit model fallback для OOF explanation запрещён.
+
+### NEXT
+
+Следующий backend stage:
+
+**UME-BE1 — Universal Model Explainability V1**.
+
+После ACCEPT UME-BE1:
+
+**R2-BE2 — Result Read + OOF Explainability**.
+
+После backend contracts — visual lock Object Detail / Local Explanation / LLM presentation и затем native Result implementation.

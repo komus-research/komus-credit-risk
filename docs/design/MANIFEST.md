@@ -70,6 +70,7 @@
 - `screens/result/04_result_objects_v1.png` — accepted visual lock списка OOF-объектов;
 - подробная UX/semantic спецификация: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`;
 - backend architecture lock: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_V2_ARCHITECTURE_LOCK.md`;
+- universal model explainability lock: `docs/workstreams/generic_dataset_onboarding_v1/UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`;
 - demo values в PNG не являются runtime truth и не хардкодятся;
 - `Result model → Threshold Explorer → Objects` — принятый visual flow; object detail / Local SHAP / LLM screen ещё не visual lock;
 - для objects: target marker, threshold position и TP/TN/FP/FN — разные смыслы и не должны сливаться;
