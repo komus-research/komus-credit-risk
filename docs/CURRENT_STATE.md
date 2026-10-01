@@ -1346,7 +1346,19 @@ Backend invariants:
 - `detail()` делает full `store.load()` только для выбранного artifact;
 - тот же `ExperimentArtifactStore` используется application / OOF Result / OOF Explanation / History.
 
-Следующий stage: `PH-UI1 — History Catalog`.
+PH-UI1 — **History Catalog — ACCEPTED / CLOSED**, source commit `35aba684`.
+
+UI invariants:
+- `HISTORY` — отдельный presentation surface;
+- sidebar canonical label `История`, без старого `Проекты / История`;
+- каталог читает только `AnalysisHistoryService.list(..., limit=20, model_id=None)`;
+- search/sort/pagination state сохраняется независимо от current analysis;
+- History не читает filesystem/ArtifactStore/OOF services напрямую;
+- строки строятся только из `AnalysisHistoryItem`; `evaluation_level` берётся из DTO и не hardcode как OOF;
+- History navigation и render не мутируют current analysis / Result V2 / Local Explanation / Interpreter / inference state;
+- PH-UI1 показывает только access status `Полный результат` / `Только сводка`; historical Result opening намеренно не реализован.
+
+Следующий stage: `PH-UI2 — Historical Result Opening` с отдельным state-isolation contract.
 
 ---
 

@@ -62,4 +62,6 @@
 60. Settings implementation order: `SET-BE1 — Local Preferences + Interpreter Settings` → `SET-BE2 — Secure Credentials + Connection Check` → `SET-UI1`.
 61. PH-BE1 History backend — ACCEPTED / CLOSED, source commit `4a7d016a`: History list использует lightweight trusted `ExperimentArtifactStore.browse_metadata()` без загрузки OOF arrays/fold models; canonical published corruption и stale content-addressed identity fail closed.
 62. `AnalysisHistoryService.list()` сортирует только по persisted `ExperimentResult.created_at` с stable artifact-id tie-break; V3 → `FULL_RESULT_V2`, V1/V2 → `LEGACY_SUMMARY_ONLY`; full `store.load()` разрешён только для выбранного `detail()`.
-63. Следующий History stage — `PH-UI1`: подключить accepted `01_analysis_history_v1.png` к уже принятому `AnalysisHistoryService` без filesystem scan из UI и без мутации current analysis session.
+63. PH-UI1 History Catalog — ACCEPTED / CLOSED, source commit `35aba684`: `HISTORY` реализован отдельным presentation surface; каталог использует только `AnalysisHistoryService.list(..., limit=20)` и не мутирует current analysis / Result V2 state.
+64. History row scientific facts берутся только из `AnalysisHistoryItem`; `evaluation_level` не hardcode как OOF, неизвестные значения сохраняются как persisted DTO fact.
+65. PH-UI1 показывает только access status `Полный результат` / `Только сводка`; historical Result opening отложен в `PH-UI2`, потому что current Result V2 state принадлежит текущей analysis session и не должен быть переиспользован ценой её мутации.

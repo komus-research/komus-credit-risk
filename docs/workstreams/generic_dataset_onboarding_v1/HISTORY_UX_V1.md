@@ -1,6 +1,6 @@
 # History UX V1 — Product / Architecture / Visual Lock
 
-Status: **PH-BE1 ACCEPTED / CLOSED — PH-UI1 PENDING**
+Status: **PH-BE1 + PH-UI1 ACCEPTED / CLOSED — PH-UI2 PENDING**
 
 Visual source of truth:
 `docs/design/screens/history/01_analysis_history_v1.png`
@@ -132,8 +132,8 @@ Default sort: `created_at DESC`.
 
 1. Visual Lock — **ACCEPTED**.
 2. `PH-BE1` — trusted browse/list + `AnalysisHistoryService.list/detail` — **ACCEPTED / CLOSED**, source commit `4a7d016a`.
-3. `PH-UI1` — History catalog — **NEXT**.
-4. Historical V3 Result переиспользует существующий Result V2.
+3. `PH-UI1` — History catalog — **ACCEPTED / CLOSED**, source commit `35aba684`.
+4. `PH-UI2` — безопасное открытие historical Result без мутации current analysis session — **NEXT**.
 
 PH-BE1 дополнительно фиксирует lightweight metadata browse без `np.load`/fold-model load, fail-closed проверку canonical published artifact и content-addressed identity. `detail()` использует полный `store.load()` только для выбранного artifact.
 
