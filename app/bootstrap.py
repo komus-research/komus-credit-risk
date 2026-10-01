@@ -17,6 +17,7 @@ import numpy as np
 
 from komus_risk.application import (
     ExperimentApplicationService,
+    AnalysisHistoryService,
     FinalModelTrainingService,
     IntegrationWorkflowService,
     ModelInferenceService,
@@ -107,6 +108,7 @@ class PrototypeRuntime:
     prepared_context_authority: PreparedDatasetContextAuthority
     oof_result_service: OOFResultService
     oof_explanation_service: OOFExplanationService
+    analysis_history_service: AnalysisHistoryService
 
 
 @dataclass(frozen=True, slots=True)
@@ -672,6 +674,7 @@ def create_runtime(
         context_authority,
         OOFResultService(artifact_store),
         OOFExplanationService(artifact_store, plugin_registry),
+        AnalysisHistoryService(artifact_store),
     )
 
 

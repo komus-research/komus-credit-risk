@@ -515,6 +515,10 @@ class StreamlitBootstrapTests(unittest.TestCase):
                 runtime.oof_explanation_service.artifact_store,
             )
             self.assertIs(
+                runtime.application_service.artifact_store,
+                runtime.analysis_history_service.artifact_store,
+            )
+            self.assertIs(
                 runtime.oof_explanation_service.model_plugin_registry,
                 runtime.integration_workflow_service.model_plugin_registry,
             )

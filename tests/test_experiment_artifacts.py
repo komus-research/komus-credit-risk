@@ -81,6 +81,69 @@ class ExperimentArtifactTests(unittest.TestCase):
         self.assertEqual(loaded.run_output.oof_positive_proba.dtype.str, "<f8")
         self.assertEqual(loaded.run_output.fold_assignments.dtype.str, "<i8")
 
+    def test_browse_metadata_is_empty_for_missing_root_and_ignores_non_artifact_entries(self) -> None:
+        with TemporaryDirectory() as root:
+            store = ExperimentArtifactStore(root)
+            self.assertEqual(store.browse_metadata(), ())
+            experiments = Path(root) / "experiments"
+            experiments.mkdir()
+            (experiments / ".tmp-manual").mkdir()
+            (experiments / "not-an-id").mkdir()
+            (experiments / "ordinary-file").write_text("ignored", encoding="utf-8")
+            self.assertEqual(store.browse_metadata(), ())
+
+    def test_browse_metadata_finds_published_artifact_without_loading_arrays_or_models(self) -> None:
+        saved = self.store.save(
+            config=self.config, dataset_contract=self.contract, population=self.population, run_output=self.output,
+        )
+        with patch("komus_risk.artifacts.store.np.load", side_effect=AssertionError("array load is forbidden")):
+            metadata = self.store.browse_metadata()
+        self.assertEqual([item.artifact_id for item in metadata], [saved.artifact_id])
+        self.assertEqual(metadata[0].result.created_at, self.output.result.created_at)
+        self.assertEqual(metadata[0].population_size, len(self.population.row_positions))
+
+    def test_browse_metadata_fails_closed_on_canonical_artifact_corruption(self) -> None:
+        for index, relative in enumerate(("manifest.json", "result.json")):
+            with self.subTest(relative=relative):
+                saved = self._fresh_saved(str(index))
+                directory = Path(self.temp.name) / "experiments" / saved.artifact_id
+                path = directory / relative
+                original = path.read_bytes()
+                path.write_text("not json", encoding="utf-8")
+                with self.assertRaises(ValueError):
+                    self.store.browse_metadata()
+                path.write_bytes(original)
+
+    def test_browse_metadata_uses_result_json_created_at_not_filesystem_time(self) -> None:
+        saved = self.store.save(
+            config=self.config, dataset_contract=self.contract, population=self.population, run_output=self.output,
+        )
+        directory = Path(self.temp.name) / "experiments" / saved.artifact_id
+        (directory / "result.json").touch()
+        metadata = self.store.read_metadata(saved.artifact_id)
+        self.assertEqual(metadata.result.created_at, self.output.result.created_at)
+
+    def test_metadata_read_rejects_rehashed_metadata_with_stale_content_address(self) -> None:
+        saved = self.store.save(
+            config=self.config, dataset_contract=self.contract, population=self.population, run_output=self.output,
+        )
+        directory = Path(self.temp.name) / "experiments" / saved.artifact_id
+        result_path = directory / "result.json"
+        result_data = self.store._read_json(result_path)
+        result_data["created_at"] = "2026-01-02T00:00:00+00:00"
+        self.store._write_json(result_path, result_data)
+
+        manifest_path = directory / "manifest.json"
+        manifest = self.store._read_json(manifest_path)
+        manifest["files"]["result.json"]["sha256"] = self.store._raw_hash(result_path)
+        manifest["files"]["result.json"]["size_bytes"] = result_path.stat().st_size
+        manifest["content_hashes"]["result"] = stable_hash(result_data)
+        self.store._write_json(manifest_path, manifest)
+
+        with patch("komus_risk.artifacts.store.np.load", side_effect=AssertionError("array load is forbidden")):
+            with self.assertRaises(ValueError):
+                self.store.read_metadata(saved.artifact_id)
+
     def test_identity_is_root_independent_and_changes_with_one_oof_value(self) -> None:
         with TemporaryDirectory() as other_root:
             other = ExperimentArtifactStore(other_root).save(

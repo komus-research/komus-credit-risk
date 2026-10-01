@@ -23,7 +23,7 @@ from komus_risk.model_platform import (
 from komus_risk.model_platform.contracts import ProviderDescriptor
 from komus_risk.model_platform.persistence import ModelPersistenceProvider
 
-from .contracts import LoadedExperimentArtifact, LoadedOOFFoldModel
+from .contracts import ExperimentArtifactMetadata, LoadedExperimentArtifact, LoadedOOFFoldModel
 
 _SCHEMA_VERSION_V1 = "1"
 _SCHEMA_VERSION_V2 = "2"
@@ -196,6 +196,74 @@ class ExperimentArtifactStore:
         return self._load_directory(
             self.experiments / artifact_id, artifact_id, allow_temporary=False
         )
+
+    def read_metadata(self, artifact_id: str) -> ExperimentArtifactMetadata:
+        """Validate only the trusted JSON metadata needed by History catalogues."""
+        if not self._is_artifact_id(artifact_id):
+            raise ValueError("Invalid experiment artifact identifier.")
+        directory = self.experiments / artifact_id
+        if not directory.is_dir():
+            raise ValueError("Experiment artifact directory is missing or incomplete.")
+        if directory.name != artifact_id:
+            raise ValueError("Artifact directory name does not match artifact_id.")
+        manifest = self._read_json(directory / "manifest.json")
+        schema_version = self._validate_manifest(manifest, artifact_id)
+        expected_artifact_id = self._artifact_id(manifest["content_hashes"], schema_version)
+        if expected_artifact_id != artifact_id:
+            raise ValueError("Experiment artifact content-addressed identity is invalid.")
+        metadata_files = ("config.json", "dataset.json", "population.json", "result.json")
+        payload: dict[str, dict[str, Any]] = {}
+        for name in metadata_files:
+            path = directory / name
+            info = manifest["files"].get(name)
+            if not path.is_file() or not isinstance(info, dict):
+                raise ValueError("Experiment artifact mandatory metadata file is missing.")
+            if (
+                info.get("size_bytes") != path.stat().st_size
+                or info.get("sha256") != self._raw_hash(path)
+            ):
+                raise ValueError("Experiment artifact metadata integrity check failed.")
+            payload[name] = self._read_json(path)
+        config = ExperimentConfig.from_dict(payload["config.json"])
+        dataset = DatasetContract.from_dict(payload["dataset.json"])
+        result = ExperimentResult.from_dict(payload["result.json"])
+        population = payload["population.json"]
+        population_id = population.get("population_id")
+        population_fingerprint = population.get("population_fingerprint")
+        population_size = population.get("population_size")
+        if (
+            not isinstance(population_id, str) or not population_id.strip()
+            or not isinstance(population_fingerprint, str) or not population_fingerprint.strip()
+            or isinstance(population_size, bool) or not isinstance(population_size, int)
+            or population_size < 1
+        ):
+            raise ValueError("Experiment artifact population metadata is invalid.")
+        hashes = {
+            "config": stable_hash(config.to_dict()),
+            "dataset": stable_hash(dataset.to_dict()),
+            "population": stable_hash(population),
+            "result": stable_hash(result.to_dict()),
+        }
+        if any(manifest["content_hashes"].get(key) != value for key, value in hashes.items()):
+            raise ValueError("Experiment artifact metadata semantic integrity check failed.")
+        self._validate_metadata_identity(
+            manifest["identity"], config, dataset, result, population_id, population_fingerprint
+        )
+        return ExperimentArtifactMetadata(
+            artifact_id, schema_version, config, dataset, result,
+            population_id, population_fingerprint, population_size,
+        )
+
+    def browse_metadata(self) -> tuple[ExperimentArtifactMetadata, ...]:
+        """Browse canonical published artifacts without loading evidence arrays."""
+        if not self.experiments.exists():
+            return ()
+        found: list[ExperimentArtifactMetadata] = []
+        for child in self.experiments.iterdir():
+            if not child.is_dir() or not self._is_artifact_id(child.name):
+                continue
+            found.append(self.read_metadata(child.name))
+        return tuple(found)
 
     def load_oof_fold_model(
         self,
@@ -1000,6 +1068,30 @@ class ExperimentArtifactStore:
             raise ValueError(
                 "Experiment artifact manifest identity does not match payload."
             )
+
+    @staticmethod
+    def _validate_metadata_identity(
+        identity: Any,
+        config: ExperimentConfig,
+        dataset: DatasetContract,
+        result: ExperimentResult,
+        population_id: str,
+        population_fingerprint: str,
+    ) -> None:
+        expected = {
+            "experiment_id": config.experiment_id,
+            "result_id": result.result_id,
+            "config_hash": config.config_hash,
+            "dataset_id": dataset.dataset_id,
+            "dataset_fingerprint": dataset.dataset_fingerprint,
+            "population_id": population_id,
+            "population_fingerprint": population_fingerprint,
+            "model_id": config.model_id,
+            "model_version": config.model_version,
+            "evaluation_level": config.evaluation_level,
+        }
+        if identity != expected:
+            raise ValueError("Experiment artifact manifest identity does not match metadata.")
 
     @staticmethod
     def _write_json(path: Path, value: Any) -> None:

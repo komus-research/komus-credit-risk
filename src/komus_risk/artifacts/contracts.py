@@ -5,10 +5,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from komus_risk.contracts import DatasetContract, ExperimentConfig
+from komus_risk.contracts import DatasetContract, ExperimentConfig, ExperimentResult
 from komus_risk.experiments import EvaluationPopulation, ExperimentRunOutput
 from komus_risk.model_platform import ModelConfigurationRecord, SmokeEvidence
 from komus_risk.models.gbdt.native import NativePredictor
+
+
+@dataclass(frozen=True, slots=True)
+class ExperimentArtifactMetadata:
+    """Validated lightweight metadata for browsing an immutable artifact."""
+
+    artifact_id: str
+    artifact_schema_version: str
+    config: ExperimentConfig
+    dataset_contract: DatasetContract
+    result: ExperimentResult
+    population_id: str
+    population_fingerprint: str
+    population_size: int
 
 
 @dataclass(frozen=True, slots=True)

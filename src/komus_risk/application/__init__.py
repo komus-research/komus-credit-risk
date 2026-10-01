@@ -1,6 +1,13 @@
 """Frontend-independent experiment application use cases."""
 
 from .contracts import RunExperimentRequest
+from .history import (
+    AnalysisHistoryDetail,
+    AnalysisHistoryError,
+    AnalysisHistoryItem,
+    AnalysisHistoryPage,
+    AnalysisHistoryService,
+)
 from .integration_workflow import (
     CapabilityStatus,
     IntegrationWorkflowService,
@@ -69,6 +76,11 @@ from .oof_result import (
 __all__ = [
     "RESULT_INTERPRETER_ROLES",
     "CapabilityStatus",
+    "AnalysisHistoryDetail",
+    "AnalysisHistoryError",
+    "AnalysisHistoryItem",
+    "AnalysisHistoryPage",
+    "AnalysisHistoryService",
     "ExperimentApplicationService",
     "FinalModelTrainingService",
     "IntegrationWorkflowService",
