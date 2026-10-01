@@ -211,7 +211,7 @@ Backend semantics уже зафиксирована как `min_score` / `max_sc
 
 Точная backend-supported семантика quick views задана public contract. В принятом R2-UI3 это взаимоисключающие frontend presets: `Ошибки модели → {FP,FN}`, `Пропущенные события → {FN}`, `Ложные срабатывания → {FP}`, `Пограничные → DISTANCE_TO_THRESHOLD_ASC`, `Высокая оценка модели → SCORE_DESC`, `Все объекты → снять quick-view preset`. `Пограничные` и `Высокая оценка модели` очищают quick-view outcomes; это не hidden filtering. Никаких `score >= 0.8`, `threshold ± band` или иных незафиксированных cutoffs нет.
 
-R2-UI3 использует server-side chunks по 50 строк с Previous/Next и compact range indicator. Это допустимая Streamlit V1 реализация принятого offset/limit contract; full Result в UI не загружается. Active Object Detail transition отложен до R2-UI4.
+R2-UI3 использует server-side chunks по 50 строк с Previous/Next и compact range indicator. Это допустимая Streamlit V1 реализация принятого offset/limit contract; full Result в UI не загружается. Active Object Detail transition реализован и принят в R2-UI4A. Выбранная строка current server-side chunk переводит exact `object_id` в `OBJECT_DETAIL`; detail повторно читает scientific facts через public `object_detail()` contract. Local Explanation остаётся следующим R2-UI4B.
 
 ## 5. Professional analyst principle
 
@@ -240,7 +240,9 @@ object → OOF prediction → fold identity → model/artifact identity → expl
 Artifact/provenance contract зафиксирован в `RESULT_V2_ARCHITECTURE_LOCK.md`.
 Universal provider/explanation contract зафиксирован в `UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`.
 
-Object Detail показывает basic OOF facts сразу, а Local Explanation запускает автоматически отдельным request и показывает neutral loading state. Основной detail не блокируется вычислением explanation.
+R2-UI4A foundation уже реализует basic Object Detail: exact object выбирается по opaque `object_id`, подтверждается через `OOFResultService.object_detail()` и показывает DTO facts вместе с Fold provenance. Local Explanation в этом stage намеренно не вызывается.
+
+Следующий R2-UI4B должен сохранить basic OOF facts сразу, автоматически запустить Local Explanation отдельным request и показать neutral loading state. Основной detail не должен блокироваться вычислением explanation.
 
 Final/refit model fallback запрещён.
 

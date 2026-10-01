@@ -338,4 +338,19 @@ Canonical runtime facts:
 - service error fail-closed, без stale/fake rows и без artifact fallback;
 - Object Detail и переход к нему не входят в R2-UI3.
 
-Следующий stage — R2-UI4 / Object Detail.
+R2-UI4A — Object Detail Foundation — **ACCEPTED / CLOSED**, source commit `fbc389f3`.
+
+Принятый UI path:
+`Objects single-row selection → exact object_id from OOFObjectList.items → OOFResultService.object_detail(artifact_id, object_id, current_threshold) → basic Object Detail`.
+
+Runtime invariants:
+- `identifier_display` не используется как identity;
+- list row служит только для выбора opaque `object_id`;
+- scientific detail заново читается через public service;
+- detail display следует DTO facts и не пересчитывает `score >= threshold` или TP/TN/FP/FN;
+- `fold_number` приходит только из Object Detail DTO и остаётся read-only provenance;
+- missing selected object и service failure fail closed, без artifact/list-row fallback;
+- Back сохраняет current threshold и Objects query state;
+- Local Explanation / SHAP / LLM не входят в R2-UI4A.
+
+Следующий stage — R2-UI4B / Local Explanation.
