@@ -46,6 +46,8 @@ class _Streamlit:
         self.button_responses = {}
         self.rerun_calls = 0
         self.tables = []
+        self.markdowns = []
+        self.json_values = []
         self.dataframe_selection = {"selection": {"rows": []}}
         self.writes = []
 
@@ -93,6 +95,15 @@ class _Streamlit:
         self.tables.append((args, kwargs))
         return self.dataframe_selection
 
+    def markdown(self, *args, **kwargs) -> None:
+        self.markdowns.append((args, kwargs))
+
+    def radio(self, label, *, options, key, **kwargs):
+        return self.session_state.get(key, options[0])
+
+    def spinner(self, *args, **kwargs):
+        return _Expander()
+
     def write(self, *args, **kwargs) -> None:
         self.writes.extend(args)
 
@@ -103,7 +114,7 @@ class _Streamlit:
         return _Expander()
 
     def json(self, *args, **kwargs) -> None:
-        return None
+        self.json_values.append(args[0] if args else None)
 
 
 class _Artifact:
@@ -365,6 +376,145 @@ class ResultV2UiTests(unittest.TestCase):
         self.assertIn("Исход: FN", rendered)
         self.assertIn("Fold: 4", rendered)
 
+    def _detail(self):
+        return SimpleNamespace(
+            identifier_display="ORG-7", score=0.2, threshold=0.5, y_true=1,
+            predicted_positive=False, outcome="FN", fold_number=4,
+        )
+
+    def _evidence(self):
+        features = tuple(
+            SimpleNamespace(
+                column_name=f"column-{index}",
+                display_name_ru=(f"Признак {index}" if index == 1 else None),
+                description_ru="Описание из evidence" if index == 2 else None,
+                raw_value=index + 0.25,
+                shap_value=(6 - index) * (1 if index % 2 else -1),
+                abs_rank=index,
+            )
+            for index in range(1, 8)
+        )
+        return SimpleNamespace(
+            base_value=0.125,
+            explained_output_value=0.875,
+            output_space="raw_margin",
+            shap_output_space="raw_margin",
+            features=features,
+            explanation_method_id="method-from-evidence",
+            explanation_method_version="method-v1",
+            provider_id="provider-from-evidence",
+            provider_version="provider-v2",
+            model_binding_id="binding-from-evidence",
+            source_kind="oof_fold",
+            provenance={"fold_id": "fold-4", "other": "trusted"},
+        )
+
+    def test_automatic_local_explanation_exact_call_and_same_object_cache(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "OBJECT_DETAIL"
+        ui.session_state.result_v2_selected_object_id = "object-id"
+        service = SimpleNamespace(local=Mock(return_value=self._evidence()))
+        runtime = SimpleNamespace(
+            oof_result_service=SimpleNamespace(object_detail=Mock(return_value=self._detail())),
+            oof_explanation_service=service,
+        )
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(runtime)
+            prototype._render_result_step(runtime)
+
+        service.local.assert_called_once_with("artifact-1", "object-id")
+        runtime.oof_result_service.object_detail.assert_called_once_with(
+            "artifact-1", "object-id", 0.5
+        )
+        self.assertIs(ui.session_state.result_v2_local_explanation_evidence, service.local.return_value)
+        self.assertEqual(ui.session_state.result_v2_local_explanation_object_id, "object-id")
+
+    def test_new_object_cannot_render_or_reuse_previous_explanation(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "OBJECT_DETAIL"
+        ui.session_state.result_v2_selected_object_id = "object-2"
+        ui.session_state.result_v2_local_explanation_object_id = "object-1"
+        ui.session_state.result_v2_local_explanation_evidence = self._evidence()
+        service = SimpleNamespace(local=Mock(return_value=self._evidence()))
+        runtime = SimpleNamespace(
+            oof_result_service=SimpleNamespace(object_detail=Mock(return_value=self._detail())),
+            oof_explanation_service=service,
+        )
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(runtime)
+
+        service.local.assert_called_once_with("artifact-1", "object-2")
+        self.assertEqual(ui.session_state.result_v2_local_explanation_object_id, "object-2")
+        self.assertTrue(any("Признак 1" in args[0] for args, _ in ui.markdowns))
+
+    def test_brief_uses_abs_rank_sign_and_exact_remainder_sum(self) -> None:
+        ui = _Streamlit()
+        evidence = self._evidence()
+        with patch.object(prototype, "st", ui):
+            prototype._render_oof_explanation_brief(evidence)
+
+        self.assertEqual(len(ui.markdowns), 5)
+        self.assertIn("увеличивает оценку модели", ui.markdowns[0][0][0])
+        self.assertIn("уменьшает оценку модели", ui.markdowns[1][0][0])
+        remainder = sum(feature.shap_value for feature in evidence.features[5:])
+        self.assertIn(f"{remainder:.6f}", str(ui.writes))
+        self.assertIn("Признак 1", ui.markdowns[0][0][0])
+        self.assertIn("column-2", ui.markdowns[1][0][0])
+
+    def test_detailed_mode_uses_evidence_values_and_collapsed_provenance(self) -> None:
+        ui = _Streamlit()
+        evidence = self._evidence()
+        ui.session_state.result_v2_local_explanation_mode = "DETAILED"
+        with patch.object(prototype, "st", ui):
+            prototype._render_oof_explanation_detailed(evidence)
+
+        rows = ui.tables[0][0][0]
+        self.assertEqual(rows[0]["Значение"], evidence.features[0].raw_value)
+        self.assertEqual(rows[0]["Описание"], "")
+        self.assertEqual(rows[1]["Признак"], "column-2")
+        self.assertEqual(rows[1]["Описание"], "Описание из evidence")
+        self.assertEqual(
+            ui.json_values[0],
+            {
+                "explanation_method_id": "method-from-evidence",
+                "explanation_method_version": "method-v1",
+                "provider_id": "provider-from-evidence",
+                "provider_version": "provider-v2",
+                "model_binding_id": "binding-from-evidence",
+                "source_kind": "oof_fold",
+                "fold_id": "fold-4",
+            },
+        )
+
+    def test_error_hides_raw_exception_and_retry_repeats_local_only(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "OBJECT_DETAIL"
+        ui.session_state.result_v2_selected_object_id = "object-id"
+        local = Mock(side_effect=[RuntimeError("private traceback"), self._evidence()])
+        runtime = SimpleNamespace(
+            oof_result_service=SimpleNamespace(object_detail=Mock(return_value=self._detail())),
+            oof_explanation_service=SimpleNamespace(local=local),
+        )
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(runtime)
+            ui.button_responses["Повторить объяснение"] = True
+            prototype._render_result_step(runtime)
+
+        self.assertEqual(local.call_args_list[0].args, ("artifact-1", "object-id"))
+        self.assertEqual(local.call_args_list[1].args, ("artifact-1", "object-id"))
+        runtime.oof_result_service.object_detail.assert_called_once_with(
+            "artifact-1", "object-id", 0.5
+        )
+        self.assertNotIn("private traceback", str(ui.errors))
+        self.assertIsNone(ui.session_state.result_v2_local_explanation_error_code)
+        self.assertIsNotNone(ui.session_state.result_v2_local_explanation_evidence)
+
     def test_detail_missing_id_and_service_error_fail_closed_with_back_available(self) -> None:
         missing = _Streamlit()
         missing.session_state.loaded_artifact = _Artifact()
@@ -392,6 +542,8 @@ class ResultV2UiTests(unittest.TestCase):
         ui.session_state.loaded_artifact = _Artifact()
         ui.session_state.result_v2_view = "OBJECT_DETAIL"
         ui.session_state.result_v2_selected_object_id = "object-id"
+        ui.session_state.result_v2_local_explanation_evidence = object()
+        ui.session_state.result_v2_local_explanation_object_id = "object-id"
         ui.session_state.result_v2_threshold = 0.31
         ui.session_state.update(
             result_v2_objects_search="search text", result_v2_objects_target="NEGATIVE",
@@ -417,6 +569,8 @@ class ResultV2UiTests(unittest.TestCase):
         self.assertEqual(ui.session_state.result_v2_objects_sort, "SCORE_ASC")
         self.assertEqual(ui.session_state.result_v2_objects_offset, 50)
         self.assertEqual(ui.session_state.result_v2_objects_query_snapshot[0], "search text")
+        self.assertIsNotNone(ui.session_state.result_v2_local_explanation_evidence)
+        self.assertEqual(ui.session_state.result_v2_local_explanation_object_id, "object-id")
 
     def test_objects_quick_views_and_default_score_range(self) -> None:
         cases = (

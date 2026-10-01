@@ -32,6 +32,7 @@ from app.session_state import (
     set_role_result_interpreter_request,
     set_selected_feature_ids,
     set_selected_model_id,
+    set_result_v2_selected_object_id,
     synchronize_feature_widgets,
     toggle_feature,
 )
@@ -52,6 +53,10 @@ class SessionStateTests(unittest.TestCase):
             selected_feature_ids=("a",), selected_model_id="model", experiment_inputs={"seed": 42},
             planning_request_snapshot=object(), experiment_plan=object(), loaded_artifact=object(), comparison_result=object(),
             result_v2_selected_object_id="prior-object",
+            result_v2_local_explanation_evidence=object(),
+            result_v2_local_explanation_object_id="prior-object",
+            result_v2_local_explanation_error_code="stale-error",
+            result_v2_local_explanation_mode="DETAILED",
         )
 
         set_dataset_context(self.state, second)
@@ -65,6 +70,10 @@ class SessionStateTests(unittest.TestCase):
         self.assertIsNone(self.state["comparison_result"])
         self.assertEqual(self.state["result_v2_view"], "OVERVIEW")
         self.assertIsNone(self.state["result_v2_selected_object_id"])
+        self.assertIsNone(self.state["result_v2_local_explanation_evidence"])
+        self.assertIsNone(self.state["result_v2_local_explanation_object_id"])
+        self.assertIsNone(self.state["result_v2_local_explanation_error_code"])
+        self.assertEqual(self.state["result_v2_local_explanation_mode"], "BRIEF")
         self.assertEqual(self.state["result_v2_threshold"], 0.5)
 
     def test_result_v2_defaults_save_and_navigation_lifecycle(self) -> None:
@@ -78,6 +87,10 @@ class SessionStateTests(unittest.TestCase):
         self.assertEqual(self.state["result_v2_objects_score_range"], (0.0, 1.0))
         self.assertEqual(self.state["result_v2_objects_sort"], "SCORE_DESC")
         self.assertEqual(self.state["result_v2_objects_offset"], 0)
+        self.assertIsNone(self.state["result_v2_local_explanation_evidence"])
+        self.assertIsNone(self.state["result_v2_local_explanation_object_id"])
+        self.assertIsNone(self.state["result_v2_local_explanation_error_code"])
+        self.assertEqual(self.state["result_v2_local_explanation_mode"], "BRIEF")
         self.state["result_v2_view"] = "OBJECTS"
         self.state["result_v2_selected_object_id"] = "prior-object"
         self.state["result_v2_threshold"] = 0.72
@@ -119,6 +132,44 @@ class SessionStateTests(unittest.TestCase):
         self.assertEqual(self.state["result_v2_objects_target"], "NEGATIVE")
         self.assertEqual(self.state["result_v2_objects_outcomes"], ("FP",))
         self.assertEqual(self.state["result_v2_objects_offset"], 50)
+
+    def test_object_change_clears_only_object_local_explanation_cache(self) -> None:
+        evidence = object()
+        self.state.update(
+            result_v2_selected_object_id="object-1",
+            result_v2_local_explanation_evidence=evidence,
+            result_v2_local_explanation_object_id="object-1",
+            result_v2_local_explanation_error_code="old-error",
+            result_v2_local_explanation_mode="DETAILED",
+        )
+
+        set_result_v2_selected_object_id(self.state, "object-2")
+
+        self.assertEqual(self.state["result_v2_selected_object_id"], "object-2")
+        self.assertIsNone(self.state["result_v2_local_explanation_evidence"])
+        self.assertIsNone(self.state["result_v2_local_explanation_object_id"])
+        self.assertIsNone(self.state["result_v2_local_explanation_error_code"])
+        self.assertEqual(self.state["result_v2_local_explanation_mode"], "BRIEF")
+
+    def test_new_artifact_resets_local_explanation_but_home_result_keeps_it(self) -> None:
+        self.state.update(
+            result_v2_selected_object_id="object-1",
+            result_v2_local_explanation_evidence=object(),
+            result_v2_local_explanation_object_id="object-1",
+            result_v2_local_explanation_error_code="old-error",
+            result_v2_local_explanation_mode="DETAILED",
+        )
+        open_home(self.state)
+        open_result(self.state)
+        self.assertIsNotNone(self.state["result_v2_local_explanation_evidence"])
+        self.assertEqual(self.state["result_v2_local_explanation_mode"], "DETAILED")
+
+        save_artifact(self.state, SimpleNamespace(artifact_id="new-artifact"), comparison=None)
+
+        self.assertIsNone(self.state["result_v2_local_explanation_evidence"])
+        self.assertIsNone(self.state["result_v2_local_explanation_object_id"])
+        self.assertIsNone(self.state["result_v2_local_explanation_error_code"])
+        self.assertEqual(self.state["result_v2_local_explanation_mode"], "BRIEF")
 
     def test_unprepared_source_clears_context_and_blocks_downstream_state(self) -> None:
         prepared_context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))

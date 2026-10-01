@@ -21,6 +21,7 @@ from komus_risk.application import (
     IntegrationWorkflowService,
     ModelInferenceService,
     OOFResultService,
+    OOFExplanationService,
     ResultInterpreterService,
     NativeDatasetOnboardingService,
 )
@@ -105,6 +106,7 @@ class PrototypeRuntime:
     integration_workflow_service: IntegrationWorkflowService
     prepared_context_authority: PreparedDatasetContextAuthority
     oof_result_service: OOFResultService
+    oof_explanation_service: OOFExplanationService
 
 
 @dataclass(frozen=True, slots=True)
@@ -669,6 +671,7 @@ def create_runtime(
         integration_workflow_service,
         context_authority,
         OOFResultService(artifact_store),
+        OOFExplanationService(artifact_store, plugin_registry),
     )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from collections.abc import Mapping, MutableMapping
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,7 @@ from app.session_state import (
     set_inference_source_path,
     set_loaded_model_version,
     set_local_explanation_evidence,
+    set_result_v2_selected_object_id,
     set_prediction_batch,
     set_role_result_interpretation_error,
     set_role_result_interpretation_success,
@@ -1677,7 +1679,9 @@ def _render_result_objects(runtime, artifact: Any) -> None:
     selected_row_index = selected_rows[0] if len(selected_rows) == 1 else None
     if selected_row_index is not None and 0 <= selected_row_index < len(objects.items):
         if st.button("Открыть объект"):
-            state["result_v2_selected_object_id"] = objects.items[selected_row_index].object_id
+            set_result_v2_selected_object_id(
+                state, objects.items[selected_row_index].object_id
+            )
             state["result_v2_view"] = "OBJECT_DETAIL"
             st.rerun()
             return
@@ -1717,15 +1721,33 @@ def _render_result_object_detail(runtime: Any, artifact: Any) -> None:
         st.error("Объект не выбран. Вернитесь к списку объектов и выберите строку.")
         return
 
-    try:
-        detail = runtime.oof_result_service.object_detail(
-            artifact.artifact_id,
-            selected_object_id,
-            state.get("result_v2_threshold", 0.5),
+    if state.get("result_v2_local_explanation_object_id") != selected_object_id:
+        state["result_v2_local_explanation_evidence"] = None
+        state["result_v2_local_explanation_object_id"] = None
+        state["result_v2_local_explanation_error_code"] = None
+        state["result_v2_local_explanation_mode"] = "BRIEF"
+
+    detail_cache = state.get("result_v2_object_detail_cache")
+    selected_threshold = state.get("result_v2_threshold", 0.5)
+    if (
+        isinstance(detail_cache, tuple)
+        and len(detail_cache) == 4
+        and detail_cache[:3] == (artifact.artifact_id, selected_object_id, selected_threshold)
+    ):
+        detail = detail_cache[3]
+    else:
+        try:
+            detail = runtime.oof_result_service.object_detail(
+                artifact.artifact_id,
+                selected_object_id,
+                selected_threshold,
+            )
+        except Exception:
+            st.error("Не удалось загрузить подтверждённые OOF-данные объекта.")
+            return
+        state["result_v2_object_detail_cache"] = (
+            artifact.artifact_id, selected_object_id, selected_threshold, detail
         )
-    except Exception:
-        st.error("Не удалось загрузить подтверждённые OOF-данные объекта.")
-        return
 
     st.subheader(f"Объект {detail.identifier_display}")
     st.write(f"Оценка: {_number(detail.score)}")
@@ -1748,6 +1770,144 @@ def _render_result_object_detail(runtime: Any, artifact: Any) -> None:
         "Модель, сформировавшая эту оценку, обучалась на других folds "
         "и не использовала этот объект при обучении. Fold доступен только для чтения."
     )
+
+
+    _render_oof_object_explanation(runtime, artifact.artifact_id, selected_object_id)
+
+
+def _render_oof_object_explanation(runtime: Any, artifact_id: str, object_id: str) -> None:
+    """Render cached evidence from the exact held-out OOF fold explanation source."""
+    state = st.session_state
+    evidence = state.get("result_v2_local_explanation_evidence")
+    cached_for = state.get("result_v2_local_explanation_object_id")
+    error_code = state.get("result_v2_local_explanation_error_code")
+
+    if error_code is not None:
+        st.error("Не удалось сформировать локальное объяснение модели.")
+        if not st.button("Повторить объяснение"):
+            return
+        state["result_v2_local_explanation_error_code"] = None
+        state["result_v2_local_explanation_evidence"] = None
+        state["result_v2_local_explanation_object_id"] = None
+        evidence = None
+
+    if evidence is None or cached_for != object_id:
+        state["result_v2_local_explanation_evidence"] = None
+        state["result_v2_local_explanation_object_id"] = object_id
+        try:
+            with st.spinner("Формируем объяснение модели…"):
+                evidence = runtime.oof_explanation_service.local(artifact_id, object_id)
+        except Exception as error:
+            state["result_v2_local_explanation_evidence"] = None
+            state["result_v2_local_explanation_object_id"] = object_id
+            state["result_v2_local_explanation_error_code"] = (
+                getattr(error, "code", None) or "LOCAL_EXPLANATION_UNAVAILABLE"
+            )
+            st.error("Не удалось сформировать локальное объяснение модели.")
+            st.button("Повторить объяснение")
+            return
+        state["result_v2_local_explanation_evidence"] = evidence
+        state["result_v2_local_explanation_object_id"] = object_id
+        state["result_v2_local_explanation_error_code"] = None
+
+    if evidence is None:
+        return
+    st.subheader("Объяснение модели")
+    selected_mode = st.radio(
+        "Режим объяснения",
+        options=("BRIEF", "DETAILED"),
+        format_func=lambda value: "Кратко" if value == "BRIEF" else "Подробно",
+        key="result_v2_local_explanation_mode",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    if selected_mode == "DETAILED":
+        _render_oof_explanation_detailed(evidence)
+    else:
+        _render_oof_explanation_brief(evidence)
+
+
+def _evidence_value(evidence: Any, name: str, default: Any = None) -> Any:
+    if isinstance(evidence, Mapping):
+        return evidence.get(name, default)
+    return getattr(evidence, name, default)
+
+
+def _evidence_feature_name(feature: Any) -> str:
+    display_name = _evidence_value(feature, "display_name_ru")
+    if isinstance(display_name, str) and display_name.strip():
+        return display_name
+    return str(_evidence_value(feature, "column_name", ""))
+
+
+def _render_oof_explanation_brief(evidence: Any) -> None:
+    features = tuple(_evidence_value(evidence, "features", ()) or ())
+    ranked = sorted(features, key=lambda feature: _evidence_value(feature, "abs_rank", 0))
+    top = ranked[:5]
+    output_space = _evidence_value(evidence, "output_space") or _evidence_value(
+        evidence, "shap_output_space", ""
+    )
+    st.write("Начальная оценка модели", _number(_evidence_value(evidence, "base_value")))
+    st.caption(
+        "Начальная оценка — референсная точка SHAP. Вклады признаков конкретного объекта "
+        "увеличивают или уменьшают её и формируют итоговый выход модели."
+    )
+    st.caption(f"Пространство выхода: {output_space}")
+    st.caption("Положительный вклад увеличивает оценку модели; отрицательный — уменьшает.")
+    for feature in top:
+        value = float(_evidence_value(feature, "shap_value", 0.0))
+        direction = (
+            "увеличивает оценку модели" if value > 0 else
+            "уменьшает оценку модели" if value < 0 else
+            "не меняет оценку модели"
+        )
+        color = "#d63384" if value > 0 else "#00a6c7" if value < 0 else "#64748b"
+        label = escape(_evidence_feature_name(feature))
+        st.markdown(
+            f'<span style="color:{color}"><b>{label}</b>: {value:.6f} — {direction}</span>',
+            unsafe_allow_html=True,
+        )
+    if len(ranked) > 5:
+        remainder = sum(
+            float(_evidence_value(feature, "shap_value", 0.0)) for feature in ranked[5:]
+        )
+        st.write(f"Остальные признаки: {remainder:.6f}")
+
+
+def _render_oof_explanation_detailed(evidence: Any) -> None:
+    st.write("Начальная оценка модели", _number(_evidence_value(evidence, "base_value")))
+    st.write("Объяснённый выход модели", _number(_evidence_value(evidence, "explained_output_value")))
+    st.write(
+        "Пространство выхода",
+        _evidence_value(evidence, "output_space") or _evidence_value(evidence, "shap_output_space", ""),
+    )
+    rows = []
+    for feature in tuple(_evidence_value(evidence, "features", ()) or ()):
+        description = _evidence_value(feature, "description_ru")
+        rows.append(
+            {
+                "Признак": _evidence_feature_name(feature),
+                "Описание": description if isinstance(description, str) and description.strip() else "",
+                "Значение": _evidence_value(feature, "raw_value"),
+                "Вклад": _evidence_value(feature, "shap_value"),
+                "Ранг": _evidence_value(feature, "abs_rank"),
+            }
+        )
+    st.dataframe(rows, hide_index=True, use_container_width=True)
+    provenance = _evidence_value(evidence, "provenance", {})
+    provenance = provenance if isinstance(provenance, Mapping) else {}
+    with st.expander("Технические сведения", expanded=False):
+        st.json(
+            {
+                "explanation_method_id": _evidence_value(evidence, "explanation_method_id"),
+                "explanation_method_version": _evidence_value(evidence, "explanation_method_version"),
+                "provider_id": _evidence_value(evidence, "provider_id"),
+                "provider_version": _evidence_value(evidence, "provider_version"),
+                "model_binding_id": _evidence_value(evidence, "model_binding_id"),
+                "source_kind": _evidence_value(evidence, "source_kind"),
+                "fold_id": provenance.get("fold_id"),
+            }
+        )
 
 
 def _render_result_threshold(runtime, artifact: Any) -> None:

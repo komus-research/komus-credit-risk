@@ -509,6 +509,15 @@ class StreamlitBootstrapTests(unittest.TestCase):
                 runtime.application_service.artifact_store,
                 runtime.oof_result_service.artifact_store,
             )
+            self.assertIsInstance(runtime.oof_explanation_service, bootstrap.OOFExplanationService)
+            self.assertIs(
+                runtime.application_service.artifact_store,
+                runtime.oof_explanation_service.artifact_store,
+            )
+            self.assertIs(
+                runtime.oof_explanation_service.model_plugin_registry,
+                runtime.integration_workflow_service.model_plugin_registry,
+            )
             self.assertEqual(workflow.model_version_store.root, Path(directory) / "model_versions")
             self.assertNotEqual(workflow.model_version_store.root, runtime.application_service.artifact_store.root)
 

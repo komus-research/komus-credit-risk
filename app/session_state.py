@@ -41,6 +41,11 @@ _DEFAULTS = {
     "comparison_result": None,
     "result_v2_view": "OVERVIEW",
     "result_v2_selected_object_id": None,
+    "result_v2_object_detail_cache": None,
+    "result_v2_local_explanation_evidence": None,
+    "result_v2_local_explanation_object_id": None,
+    "result_v2_local_explanation_error_code": None,
+    "result_v2_local_explanation_mode": "BRIEF",
     "result_v2_threshold": 0.5,
     "result_v2_objects_search": "",
     "result_v2_objects_target": "ANY",
@@ -477,6 +482,8 @@ def _reset_result_v2_state(state: MutableMapping[str, Any]) -> None:
     """Return Result V2 navigation to its canonical neutral state."""
     state["result_v2_view"] = "OVERVIEW"
     state["result_v2_selected_object_id"] = None
+    state["result_v2_object_detail_cache"] = None
+    _reset_result_v2_local_explanation(state)
     state["result_v2_threshold"] = 0.5
     state["result_v2_objects_search"] = ""
     state["result_v2_objects_target"] = "ANY"
@@ -487,6 +494,23 @@ def _reset_result_v2_state(state: MutableMapping[str, Any]) -> None:
     state["result_v2_objects_sort"] = "SCORE_DESC"
     state["result_v2_objects_offset"] = 0
     state["result_v2_objects_query_snapshot"] = None
+
+
+def _reset_result_v2_local_explanation(state: MutableMapping[str, Any]) -> None:
+    state["result_v2_local_explanation_evidence"] = None
+    state["result_v2_local_explanation_object_id"] = None
+    state["result_v2_local_explanation_error_code"] = None
+    state["result_v2_local_explanation_mode"] = "BRIEF"
+
+
+def set_result_v2_selected_object_id(
+    state: MutableMapping[str, Any], object_id: str | None
+) -> None:
+    """Select an OOF object and discard explanation state owned by another object."""
+    if object_id == state.get("result_v2_selected_object_id"):
+        return
+    state["result_v2_selected_object_id"] = object_id
+    _reset_result_v2_local_explanation(state)
 
 
 def set_loaded_model_version(state: MutableMapping[str, Any], loaded_model_version: Any) -> None:
