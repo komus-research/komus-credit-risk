@@ -310,3 +310,16 @@ def test_native_quality_smoke_samples_only_trusted_working_population() -> None:
     assert set(evidence.sampled_row_positions).issubset(set(working.row_positions))
     assert not set(evidence.sampled_row_positions).intersection(range(40, 50))
     assert result["can_start_training"] is True
+
+
+def test_native_runtime_services_share_canonical_artifact_store() -> None:
+    runtime = create_native_experiment_runtime()
+
+    expected_root = Path(__file__).resolve().parents[1] / ".axion-artifacts"
+    assert runtime.artifact_store.root == expected_root
+    assert runtime.artifact_store.root.name == ".axion-artifacts"
+    assert runtime.artifact_store.root.name != ".streamlit-artifacts"
+    assert runtime.application_service.artifact_store is runtime.artifact_store
+    assert runtime.oof_result_service.artifact_store is runtime.artifact_store
+    assert runtime.oof_explanation_service.artifact_store is runtime.artifact_store
+    assert runtime.analysis_history_service.artifact_store is runtime.artifact_store
