@@ -5,6 +5,7 @@ import { HomePage } from './pages/HomePage'
 import { AlgorithmPage } from './pages/AlgorithmPage'
 import { FeaturesPage } from './pages/FeaturesPage'
 import { QualityPage } from './pages/QualityPage'
+import { ResultPage } from './pages/ResultPage'
 import { currentRoute, guardedRoute, navigate, replaceRoute, routes, type CanonicalRoute } from './routing'
 
 const recoveryText = 'Сессия подготовки была сброшена. Загрузите файл повторно.'
@@ -96,5 +97,6 @@ export function App() {
   if (route === routes.features) return <FeaturesPage onHome={openHome} onSessionChange={setSession} />
   if (route === routes.algorithm) return <AlgorithmPage onHome={openHome} />
   if (route === routes.quality) return <QualityPage onHome={openHome} />
+  if (route === routes.result) return <ResultPage onHome={openHome} />
   return <DataPage route={route} sessionReady={sessionReady} onHome={openHome} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
 }

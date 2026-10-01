@@ -20,6 +20,7 @@ from komus_risk.application import (
     NativeSessionStore,
     NativeQualityService,
 )
+from komus_risk.application.oof_result import OOFResultError
 from komus_risk.preparation import DatasetPreparationError
 from komus_risk.application.native_session import (
     DatasetInspectionProgress,
@@ -178,6 +179,41 @@ class QualitySettingsPatch(BaseModel):
     seed: int | None = None
 
 
+class ResultSummaryResponse(BaseModel):
+    artifact_id: str
+    result_id: str
+    model_id: str
+    model_version: str
+    object_count: int
+    feature_count: int
+    folds: int
+    evaluation_level: str
+    runtime_seconds: float | None
+    gini: float
+    roc_auc: float
+    pr_auc: float
+    fold_metrics: list[dict[str, Any]]
+    limitations: list[str]
+
+
+class ResultThresholdResponse(BaseModel):
+    threshold: float
+    tp: int
+    tn: int
+    fp: int
+    fn: int
+    precision: float
+    recall: float
+    f1: float
+    above_threshold_count: int
+    above_threshold_share: float
+
+
+class ResultOverviewResponse(BaseModel):
+    summary: ResultSummaryResponse
+    threshold: ResultThresholdResponse
+
+
 def _session_response(snapshot: NativeSessionSnapshot) -> SessionResponse:
     return SessionResponse(
         current_step=snapshot.current_step,
@@ -199,12 +235,13 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, prepared_context_authority: Any | None = None) -> FastAPI:
     """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
     runtime = create_native_experiment_runtime()
-    context_authority = runtime.prepared_context_authority
+    result_service = oof_result_service or runtime.oof_result_service
+    context_authority = prepared_context_authority or runtime.prepared_context_authority
     feature_selection = FeatureSelectionService()
     planning = planning_service or runtime.planning_service
     quality = NativeQualityService(
@@ -245,6 +282,62 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
     ) -> SessionResponse:
         _, snapshot = resolve_session(response, session_id)
         return _session_response(snapshot)
+
+    @api.get("/api/v1/result", response_model=ResultOverviewResponse)
+    def get_current_result(
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> ResultOverviewResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
+        try:
+            summary = result_service.summary(artifact_id)
+            threshold = result_service.threshold(artifact_id, 0.5)
+        except OOFResultError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "RESULT_READ_ERROR", "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        return ResultOverviewResponse(
+            summary=ResultSummaryResponse(
+                artifact_id=summary.artifact_id,
+                result_id=summary.result_id,
+                model_id=summary.model_id,
+                model_version=summary.model_version,
+                object_count=summary.object_count,
+                feature_count=summary.feature_count,
+                folds=summary.folds,
+                evaluation_level=summary.evaluation_level,
+                runtime_seconds=summary.runtime_seconds,
+                gini=summary.gini,
+                roc_auc=summary.roc_auc,
+                pr_auc=summary.pr_auc,
+                fold_metrics=[dict(item) for item in summary.fold_metrics],
+                limitations=list(summary.limitations),
+            ),
+            threshold=ResultThresholdResponse(
+                threshold=threshold.threshold,
+                tp=threshold.tp,
+                tn=threshold.tn,
+                fp=threshold.fp,
+                fn=threshold.fn,
+                precision=threshold.precision,
+                recall=threshold.recall,
+                f1=threshold.f1,
+                above_threshold_count=threshold.above_threshold_count,
+                above_threshold_share=threshold.above_threshold_share,
+            ),
+        )
 
     def features_response(session_id: str) -> FeaturesResponse:
         try:

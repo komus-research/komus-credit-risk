@@ -3,7 +3,7 @@ export type NativeSession = {
   analysis_active: boolean
   data_substep: 'FILE' | 'ROLES' | 'CONFIRMATION' | 'PREPARED'
   has_meaningful_temporary_work: boolean
-  resume_route: '#/home' | '#/analysis/data/file' | '#/analysis/data/roles' | '#/analysis/data/confirmation' | '#/analysis/features' | '#/analysis/algorithm' | '#/analysis/quality'
+  resume_route: '#/home' | '#/analysis/data/file' | '#/analysis/data/roles' | '#/analysis/data/confirmation' | '#/analysis/features' | '#/analysis/algorithm' | '#/analysis/quality' | '#/analysis/result'
 }
 
 export type NewAnalysisResponse = NativeSession & { status: 'STARTED' | 'CONFIRMATION_REQUIRED' }

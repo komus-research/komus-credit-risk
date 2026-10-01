@@ -178,6 +178,12 @@ class _NativeAnalysisSession:
         if self.data_substep == "PREPARED" and self.prepared_context_id:
             if self.features_completed:
                 if self.algorithm_completed:
+                    if (
+                        self.quality_completed
+                        and self.quality_training_status is QualityTrainingStatus.COMPLETED
+                        and self.quality_training_artifact_id
+                    ):
+                        return "#/analysis/result"
                     return "#/analysis/quality"
                 return "#/analysis/algorithm"
             return "#/analysis/features"
@@ -210,6 +216,14 @@ class NativeSessionStore:
     def snapshot(self, session_id: str) -> NativeSessionSnapshot:
         with self._lock:
             return self._session(session_id).snapshot()
+
+    def current_result_artifact_id(self, session_id: str) -> str | None:
+        """Return only the artifact bound to this session's completed current run."""
+        with self._lock:
+            session = self._session(session_id)
+            if session.resume_route() != "#/analysis/result":
+                return None
+            return session.quality_training_artifact_id
 
     def reconcile_prepared_context(
         self, session_id: str, context_is_trusted: Callable[[str], bool]
