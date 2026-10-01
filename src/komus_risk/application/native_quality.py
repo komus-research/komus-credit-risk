@@ -10,7 +10,7 @@ from komus_risk.planning import ExperimentPlanningService
 from komus_risk.preparation import PreparedDatasetContextAuthority
 
 from .contracts import RunExperimentRequest
-from .native_session import (NativeSessionStore, QualityPlanStatus, QualityPreflightStatus)
+from .native_session import (NativeSessionStore, QualityPlanStatus, QualityPreflightStatus, QualityTrainingStatus)
 from .service import ExperimentApplicationService, to_planning_request_metadata
 
 
@@ -34,7 +34,7 @@ class NativeQualityService:
 
     def state(self, session_id: str) -> dict[str, Any]:
         values = self._sessions.quality_state(session_id, default_seed=self.protocol.default_seed, default_folds=self.protocol.default_folds)
-        context_id, features, model_id, mode, overrides, seed, folds, plan, preflight, identity, failure, operation_token = values
+        context_id, features, model_id, mode, overrides, seed, folds, plan, preflight, identity, failure, operation_token, training = values
         context = self._authority.resolve(context_id)
         model = next((item for item in self._planning.list_models() if item.model_id == model_id), None)
         return {
@@ -43,11 +43,13 @@ class NativeQualityService:
             "settings": {"folds": folds, "seed": seed},
             "plan": {"status": plan.value, "safe_validation_state": "Готов к технической проверке." if plan is QualityPlanStatus.VALID else ("Конфигурация требует корректировки." if plan is QualityPlanStatus.INVALID else "Проверка ещё не выполнена.")},
             "preflight": {"status": preflight.value, "identity": identity, "failure_code": failure, "message": self._safe_message(plan, preflight)},
+            "training": {**training, "stage_label": self._training_stage_label(training["stage"]), "message": self._training_message(training["status"], training["failure_code"])},
             "can_start_training": bool(
                 plan is QualityPlanStatus.VALID
                 and preflight is QualityPreflightStatus.PASS
                 and identity
                 and operation_token
+                and training["status"] not in (QualityTrainingStatus.RUNNING.value, QualityTrainingStatus.COMPLETED.value)
             ),
         }
 
@@ -66,7 +68,7 @@ class NativeQualityService:
             default_folds=self.protocol.default_folds,
         )
         context_id, features, model_id, mode, overrides, seed, folds = captured
-        request = RunExperimentRequest(features, model_id, self.protocol.protocol_id, self.protocol.protocol_version, seed, folds, self.protocol.evaluation_level, None, None, (), mode, overrides)
+        request = self._build_request(features, model_id, mode, overrides, seed, folds)
         plan_status = QualityPlanStatus.IDLE
         try:
             context = self._authority.resolve(context_id)
@@ -81,6 +83,69 @@ class NativeQualityService:
         except Exception:
             self._sessions.set_quality_preflight(session_id, operation_token=operation_token, plan_status=plan_status, preflight_status=QualityPreflightStatus.FAIL, failure_code="PREFLIGHT_UNAVAILABLE")
         return self._current_state(session_id)
+
+    def train(self, session_id: str) -> dict[str, Any]:
+        """Run the already-preflighted trusted configuration and expose real progress."""
+        operation_token, captured = self._sessions.begin_quality_training(
+            session_id,
+            default_seed=self.protocol.default_seed,
+            default_folds=self.protocol.default_folds,
+        )
+        context_id, features, model_id, mode, overrides, seed, folds, _identity = captured
+        try:
+            context = self._authority.resolve(context_id)
+            request = self._build_request(features, model_id, mode, overrides, seed, folds)
+
+            def publish(event: Any) -> None:
+                self._sessions.publish_quality_training_progress(
+                    session_id,
+                    operation_token,
+                    stage=event.stage,
+                    fold_number=event.fold_number,
+                    folds_total=event.folds_total,
+                )
+
+            artifact = self._application.run_experiment(
+                loaded_dataset=context.loaded_dataset,
+                feature_registry=context.feature_registry,
+                population=context.population,
+                request=request,
+                prepared_context_id=context_id,
+                progress_listener=publish,
+            )
+            artifact_id = getattr(artifact, "artifact_id", None)
+            if not isinstance(artifact_id, str) or not artifact_id:
+                raise RuntimeError("Persisted experiment returned no artifact identity.")
+            self._sessions.complete_quality_training(session_id, operation_token, artifact_id)
+        except Exception:
+            self._sessions.fail_quality_training(
+                session_id, operation_token, failure_code="TRAINING_FAILED"
+            )
+        return self._current_state(session_id)
+
+    def _build_request(self, features: tuple[str, ...], model_id: str, mode: str, overrides: dict[str, Any], seed: int, folds: int) -> RunExperimentRequest:
+        return RunExperimentRequest(features, model_id, self.protocol.protocol_id, self.protocol.protocol_version, seed, folds, self.protocol.evaluation_level, None, None, (), mode, overrides)
+
+    @staticmethod
+    def _training_stage_label(stage: str | None) -> str | None:
+        return {
+            "run_started": "Запускаем полную проверку модели",
+            "fold_started": "Обучаем часть",
+            "fold_completed": "Часть завершена",
+            "aggregate_metrics_started": "Рассчитываем итоговые метрики",
+            "persistence_started": "Сохраняем результат",
+            "completed": "Обучение и проверка качества завершены",
+        }.get(stage)
+
+    @staticmethod
+    def _training_message(status: str, failure_code: str | None) -> str | None:
+        if status == QualityTrainingStatus.COMPLETED.value:
+            return "Обучение и проверка качества завершены. Результат сохранён."
+        if status == QualityTrainingStatus.FAIL.value:
+            return "Не удалось завершить обучение. Проверьте конфигурацию и повторите запуск."
+        if status == QualityTrainingStatus.RUNNING.value:
+            return "Выполняется полное обучение и проверка качества."
+        return None
 
     def _current_state(self, session_id: str) -> dict[str, Any]:
         """A superseded worker can only observe the current state, never publish its result."""

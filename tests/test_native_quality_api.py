@@ -9,6 +9,7 @@ from threading import Event
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -271,6 +272,116 @@ def test_same_canonical_settings_preserve_pass_and_operation_token() -> None:
     assert unchanged["preflight"]["status"] == "PASS"
     assert unchanged["preflight"]["identity"] == passed["preflight"]["identity"] == "stable-identity"
     assert store._sessions[session_id].quality_preflight_operation_token == token
+
+
+def test_full_training_requires_pass_and_uses_exact_trusted_configuration() -> None:
+    class TrainingApplication:
+        calls = []
+
+        def run_configuration_smoke(self, **_kwargs):
+            return SimpleNamespace(status=SmokeStatus.PASS, smoke_identity="smoke-current", failure_code=None)
+
+        def run_experiment(self, **kwargs):
+            self.calls.append(kwargs)
+            kwargs["progress_listener"](SimpleNamespace(stage="fold_started", fold_number=2, folds_total=3))
+            return SimpleNamespace(artifact_id="artifact-exact")
+
+    app = TrainingApplication()
+    store, session_id, quality = _direct_quality(app)
+    with pytest.raises(ValueError, match="PREFLIGHT_REQUIRED"):
+        quality.train(session_id)
+    assert not app.calls
+
+    ready = quality.preflight(session_id)
+    assert ready["can_start_training"] is True
+    published = []
+
+    def run_with_progress(**kwargs):
+        app.calls.append(kwargs)
+        kwargs["progress_listener"](SimpleNamespace(stage="fold_started", fold_number=2, folds_total=3))
+        published.append(quality.state(session_id)["training"])
+        return SimpleNamespace(artifact_id="artifact-exact")
+
+    app.run_experiment = run_with_progress
+    completed = quality.train(session_id)
+    call = app.calls[0]
+    assert call["request"].selected_feature_ids == ("feature",)
+    assert call["request"].model_id == "model"
+    assert call["request"].seed == 42
+    assert call["request"].folds == 3
+    assert call["prepared_context_id"] == "trusted"
+    assert published[0]["stage"] == "fold_started"
+    assert published[0]["fold_number"] == 2
+    assert published[0]["folds_total"] == 3
+    assert completed["training"]["status"] == "COMPLETED"
+    assert completed["training"]["artifact_id"] == "artifact-exact"
+    assert completed["can_start_training"] is False
+
+
+def test_duplicate_training_start_is_rejected_and_failure_allows_retry() -> None:
+    started, release = Event(), Event()
+
+    class TrainingApplication:
+        calls = 0
+
+        def run_configuration_smoke(self, **_kwargs):
+            return SimpleNamespace(status=SmokeStatus.PASS, smoke_identity="smoke-current", failure_code=None)
+
+        def run_experiment(self, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                started.set()
+                assert release.wait(10)
+                raise RuntimeError("secret traceback must not escape")
+            return SimpleNamespace(artifact_id="artifact-retry")
+
+    app = TrainingApplication()
+    _store, session_id, quality = _direct_quality(app)
+    quality.preflight(session_id)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pending = executor.submit(quality.train, session_id)
+        assert started.wait(10)
+        with pytest.raises(ValueError, match="TRAINING_ALREADY_RUNNING"):
+            quality.train(session_id)
+        release.set()
+        failed = pending.result(timeout=10)
+
+    assert failed["training"]["status"] == "FAIL"
+    assert failed["training"]["artifact_id"] is None
+    assert failed["training"]["failure_code"] == "TRAINING_FAILED"
+    assert "secret traceback" not in failed["training"]["message"]
+    assert failed["can_start_training"] is True
+    retried = quality.train(session_id)
+    assert retried["training"]["status"] == "COMPLETED"
+    assert retried["training"]["artifact_id"] == "artifact-retry"
+
+
+def test_stale_training_completion_cannot_publish_artifact_after_settings_change() -> None:
+    started, release = Event(), Event()
+
+    class TrainingApplication:
+        def run_configuration_smoke(self, **_kwargs):
+            return SimpleNamespace(status=SmokeStatus.PASS, smoke_identity="smoke-current", failure_code=None)
+
+        def run_experiment(self, **_kwargs):
+            started.set()
+            assert release.wait(10)
+            return SimpleNamespace(artifact_id="persisted-but-stale")
+
+    store, session_id, quality = _direct_quality(TrainingApplication())
+    quality.preflight(session_id)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(quality.train, session_id)
+        assert started.wait(10)
+        store.set_quality_settings(session_id, seed=43, folds=3)
+        release.set()
+        pending.result(timeout=10)
+
+    current = quality.state(session_id)
+    assert current["training"]["status"] == "IDLE"
+    assert current["training"]["artifact_id"] is None
+    assert current["preflight"]["status"] == "IDLE"
+    assert current["can_start_training"] is False
 
 
 def test_native_quality_smoke_samples_only_trusted_working_population() -> None:

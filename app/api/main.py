@@ -400,7 +400,26 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
     async def run_quality_preflight(response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> dict[str, Any]:
         resolved_session_id, _ = resolve_session(response, session_id)
         quality_response(resolved_session_id)
-        return await run_in_threadpool(quality.preflight, resolved_session_id)
+        try:
+            return await run_in_threadpool(quality.preflight, resolved_session_id)
+        except ValueError as exc:
+            if str(exc) != "TRAINING_ALREADY_RUNNING":
+                raise
+            raise HTTPException(status_code=409, detail={"code": str(exc), "message": "Обучение уже выполняется."}) from None
+
+    @api.post("/api/v1/quality/training")
+    async def run_quality_training(response: Response, session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None) -> dict[str, Any]:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        try:
+            return await run_in_threadpool(quality.train, resolved_session_id)
+        except ValueError as exc:
+            code = str(exc)
+            messages = {
+                "TRAINING_ALREADY_RUNNING": "Обучение уже выполняется.",
+                "TRAINING_ALREADY_COMPLETED": "Обучение для текущей конфигурации уже завершено.",
+                "PREFLIGHT_REQUIRED": "Сначала успешно выполните предварительную проверку.",
+            }
+            raise HTTPException(status_code=409, detail={"code": code, "message": messages.get(code, "Не удалось запустить обучение.")}) from None
 
     @api.post("/api/v1/analysis/new", response_model=NewAnalysisResponse)
     def new_analysis(

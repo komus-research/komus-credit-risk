@@ -154,6 +154,7 @@ export type QualityState = {
   settings: { folds: number; seed: number }
   plan: { status: 'IDLE' | 'VALID' | 'INVALID'; safe_validation_state: string }
   preflight: { status: 'IDLE' | 'RUNNING' | 'PASS' | 'FAIL'; identity: string | null; failure_code: string | null; message: string | null }
+  training: { status: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAIL'; stage: string | null; stage_label: string | null; fold_number: number | null; folds_total: number | null; artifact_id: string | null; failure_code: string | null; message: string | null }
   can_start_training: boolean
 }
 async function qualityResponse(response: Response): Promise<QualityState> {
@@ -165,4 +166,5 @@ async function qualityResponse(response: Response): Promise<QualityState> {
 }
 export const getQuality = () => fetch('/api/v1/quality').then(qualityResponse)
 export const runQualityPreflight = () => fetch('/api/v1/quality/preflight', { method: 'POST' }).then(qualityResponse)
+export const runQualityTraining = () => fetch('/api/v1/quality/training', { method: 'POST' }).then(qualityResponse)
 export const patchQualitySettings = (settings: Partial<{ folds: number; seed: number }>) => fetch('/api/v1/quality/settings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) }).then(qualityResponse)

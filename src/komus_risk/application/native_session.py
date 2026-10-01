@@ -54,6 +54,13 @@ class QualityPreflightStatus(StrEnum):
     FAIL = "FAIL"
 
 
+class QualityTrainingStatus(StrEnum):
+    IDLE = "IDLE"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAIL = "FAIL"
+
+
 class DatasetInspectionStage(StrEnum):
     """Truthful stages emitted around existing inspection operations."""
 
@@ -139,6 +146,13 @@ class _NativeAnalysisSession:
     quality_preflight_identity: str | None = None
     quality_preflight_failure_code: str | None = None
     quality_completed: bool = False
+    quality_training_status: QualityTrainingStatus = QualityTrainingStatus.IDLE
+    quality_training_operation_token: str | None = None
+    quality_training_stage: str | None = None
+    quality_training_fold_number: int | None = None
+    quality_training_folds_total: int | None = None
+    quality_training_artifact_id: str | None = None
+    quality_training_failure_code: str | None = None
 
     def snapshot(self) -> NativeSessionSnapshot:
         return NativeSessionSnapshot(
@@ -577,7 +591,7 @@ class NativeSessionStore:
             session.current_step = 3
             return session.snapshot()
 
-    def quality_state(self, session_id: str, *, default_seed: int, default_folds: int) -> tuple[str, tuple[str, ...], str, str, dict[str, Any], int, int, QualityPlanStatus, QualityPreflightStatus, str | None, str | None, str | None]:
+    def quality_state(self, session_id: str, *, default_seed: int, default_folds: int) -> tuple[str, tuple[str, ...], str, str, dict[str, Any], int, int, QualityPlanStatus, QualityPreflightStatus, str | None, str | None, str | None, dict[str, Any]]:
         """Return Quality's trusted scientific draft and transient readiness state."""
         with self._lock:
             session = self._session(session_id)
@@ -591,7 +605,99 @@ class NativeSessionStore:
                     session.model_configuration_mode, dict(session.model_user_overrides),
                     session.quality_seed, session.quality_folds, session.quality_plan_status,
                     session.quality_preflight_status, session.quality_preflight_identity,
-                    session.quality_preflight_failure_code, session.quality_preflight_operation_token)
+                    session.quality_preflight_failure_code, session.quality_preflight_operation_token,
+                    self._quality_training_read_model(session))
+
+    @staticmethod
+    def _quality_training_read_model(session: _NativeAnalysisSession) -> dict[str, Any]:
+        return {
+            "status": session.quality_training_status.value,
+            "stage": session.quality_training_stage,
+            "fold_number": session.quality_training_fold_number,
+            "folds_total": session.quality_training_folds_total,
+            "artifact_id": session.quality_training_artifact_id,
+            "failure_code": session.quality_training_failure_code,
+        }
+
+    def begin_quality_training(self, session_id: str, *, default_seed: int, default_folds: int) -> tuple[str, tuple[str, tuple[str, ...], str, str, dict[str, Any], int, int, str]]:
+        """Atomically gate full training and capture its trusted current request."""
+        with self._lock:
+            session = self._require_quality(session_id)
+            if session.quality_training_status is QualityTrainingStatus.RUNNING:
+                raise ValueError("TRAINING_ALREADY_RUNNING")
+            if session.quality_training_status is QualityTrainingStatus.COMPLETED:
+                raise ValueError("TRAINING_ALREADY_COMPLETED")
+            if session.quality_plan_status is not QualityPlanStatus.VALID or session.quality_preflight_status is not QualityPreflightStatus.PASS or not session.quality_preflight_identity or not session.quality_preflight_operation_token:
+                raise ValueError("PREFLIGHT_REQUIRED")
+            if session.quality_seed is None:
+                session.quality_seed = default_seed
+            if session.quality_folds is None:
+                session.quality_folds = default_folds
+            token = token_urlsafe(24)
+            session.quality_training_operation_token = token
+            session.quality_training_status = QualityTrainingStatus.RUNNING
+            session.quality_training_stage = "run_started"
+            session.quality_training_fold_number = None
+            session.quality_training_folds_total = session.quality_folds
+            session.quality_training_artifact_id = None
+            session.quality_training_failure_code = None
+            captured = (
+                session.prepared_context_id,
+                session.selected_feature_ids,
+                session.selected_model_id,
+                session.model_configuration_mode,
+                dict(session.model_user_overrides),
+                session.quality_seed,
+                session.quality_folds,
+                session.quality_preflight_identity,
+            )
+            return token, captured
+
+    def publish_quality_training_progress(self, session_id: str, operation_token: str, *, stage: str, fold_number: int | None, folds_total: int | None) -> bool:
+        with self._lock:
+            session = self._session(session_id)
+            if not operation_token or session.quality_training_operation_token != operation_token or session.quality_training_status is not QualityTrainingStatus.RUNNING:
+                return False
+            try:
+                self._require_quality(session_id)
+            except NativeSessionTransitionError:
+                return False
+            session.quality_training_stage = stage
+            session.quality_training_fold_number = fold_number
+            session.quality_training_folds_total = folds_total
+            return True
+
+    def complete_quality_training(self, session_id: str, operation_token: str, artifact_id: str) -> bool:
+        with self._lock:
+            session = self._session(session_id)
+            if not operation_token or session.quality_training_operation_token != operation_token or session.quality_training_status is not QualityTrainingStatus.RUNNING:
+                return False
+            try:
+                self._require_quality(session_id)
+            except NativeSessionTransitionError:
+                return False
+            session.quality_training_status = QualityTrainingStatus.COMPLETED
+            session.quality_training_stage = "completed"
+            session.quality_training_artifact_id = artifact_id
+            session.quality_training_failure_code = None
+            session.quality_training_operation_token = None
+            session.quality_completed = True
+            return True
+
+    def fail_quality_training(self, session_id: str, operation_token: str, *, failure_code: str) -> bool:
+        with self._lock:
+            session = self._session(session_id)
+            if not operation_token or session.quality_training_operation_token != operation_token or session.quality_training_status is not QualityTrainingStatus.RUNNING:
+                return False
+            try:
+                self._require_quality(session_id)
+            except NativeSessionTransitionError:
+                return False
+            session.quality_training_status = QualityTrainingStatus.FAIL
+            session.quality_training_artifact_id = None
+            session.quality_training_failure_code = failure_code
+            session.quality_training_operation_token = None
+            return True
 
     def set_quality_settings(self, session_id: str, *, seed: int, folds: int) -> NativeSessionSnapshot:
         with self._lock:
@@ -606,6 +712,8 @@ class NativeSessionStore:
     def begin_quality_preflight(self, session_id: str, *, default_seed: int, default_folds: int) -> tuple[str, tuple[str, tuple[str, ...], str, str, dict[str, Any], int, int]]:
         with self._lock:
             session = self._require_quality(session_id)
+            if session.quality_training_status is QualityTrainingStatus.RUNNING:
+                raise ValueError("TRAINING_ALREADY_RUNNING")
             if session.quality_seed is None:
                 session.quality_seed = default_seed
             if session.quality_folds is None:
@@ -736,6 +844,13 @@ class NativeSessionStore:
         session.quality_preflight_identity = None
         session.quality_preflight_failure_code = None
         session.quality_completed = False
+        session.quality_training_status = QualityTrainingStatus.IDLE
+        session.quality_training_operation_token = None
+        session.quality_training_stage = None
+        session.quality_training_fold_number = None
+        session.quality_training_folds_total = None
+        session.quality_training_artifact_id = None
+        session.quality_training_failure_code = None
 
     def _require_quality(self, session_id: str) -> _NativeAnalysisSession:
         session = self._require_algorithm(session_id)
