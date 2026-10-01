@@ -68,20 +68,51 @@ class SessionStateTests(unittest.TestCase):
     def test_result_v2_defaults_save_and_navigation_lifecycle(self) -> None:
         self.assertEqual(self.state["result_v2_view"], "OVERVIEW")
         self.assertEqual(self.state["result_v2_threshold"], 0.5)
+        self.assertEqual(self.state["result_v2_objects_search"], "")
+        self.assertEqual(self.state["result_v2_objects_target"], "ANY")
+        self.assertEqual(self.state["result_v2_objects_outcomes"], ())
+        self.assertEqual(self.state["result_v2_objects_min_score"], 0.0)
+        self.assertEqual(self.state["result_v2_objects_max_score"], 1.0)
+        self.assertEqual(self.state["result_v2_objects_score_range"], (0.0, 1.0))
+        self.assertEqual(self.state["result_v2_objects_sort"], "SCORE_DESC")
+        self.assertEqual(self.state["result_v2_objects_offset"], 0)
         self.state["result_v2_view"] = "OBJECTS"
         self.state["result_v2_threshold"] = 0.72
+        self.state["result_v2_objects_search"] = "stale"
+        self.state["result_v2_objects_target"] = "POSITIVE"
+        self.state["result_v2_objects_outcomes"] = ("FN",)
+        self.state["result_v2_objects_min_score"] = 0.2
+        self.state["result_v2_objects_max_score"] = 0.8
+        self.state["result_v2_objects_sort"] = "SCORE_ASC"
+        self.state["result_v2_objects_offset"] = 100
         artifact = SimpleNamespace(artifact_id="saved-artifact")
 
         save_artifact(self.state, artifact, comparison=None)
 
         self.assertEqual(self.state["result_v2_view"], "OVERVIEW")
         self.assertEqual(self.state["result_v2_threshold"], 0.5)
+        self.assertEqual(self.state["result_v2_objects_search"], "")
+        self.assertEqual(self.state["result_v2_objects_target"], "ANY")
+        self.assertEqual(self.state["result_v2_objects_outcomes"], ())
+        self.assertEqual(self.state["result_v2_objects_min_score"], 0.0)
+        self.assertEqual(self.state["result_v2_objects_max_score"], 1.0)
+        self.assertEqual(self.state["result_v2_objects_score_range"], (0.0, 1.0))
+        self.assertEqual(self.state["result_v2_objects_sort"], "SCORE_DESC")
+        self.assertEqual(self.state["result_v2_objects_offset"], 0)
         self.state["result_v2_view"] = "THRESHOLD"
         self.state["result_v2_threshold"] = 0.37
+        self.state["result_v2_objects_search"] = "keep"
+        self.state["result_v2_objects_target"] = "NEGATIVE"
+        self.state["result_v2_objects_outcomes"] = ("FP",)
+        self.state["result_v2_objects_offset"] = 50
         open_home(self.state)
         open_result(self.state)
         self.assertEqual(self.state["result_v2_view"], "THRESHOLD")
         self.assertEqual(self.state["result_v2_threshold"], 0.37)
+        self.assertEqual(self.state["result_v2_objects_search"], "keep")
+        self.assertEqual(self.state["result_v2_objects_target"], "NEGATIVE")
+        self.assertEqual(self.state["result_v2_objects_outcomes"], ("FP",))
+        self.assertEqual(self.state["result_v2_objects_offset"], 50)
 
     def test_unprepared_source_clears_context_and_blocks_downstream_state(self) -> None:
         prepared_context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))

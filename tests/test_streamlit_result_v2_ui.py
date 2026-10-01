@@ -24,7 +24,7 @@ class _Column:
 
     def button(self, *args, **kwargs) -> bool:
         self.ui.buttons.append((args, kwargs))
-        return self.ui.button_responses.get(args[0], False)
+        return False if kwargs.get("disabled") else self.ui.button_responses.get(args[0], False)
 
 
 class _Expander:
@@ -45,13 +45,25 @@ class _Streamlit:
         self.messages = []
         self.button_responses = {}
         self.rerun_calls = 0
+        self.tables = []
 
     def header(self, *args, **kwargs) -> None:
         return None
 
     def slider(self, *args, **kwargs) -> float:
         self.slider_args = (args, kwargs)
+        if "value" in kwargs and isinstance(kwargs["value"], tuple):
+            return getattr(self, "slider_value", kwargs["value"])
         return self.slider_value if hasattr(self, "slider_value") else 0.62
+
+    def text_input(self, label, *, key, **kwargs):
+        return self.session_state[key]
+
+    def selectbox(self, label, *, options, key, **kwargs):
+        return self.session_state[key]
+
+    def multiselect(self, label, *, options, key, **kwargs):
+        return self.session_state[key]
 
     def rerun(self) -> None:
         self.rerun_calls += 1
@@ -82,7 +94,7 @@ class _Streamlit:
         return [_Column(self) for _ in range(count)]
 
     def dataframe(self, *args, **kwargs) -> None:
-        return None
+        self.tables.append((args, kwargs))
 
     def expander(self, *args, **kwargs):
         return _Expander()
@@ -133,6 +145,18 @@ class ResultV2UiTests(unittest.TestCase):
             above_threshold_share=0.3,
         )
 
+    def _objects(self, **changes):
+        values = {
+            "artifact_id": "artifact-1", "threshold": 0.5, "total_count": 100,
+            "filtered_count": 100, "offset": 0, "limit": 50, "returned_count": 1,
+            "items": (SimpleNamespace(
+                object_id="object-1", identifier_display="ORG-1", y_true=1,
+                score=0.7, predicted_positive=True, outcome="TP",
+            ),),
+        }
+        values.update(changes)
+        return SimpleNamespace(**values)
+
     def test_overview_cta_opens_threshold_and_future_screens_stay_inactive(self) -> None:
         ui = _Streamlit()
         ui.session_state.loaded_artifact = _Artifact()
@@ -151,7 +175,8 @@ class ResultV2UiTests(unittest.TestCase):
         enabled_labels = [args[0] for args, kwargs in ui.buttons if not kwargs.get("disabled")]
         self.assertIn("\u0418\u0441\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u044c \u043f\u043e\u0440\u043e\u0433", enabled_labels)
         disabled_labels = [args[0] for args, kwargs in ui.buttons if kwargs.get("disabled")]
-        self.assertIn("\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u0442\u044c \u043e\u0431\u044a\u0435\u043a\u0442\u044b", disabled_labels)
+        enabled_labels = [args[0] for args, kwargs in ui.buttons if not kwargs.get("disabled")]
+        self.assertIn("\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u0442\u044c \u043e\u0431\u044a\u0435\u043a\u0442\u044b", enabled_labels)
         self.assertIn("\u041f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435 \u043e \u0432\u043b\u0438\u044f\u043d\u0438\u0438 \u043f\u0440\u0438\u0437\u043d\u0430\u043a\u043e\u0432", disabled_labels)
 
     def test_overview_uses_saved_threshold_and_displays_threshold_dto_without_slider(self) -> None:
@@ -256,3 +281,107 @@ class ResultV2UiTests(unittest.TestCase):
         threshold_service.threshold.assert_called_once_with("artifact-1", 0.62)
         self.assertEqual(len(threshold_ui.errors), 1)
         self.assertEqual(threshold_ui.metrics, [])
+
+    def test_objects_query_dto_navigation_and_fail_closed(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "OBJECTS"
+        ui.session_state.result_v2_threshold = 0.37
+        ui.session_state.update(
+            result_v2_objects_search="org-1", result_v2_objects_target="POSITIVE",
+            result_v2_objects_outcomes=("TP",), result_v2_objects_min_score=0.23,
+            result_v2_objects_max_score=0.81, result_v2_objects_sort="SCORE_ASC",
+        )
+        ui.slider_value = (0.23, 0.81)
+        service = SimpleNamespace(objects=Mock(return_value=self._objects()))
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=service))
+        service.objects.assert_called_once_with(
+            "artifact-1", 0.37, 0, 50, search="org-1", target="POSITIVE",
+            outcomes=("TP",), min_score=0.23, max_score=0.81, sort="SCORE_ASC",
+        )
+        rows = ui.tables[0][0][0]
+        self.assertEqual(rows[0]["Идентификатор"], "ORG-1")
+        self.assertEqual(rows[0]["Целевое событие"], "Да")
+        self.assertEqual(rows[0]["Положение относительно порога"], "Выше порога")
+        self.assertEqual(rows[0]["Исход"], "TP")
+        self.assertIn("0.23–0.81", ui.messages[-1])
+
+        failed = _Streamlit()
+        failed.session_state.loaded_artifact = _Artifact()
+        failed.session_state.result_v2_view = "OBJECTS"
+        broken = SimpleNamespace(objects=Mock(side_effect=RuntimeError("unavailable")))
+        with patch.object(prototype, "st", failed):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=broken))
+        self.assertEqual(len(failed.errors), 1)
+        self.assertEqual(failed.tables, [])
+
+    def test_objects_quick_views_and_default_score_range(self) -> None:
+        cases = (
+            ("Ошибки модели", ("FP", "FN"), "SCORE_DESC"),
+            ("Пропущенные события", ("FN",), "SCORE_DESC"),
+            ("Ложные срабатывания", ("FP",), "SCORE_DESC"),
+            ("Пограничные", None, "DISTANCE_TO_THRESHOLD_ASC"),
+            ("Высокая оценка", None, "SCORE_DESC"),
+            ("Все объекты", None, "SCORE_DESC"),
+        )
+        for label, outcomes, sort in cases:
+            with self.subTest(label=label):
+                ui = _Streamlit()
+                ui.session_state.loaded_artifact = _Artifact()
+                ui.session_state.result_v2_view = "OBJECTS"
+                ui.button_responses[label] = True
+                service = SimpleNamespace(objects=Mock(return_value=self._objects()))
+                with patch.object(prototype, "st", ui):
+                    prototype._render_result_step(SimpleNamespace(oof_result_service=service))
+                self.assertEqual(service.objects.call_args.kwargs["outcomes"], outcomes)
+                self.assertEqual(service.objects.call_args.kwargs["sort"], sort)
+                self.assertEqual(service.objects.call_args.kwargs["min_score"], 0.0)
+                self.assertEqual(service.objects.call_args.kwargs["max_score"], 1.0)
+
+    def test_objects_changed_query_resets_offset_and_next_uses_server_chunk(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "OBJECTS"
+        ui.session_state.result_v2_objects_offset = 50
+        ui.session_state.result_v2_objects_search = "new search"
+        ui.session_state.result_v2_objects_query_snapshot = ("old search", "ANY", (), 0.0, 1.0, "SCORE_DESC")
+        service = SimpleNamespace(objects=Mock(return_value=self._objects(filtered_count=120)))
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=service))
+        self.assertEqual(service.objects.call_args.args[2:4], (0, 50))
+        self.assertEqual(ui.session_state.result_v2_objects_offset, 0)
+
+        next_ui = _Streamlit()
+        next_ui.session_state.loaded_artifact = _Artifact()
+        next_ui.session_state.result_v2_view = "OBJECTS"
+        next_ui.button_responses["Следующие →"] = True
+        next_service = SimpleNamespace(objects=Mock(return_value=self._objects(filtered_count=120)))
+        with patch.object(prototype, "st", next_ui):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=next_service))
+        self.assertEqual(next_service.objects.call_args.args[2], 0)
+        self.assertEqual(next_service.objects.call_args.args[3], 50)
+        self.assertEqual(next_ui.session_state.result_v2_objects_offset, 50)
+
+    def test_objects_back_preserves_threshold_and_previous_pages_back(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "OBJECTS"
+        ui.session_state.result_v2_threshold = 0.37
+        ui.button_responses["← Назад к результату"] = True
+        service = SimpleNamespace(objects=Mock(return_value=self._objects()))
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=service))
+        self.assertEqual(ui.session_state.result_v2_view, "OVERVIEW")
+        self.assertEqual(ui.session_state.result_v2_threshold, 0.37)
+        service.objects.assert_not_called()
+
+        previous_ui = _Streamlit()
+        previous_ui.session_state.loaded_artifact = _Artifact()
+        previous_ui.session_state.result_v2_view = "OBJECTS"
+        previous_ui.session_state.result_v2_objects_offset = 50
+        previous_ui.button_responses["← Предыдущие"] = True
+        previous_service = SimpleNamespace(objects=Mock(return_value=self._objects(offset=0)))
+        with patch.object(prototype, "st", previous_ui):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=previous_service))
+        self.assertEqual(previous_service.objects.call_args.args[2], 0)

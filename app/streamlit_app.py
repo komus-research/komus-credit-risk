@@ -1468,8 +1468,11 @@ def _render_result_step(runtime) -> None:
         _navigation_button(st, "← Назад", 3)
         return
     st.header("5. Результат")
-    if st.session_state.get("result_v2_view", "OVERVIEW") == "THRESHOLD":
+    view = st.session_state.get("result_v2_view", "OVERVIEW")
+    if view == "THRESHOLD":
         _render_result_threshold(runtime, artifact)
+    elif view == "OBJECTS":
+        _render_result_objects(runtime, artifact)
     else:
         _render_result_overview(runtime, artifact)
 
@@ -1533,7 +1536,9 @@ def _render_result_overview(runtime, artifact: Any) -> None:
     if directions[0].button("Исследовать порог"):
         st.session_state["result_v2_view"] = "THRESHOLD"
         st.rerun()
-    directions[1].button("Посмотреть объекты", disabled=True, help="Этот экран Result V2 пока недоступен.")
+    if directions[1].button("Посмотреть объекты"):
+        st.session_state["result_v2_view"] = "OBJECTS"
+        st.rerun()
     directions[2].button("Подробнее о влиянии признаков", disabled=True, help="Этот экран Result V2 пока недоступен.")
     _render_local_model_use_flow(runtime, artifact)
     navigation = st.columns(3)
@@ -1541,6 +1546,131 @@ def _render_result_overview(runtime, artifact: Any) -> None:
     _navigation_button(navigation[1], "В начало", 0)
     if navigation[2].button("Попробовать другой вариант на этих данных", type="primary"):
         return_to_experiment(st.session_state)
+        st.rerun()
+
+
+def _render_result_objects(runtime, artifact: Any) -> None:
+    """Render a server-paged object list through the public OOF service."""
+    state = st.session_state
+    if st.button("← Назад к результату"):
+        state["result_v2_view"] = "OVERVIEW"
+        st.rerun()
+        return
+
+    quick_views = st.columns(6)
+    presets = (
+        ("Ошибки модели", ("FP", "FN"), "SCORE_DESC"),
+        ("Высокая оценка", None, "SCORE_DESC"),
+        ("Пограничные", None, "DISTANCE_TO_THRESHOLD_ASC"),
+        ("Пропущенные события", ("FN",), "SCORE_DESC"),
+        ("Ложные срабатывания", ("FP",), "SCORE_DESC"),
+        ("Все объекты", (), "SCORE_DESC"),
+    )
+    for column, (label, outcomes, sort) in zip(quick_views, presets, strict=True):
+        if column.button(label):
+            state["result_v2_objects_outcomes"] = outcomes or ()
+            state["result_v2_objects_sort"] = sort
+            state["result_v2_objects_offset"] = 0
+            state["result_v2_objects_query_snapshot"] = None
+
+    st.text_input("Найти объект…", key="result_v2_objects_search")
+    st.selectbox(
+        "Целевое событие",
+        options=("ANY", "POSITIVE", "NEGATIVE"),
+        key="result_v2_objects_target",
+        format_func=lambda value: {
+            "ANY": "Все",
+            "POSITIVE": "Целевое событие: Да",
+            "NEGATIVE": "Целевое событие: Нет",
+        }[value],
+    )
+    st.multiselect(
+        "Исход",
+        options=("TP", "TN", "FP", "FN"),
+        key="result_v2_objects_outcomes",
+        format_func=lambda value: value,
+    )
+    st.selectbox(
+        "Сортировка",
+        options=("SCORE_DESC", "SCORE_ASC", "DISTANCE_TO_THRESHOLD_ASC"),
+        key="result_v2_objects_sort",
+        format_func=lambda value: {
+            "SCORE_DESC": "Оценка: по убыванию",
+            "SCORE_ASC": "Оценка: по возрастанию",
+            "DISTANCE_TO_THRESHOLD_ASC": "Ближе к порогу",
+        }[value],
+    )
+    score_range = st.slider(
+        "Диапазон оценки модели",
+        min_value=0.0,
+        max_value=1.0,
+        value=tuple(state.get("result_v2_objects_score_range", (0.0, 1.0))),
+        step=0.01,
+        format="%.2f",
+        key="result_v2_objects_score_range",
+    )
+    state["result_v2_objects_score_range"] = tuple(score_range)
+    state["result_v2_objects_min_score"], state["result_v2_objects_max_score"] = score_range
+    query = (
+        state.get("result_v2_objects_search", ""),
+        state.get("result_v2_objects_target", "ANY"),
+        tuple(state.get("result_v2_objects_outcomes", ())) or None,
+        float(score_range[0]),
+        float(score_range[1]),
+        state.get("result_v2_objects_sort", "SCORE_DESC"),
+    )
+    previous_query = state.get("result_v2_objects_query_snapshot")
+    if previous_query is not None and tuple(previous_query) != query:
+        state["result_v2_objects_offset"] = 0
+    state["result_v2_objects_query_snapshot"] = query
+
+    limit = 50
+    offset = max(0, int(state.get("result_v2_objects_offset", 0)))
+    page_controls = st.columns(2)
+    if page_controls[0].button("← Предыдущие", disabled=offset == 0):
+        offset = max(0, offset - limit)
+    try:
+        objects = runtime.oof_result_service.objects(
+            artifact.artifact_id,
+            state.get("result_v2_threshold", 0.5),
+            offset,
+            limit,
+            search=query[0],
+            target=query[1],
+            outcomes=query[2],
+            min_score=query[3],
+            max_score=query[4],
+            sort=query[5],
+        )
+    except Exception:
+        st.error("Не удалось загрузить объекты из подтверждённых OOF данных.")
+        return
+
+    state["result_v2_objects_offset"] = offset
+    start = offset + 1 if objects.returned_count else 0
+    end = offset + objects.returned_count
+    st.caption(f"Показано {start:,}–{end:,} из {objects.filtered_count:,}".replace(",", " "))
+    st.caption(
+        f"Диапазон оценки модели: {query[3]:.2f}–{query[4]:.2f} · "
+        f"порог: {state.get('result_v2_threshold', 0.5):.2f}"
+    )
+    rows = [
+        {
+            "Идентификатор": item.identifier_display,
+            "Оценка": item.score,
+            "Целевое событие": "Да" if item.y_true == 1 else "Нет",
+            "Положение относительно порога": "Выше порога" if item.predicted_positive else "Ниже порога",
+            "Исход": item.outcome,
+        }
+        for item in objects.items
+    ]
+    st.dataframe(rows, hide_index=True, use_container_width=True)
+    if page_controls[1].button(
+        "Следующие →", disabled=offset + objects.returned_count >= objects.filtered_count
+    ):
+        state["result_v2_objects_offset"] = min(
+            offset + limit, max(0, objects.filtered_count - 1)
+        )
         st.rerun()
 
 

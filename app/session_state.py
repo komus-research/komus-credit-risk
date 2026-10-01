@@ -41,6 +41,15 @@ _DEFAULTS = {
     "comparison_result": None,
     "result_v2_view": "OVERVIEW",
     "result_v2_threshold": 0.5,
+    "result_v2_objects_search": "",
+    "result_v2_objects_target": "ANY",
+    "result_v2_objects_outcomes": (),
+    "result_v2_objects_min_score": 0.0,
+    "result_v2_objects_max_score": 1.0,
+    "result_v2_objects_score_range": (0.0, 1.0),
+    "result_v2_objects_sort": "SCORE_DESC",
+    "result_v2_objects_offset": 0,
+    "result_v2_objects_query_snapshot": None,
     "last_successful_artifact_id": None,
     "context_revision": 0,
     "highest_reached_step": 0,
@@ -467,6 +476,15 @@ def _reset_result_v2_state(state: MutableMapping[str, Any]) -> None:
     """Return Result V2 navigation to its canonical neutral state."""
     state["result_v2_view"] = "OVERVIEW"
     state["result_v2_threshold"] = 0.5
+    state["result_v2_objects_search"] = ""
+    state["result_v2_objects_target"] = "ANY"
+    state["result_v2_objects_outcomes"] = ()
+    state["result_v2_objects_min_score"] = 0.0
+    state["result_v2_objects_max_score"] = 1.0
+    state["result_v2_objects_score_range"] = (0.0, 1.0)
+    state["result_v2_objects_sort"] = "SCORE_DESC"
+    state["result_v2_objects_offset"] = 0
+    state["result_v2_objects_query_snapshot"] = None
 
 
 def set_loaded_model_version(state: MutableMapping[str, Any], loaded_model_version: Any) -> None:
