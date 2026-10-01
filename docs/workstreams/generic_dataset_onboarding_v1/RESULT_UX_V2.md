@@ -242,7 +242,9 @@ Universal provider/explanation contract зафиксирован в `UNIVERSAL_M
 
 R2-UI4A foundation уже реализует basic Object Detail: exact object выбирается по opaque `object_id`, подтверждается через `OOFResultService.object_detail()` и показывает DTO facts вместе с Fold provenance. Local Explanation в этом stage намеренно не вызывается.
 
-Следующий R2-UI4B должен сохранить basic OOF facts сразу, автоматически запустить Local Explanation отдельным request и показать neutral loading state. Основной detail не должен блокироваться вычислением explanation.
+R2-UI4B — **ACCEPTED / CLOSED**, source commit `06f13a11`. Basic OOF facts остаются доступными сразу; Local Explanation запускается автоматически отдельным вызовом `OOFExplanationService.local()` и использует accepted READY / LOADING / ERROR / DETAILED semantics. Explanation failure не подменяет evidence final/refit моделью и не ломает Object Detail.
+
+Следующий R2-UI4C подключает Result Interpreter только по явному действию пользователя поверх validated Local Explanation evidence.
 
 Final/refit model fallback запрещён.
 

@@ -353,4 +353,21 @@ Runtime invariants:
 - Back сохраняет current threshold и Objects query state;
 - Local Explanation / SHAP / LLM не входят в R2-UI4A.
 
-Следующий stage — R2-UI4B / Local Explanation.
+R2-UI4B — Local Explanation — **ACCEPTED / CLOSED**, source commit `06f13a11`.
+
+Принятый runtime path:
+`Object Detail → OOFExplanationService.local(artifact_id, object_id) → LocalExplanationEvidence → BRIEF / DETAILED`.
+
+Runtime invariants:
+- `OOFExplanationService` создаётся в composition root с тем же artifact store и trusted plugin registry;
+- explanation cache принадлежит exact selected `object_id` и не переиспользуется между объектами;
+- basic OOF detail остаётся доступным при explanation failure;
+- retry повторяет только `local()` и не перезапрашивает scientific object detail;
+- BRIEF следует trusted `abs_rank`, top-5 и sign semantics; `Остальные признаки` = exact sum оставшихся `shap_value`;
+- feature label использует trusted `display_name_ru`, иначе `column_name`; metadata не придумывается;
+- base/output-space и DETAILED provenance берутся только из `LocalExplanationEvidence`;
+- UI не пересчитывает probability/SHAP/additivity и не загружает fold model;
+- final/refit и saved ModelVersion fallback запрещены;
+- Result Interpreter / external LLM не входят в R2-UI4B.
+
+Следующий stage — R2-UI4C / Result Interpreter.
