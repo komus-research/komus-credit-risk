@@ -60,3 +60,6 @@
 58. Connection check — explicit real synthetic provider request без client/model data; `Соединение работает` может быть transient state, persisted `Последняя проверка...` не обещается без отдельного contract.
 59. Canonical artifact/model/history storage остаётся application-managed; Settings V1 не содержит переключатель внутренней папки. External export — отдельный будущий flow.
 60. Settings implementation order: `SET-BE1 — Local Preferences + Interpreter Settings` → `SET-BE2 — Secure Credentials + Connection Check` → `SET-UI1`.
+61. PH-BE1 History backend — ACCEPTED / CLOSED, source commit `4a7d016a`: History list использует lightweight trusted `ExperimentArtifactStore.browse_metadata()` без загрузки OOF arrays/fold models; canonical published corruption и stale content-addressed identity fail closed.
+62. `AnalysisHistoryService.list()` сортирует только по persisted `ExperimentResult.created_at` с stable artifact-id tie-break; V3 → `FULL_RESULT_V2`, V1/V2 → `LEGACY_SUMMARY_ONLY`; full `store.load()` разрешён только для выбранного `detail()`.
+63. Следующий History stage — `PH-UI1`: подключить accepted `01_analysis_history_v1.png` к уже принятому `AnalysisHistoryService` без filesystem scan из UI и без мутации current analysis session.

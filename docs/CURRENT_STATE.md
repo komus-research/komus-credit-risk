@@ -1326,7 +1326,7 @@ Canonical semantics:
 - отдельной domain-сущности `Project` в V1 нет;
 - одна History entry = один завершённый immutable `ExperimentArtifact` / experiment run;
 - History не создаёт отдельный store и не копирует scientific evidence;
-- planned public boundary: `AnalysisHistoryService.list()` для каталога и `detail(artifact_id)` для immutable historical summary/access mode;
+- PH-BE1 source commit `4a7d016a`: public boundary `AnalysisHistoryService.list()` для каталога и `detail(artifact_id)` для immutable historical summary/access mode уже реализован;
 - `FULL_RESULT_V2` открывает V3 artifact через существующие Result V2 services;
 - `LEGACY_SUMMARY_ONLY` показывает только реально сохранённые dataset / algorithm / OOF metrics / folds / limitations / technical identity без реконструкции Objects/SHAP;
 - experiment date берётся из `ExperimentResult.created_at`, не filesystem mtime;
@@ -1335,8 +1335,18 @@ Canonical semantics:
 - ModelVersion catalog и targetless inference history остаются только в разделе `Модели`;
 - `Настройки` имеют отдельный принятый Product/Architecture/Visual Lock и не являются частью History contract.
 
-Implementation order:
-`PH-BE1 — Analysis History Read Contract` → `PH-UI1 — History Catalog`.
+Implementation status:
+`PH-BE1 — Analysis History Read Contract` — **ACCEPTED / CLOSED**, source commit `4a7d016a`.
+
+Backend invariants:
+- lightweight `ExperimentArtifactStore.browse_metadata()` не грузит OOF arrays/fold models;
+- published canonical artifact metadata проверяется fail-closed, включая content-addressed identity;
+- History sort использует только persisted `ExperimentResult.created_at`, не filesystem mtime;
+- V3 → `FULL_RESULT_V2`, V1/V2 → `LEGACY_SUMMARY_ONLY`;
+- `detail()` делает full `store.load()` только для выбранного artifact;
+- тот же `ExperimentArtifactStore` используется application / OOF Result / OOF Explanation / History.
+
+Следующий stage: `PH-UI1 — History Catalog`.
 
 ---
 

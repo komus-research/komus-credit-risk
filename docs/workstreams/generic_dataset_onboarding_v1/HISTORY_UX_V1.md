@@ -1,6 +1,6 @@
 # History UX V1 — Product / Architecture / Visual Lock
 
-Status: **ACCEPTED PRODUCT / ARCHITECTURE / VISUAL LOCK — BACKEND IMPLEMENTATION PENDING**
+Status: **PH-BE1 ACCEPTED / CLOSED — PH-UI1 PENDING**
 
 Visual source of truth:
 `docs/design/screens/history/01_analysis_history_v1.png`
@@ -131,8 +131,10 @@ Default sort: `created_at DESC`.
 ## 7. Implementation order
 
 1. Visual Lock — **ACCEPTED**.
-2. `PH-BE1` — trusted browse/list + `AnalysisHistoryService.list/detail`.
-3. `PH-UI1` — History catalog.
+2. `PH-BE1` — trusted browse/list + `AnalysisHistoryService.list/detail` — **ACCEPTED / CLOSED**, source commit `4a7d016a`.
+3. `PH-UI1` — History catalog — **NEXT**.
 4. Historical V3 Result переиспользует существующий Result V2.
 
-Глобальный раздел «Настройки» остаётся отдельным будущим Architect question.
+PH-BE1 дополнительно фиксирует lightweight metadata browse без `np.load`/fold-model load, fail-closed проверку canonical published artifact и content-addressed identity. `detail()` использует полный `store.load()` только для выбранного artifact.
+
+Глобальный раздел «Настройки» уже имеет отдельный accepted Product/Architecture/Visual Lock и не входит в History contract.
