@@ -1479,6 +1479,8 @@ def _render_result_step(runtime) -> None:
         _render_result_threshold(runtime, artifact)
     elif view == "OBJECTS":
         _render_result_objects(runtime, artifact)
+    elif view == "GLOBAL_OOF":
+        _render_result_global_oof(runtime, artifact)
     elif view == "OBJECT_DETAIL":
         _render_result_object_detail(runtime, artifact)
     else:
@@ -1547,7 +1549,9 @@ def _render_result_overview(runtime, artifact: Any) -> None:
     if directions[1].button("Посмотреть объекты"):
         st.session_state["result_v2_view"] = "OBJECTS"
         st.rerun()
-    directions[2].button("Подробнее о влиянии признаков", disabled=True, help="Этот экран Result V2 пока недоступен.")
+    if directions[2].button("\u041f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435 \u043e \u0432\u043b\u0438\u044f\u043d\u0438\u0438 \u043f\u0440\u0438\u0437\u043d\u0430\u043a\u043e\u0432"):
+        st.session_state["result_v2_view"] = "GLOBAL_OOF"
+        st.rerun()
     _render_local_model_use_flow(runtime, artifact)
     navigation = st.columns(3)
     _navigation_button(navigation[0], "← Назад", 3)
@@ -1555,6 +1559,100 @@ def _render_result_overview(runtime, artifact: Any) -> None:
     if navigation[2].button("Попробовать другой вариант на этих данных", type="primary"):
         return_to_experiment(st.session_state)
         st.rerun()
+
+
+def _render_result_global_oof(runtime: Any, artifact: Any) -> None:
+    """Render backend-provided global OOF SHAP magnitudes for this artifact."""
+    state = st.session_state
+    artifact_id = artifact.artifact_id
+    if st.button("← Назад к результату"):
+        state["result_v2_view"] = "OVERVIEW"
+        st.rerun()
+        return
+
+    explanation = state.get("result_v2_global_oof_explanation")
+    cached_artifact_id = state.get("result_v2_global_oof_artifact_id")
+    if cached_artifact_id != artifact_id or (
+        explanation is not None and getattr(explanation, "artifact_id", None) != artifact_id
+    ):
+        state["result_v2_global_oof_explanation"] = None
+        state["result_v2_global_oof_artifact_id"] = None
+        state["result_v2_global_oof_error_code"] = None
+        explanation = None
+
+    if explanation is None and state.get("result_v2_global_oof_error_code") is None:
+        try:
+            with st.spinner("Формируем глобальное OOF-объяснение…"):
+                explanation = runtime.oof_explanation_service.global_oof(artifact_id)
+            if getattr(explanation, "artifact_id", None) != artifact_id:
+                raise ValueError("Global OOF artifact binding mismatch")
+        except Exception:
+            state["result_v2_global_oof_explanation"] = None
+            state["result_v2_global_oof_artifact_id"] = artifact_id
+            state["result_v2_global_oof_error_code"] = "GLOBAL_OOF_EXPLANATION_FAILED"
+            explanation = None
+        else:
+            state["result_v2_global_oof_explanation"] = explanation
+            state["result_v2_global_oof_artifact_id"] = artifact_id
+            state["result_v2_global_oof_error_code"] = None
+
+    if explanation is None:
+        st.error("Не удалось сформировать глобальное OOF-объяснение. Попробуйте повторить расчёт.")
+        if st.button("Повторить расчёт"):
+            state["result_v2_global_oof_explanation"] = None
+            state["result_v2_global_oof_artifact_id"] = None
+            state["result_v2_global_oof_error_code"] = None
+            st.rerun()
+        return
+
+    st.subheader("Влияние признаков")
+    st.write("Средний модуль локального SHAP-вклада по всей OOF-выборке.")
+    st.info(
+        "Показывает, какие признаки в среднем сильнее участвовали в формировании OOF-оценок модели. "
+        "Это относительная сила влияния; направления влияния здесь нет. Это не причинность, "
+        "не бизнес-важность и не рекомендация удалить или оставить признак."
+    )
+    st.caption(
+        "Глобальное влияние рассчитано по OOF-объяснениям и не зависит от выбранного аналитического порога."
+    )
+    st.write(f"Модель: {explanation.model_id} · версия: {explanation.model_version}")
+    st.caption(
+        f"OOF-строк: {explanation.row_count:,} · признаков: {explanation.feature_count} · "
+        f"пространство вывода: {explanation.output_space}"
+    )
+
+    ranked_features = sorted(explanation.features, key=lambda feature: feature.rank)
+    maximum = max((feature.mean_abs_shap for feature in ranked_features), default=0)
+    rows = []
+    for feature in ranked_features:
+        value = feature.mean_abs_shap
+        bar_width = 0 if maximum <= 0 else max(0, min(100, value / maximum * 100))
+        rows.append(
+            "<div style='display:grid;grid-template-columns:3rem minmax(10rem,1fr) 8rem minmax(8rem,2fr);"
+            "gap:.75rem;align-items:center;padding:.4rem .25rem;border-bottom:1px solid #16464a'>"
+            f"<span>{feature.rank}</span><span>{escape(str(feature.column_name))}</span>"
+            f"<span>{value}</span><span style='height:.8rem;background:#123039;border-radius:4px'>"
+            f"<span style='display:block;width:{bar_width:.4f}%;height:100%;background:#00c9b7;border-radius:4px'></span>"
+            "</span></div>"
+        )
+    header = (
+        "<div style='display:grid;grid-template-columns:3rem minmax(10rem,1fr) 8rem minmax(8rem,2fr);"
+        "gap:.75rem;font-weight:600;padding:.5rem .25rem'>"
+        "<span>№</span><span>Признак</span><span>Среднее |SHAP|</span><span>Визуальная шкала</span></div>"
+    )
+    st.markdown(header + "".join(rows), unsafe_allow_html=True)
+    with st.expander("Технические сведения", expanded=False):
+        st.json({
+            "provider_id": explanation.provider_id,
+            "provider_version": explanation.provider_version,
+            "explanation_method_id": explanation.explanation_method_id,
+            "explanation_method_version": explanation.explanation_method_version,
+            "background_policy_id": explanation.background_policy_id,
+            "feature_binding_hash": explanation.feature_binding_hash,
+            "fold_model_binding_ids": explanation.fold_model_binding_ids,
+            "evidence_hash": explanation.evidence_hash,
+            "artifact_id": explanation.artifact_id,
+        })
 
 
 def _render_result_objects(runtime, artifact: Any) -> None:

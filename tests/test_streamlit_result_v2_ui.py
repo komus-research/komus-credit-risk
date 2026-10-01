@@ -130,6 +130,152 @@ class ResultV2UiTests(unittest.TestCase):
     def _interpreter_evidence(evidence_hash="evidence-hash"):
         return SimpleNamespace(evidence_hash=evidence_hash)
 
+    @staticmethod
+    def _global_evidence(artifact_id="artifact-1"):
+        return SimpleNamespace(
+            artifact_id=artifact_id,
+            model_id="model-from-dto",
+            model_version="v-dto",
+            row_count=19,
+            feature_count=2,
+            output_space="dto-output-space",
+            provider_id="dto-provider",
+            provider_version="provider-v",
+            explanation_method_id="dto-method",
+            explanation_method_version="method-v",
+            background_policy_id="dto-background",
+            feature_binding_hash="dto-binding",
+            fold_model_binding_ids=("fold-1", "fold-2"),
+            features=(
+                SimpleNamespace(feature_id="b", column_name="exact_second", mean_abs_shap=0.0025, rank=2),
+                SimpleNamespace(feature_id="a", column_name="exact_first", mean_abs_shap=0.037, rank=1),
+            ),
+            evidence_hash="dto-evidence-hash",
+        )
+
+    def test_overview_global_oof_action_is_enabled_and_routes_with_rerun(self) -> None:
+        ui = _Streamlit()
+        summary = SimpleNamespace(
+            model_id="model", model_version="v1", object_count=19, feature_count=2, folds=3,
+            evaluation_level="ROW", runtime_seconds=None, gini=0.2, roc_auc=0.7, pr_auc=0.4,
+            fold_metrics=(), limitations=(), artifact_id="artifact-1", result_id="result-1",
+        )
+        result_service = SimpleNamespace(
+            summary=Mock(return_value=summary),
+            threshold=Mock(return_value=SimpleNamespace(
+                precision=0.5, recall=0.4, f1=0.44, tp=2, tn=3, fp=2, fn=3,
+                above_threshold_count=4, above_threshold_share=0.2,
+            )),
+        )
+        ui.button_responses["Подробнее о влиянии признаков"] = True
+
+        with patch.object(prototype, "st", ui), patch.object(prototype, "_render_local_model_use_flow"):
+            prototype._render_result_overview(SimpleNamespace(oof_result_service=result_service), _Artifact())
+
+        global_action = next(kwargs for args, kwargs in ui.buttons if args[0] == "Подробнее о влиянии признаков")
+        self.assertFalse(global_action.get("disabled", False))
+        self.assertEqual(ui.session_state.result_v2_view, "GLOBAL_OOF")
+        self.assertEqual(ui.rerun_calls, 1)
+
+    def test_global_oof_router_loads_exact_artifact_once_and_preserves_cached_evidence(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "GLOBAL_OOF"
+        ui.session_state.result_v2_threshold = 0.17
+        evidence = self._global_evidence()
+        service = SimpleNamespace(global_oof=Mock(return_value=evidence))
+        runtime = SimpleNamespace(oof_explanation_service=service)
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(runtime)
+            ui.session_state.result_v2_threshold = 0.91
+            prototype._render_result_step(runtime)
+
+        service.global_oof.assert_called_once_with("artifact-1")
+        self.assertIs(ui.session_state.result_v2_global_oof_explanation, evidence)
+        self.assertEqual(ui.session_state.result_v2_global_oof_artifact_id, "artifact-1")
+        self.assertEqual(ui.session_state.result_v2_threshold, 0.91)
+
+    def test_global_oof_renders_trusted_rank_exact_values_and_only_relative_magnitudes(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "GLOBAL_OOF"
+        service = SimpleNamespace(global_oof=Mock(return_value=self._global_evidence()))
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(SimpleNamespace(oof_explanation_service=service))
+
+        rendered = "".join(args[0] for args, _ in ui.markdowns)
+        self.assertLess(rendered.index("exact_first"), rendered.index("exact_second"))
+        self.assertIn("0.037", rendered)
+        self.assertIn("0.0025", rendered)
+        self.assertIn("model-from-dto", " ".join(map(str, ui.writes)))
+        displayed_facts = " ".join(map(str, ui.messages)) + " " + " ".join(map(str, ui.writes))
+        self.assertIn("v-dto", displayed_facts)
+        self.assertIn("19", displayed_facts)
+        self.assertIn("2", displayed_facts)
+        self.assertIn("dto-output-space", displayed_facts)
+        self.assertNotIn("increases", rendered.lower())
+        self.assertNotIn("decreases", rendered.lower())
+        self.assertNotIn("↑", rendered)
+        self.assertNotIn("↓", rendered)
+        self.assertEqual(service.global_oof.call_args.args, ("artifact-1",))
+
+    def test_global_oof_artifact_change_discards_stale_evidence_and_error(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = SimpleNamespace(artifact_id="artifact-2")
+        ui.session_state.result_v2_view = "GLOBAL_OOF"
+        ui.session_state.result_v2_global_oof_explanation = self._global_evidence("artifact-1")
+        ui.session_state.result_v2_global_oof_artifact_id = "artifact-1"
+        ui.session_state.result_v2_global_oof_error_code = "stale-error"
+        fresh = self._global_evidence("artifact-2")
+        service = SimpleNamespace(global_oof=Mock(return_value=fresh))
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(SimpleNamespace(oof_explanation_service=service))
+
+        service.global_oof.assert_called_once_with("artifact-2")
+        self.assertIs(ui.session_state.result_v2_global_oof_explanation, fresh)
+        self.assertIsNone(ui.session_state.result_v2_global_oof_error_code)
+
+    def test_global_oof_failure_hides_exception_and_retry_repeats_only_oof_call(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "GLOBAL_OOF"
+        service = SimpleNamespace(
+            global_oof=Mock(side_effect=[RuntimeError("private raw exception"), self._global_evidence()])
+        )
+        runtime = SimpleNamespace(oof_explanation_service=service)
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(runtime)
+            self.assertEqual(ui.session_state.result_v2_global_oof_error_code, "GLOBAL_OOF_EXPLANATION_FAILED")
+            ui.button_responses["Повторить расчёт"] = True
+            prototype._render_result_step(runtime)
+            ui.button_responses["Повторить расчёт"] = False
+            prototype._render_result_step(runtime)
+
+        self.assertEqual(service.global_oof.call_args_list, [unittest.mock.call("artifact-1")] * 2)
+        self.assertTrue(any("Назад к результату" in args[0] for args, _ in ui.buttons))
+        self.assertFalse(any("private raw exception" in str(message) for message in ui.errors + ui.messages))
+        self.assertIsNotNone(ui.session_state.result_v2_global_oof_explanation)
+        self.assertEqual(ui.session_state.result_v2_view, "GLOBAL_OOF")
+
+    def test_global_oof_screen_does_not_call_interpreter(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "GLOBAL_OOF"
+        integration = SimpleNamespace(interpret=Mock(), prepare_interpretation=Mock())
+        service = SimpleNamespace(global_oof=Mock(return_value=self._global_evidence()))
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(SimpleNamespace(
+                oof_explanation_service=service, integration_workflow_service=integration,
+            ))
+
+        integration.interpret.assert_not_called()
+        integration.prepare_interpretation.assert_not_called()
+
     def test_result_v2_interpreter_is_explicit_and_uses_exact_oof_boundary(self) -> None:
         ui = _Streamlit()
         evidence = self._interpreter_evidence()
@@ -273,7 +419,7 @@ class ResultV2UiTests(unittest.TestCase):
         values.update(changes)
         return SimpleNamespace(**values)
 
-    def test_overview_cta_opens_threshold_and_future_screens_stay_inactive(self) -> None:
+    def test_overview_cta_opens_threshold_and_global_oof_action_is_enabled(self) -> None:
         ui = _Streamlit()
         ui.session_state.loaded_artifact = _Artifact()
         ui.button_responses["\u0418\u0441\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u044c \u043f\u043e\u0440\u043e\u0433"] = True
@@ -290,10 +436,8 @@ class ResultV2UiTests(unittest.TestCase):
         self.assertFalse(hasattr(ui, "slider_args"))
         enabled_labels = [args[0] for args, kwargs in ui.buttons if not kwargs.get("disabled")]
         self.assertIn("\u0418\u0441\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u0442\u044c \u043f\u043e\u0440\u043e\u0433", enabled_labels)
-        disabled_labels = [args[0] for args, kwargs in ui.buttons if kwargs.get("disabled")]
-        enabled_labels = [args[0] for args, kwargs in ui.buttons if not kwargs.get("disabled")]
         self.assertIn("\u041f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u0442\u044c \u043e\u0431\u044a\u0435\u043a\u0442\u044b", enabled_labels)
-        self.assertIn("\u041f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435 \u043e \u0432\u043b\u0438\u044f\u043d\u0438\u0438 \u043f\u0440\u0438\u0437\u043d\u0430\u043a\u043e\u0432", disabled_labels)
+        self.assertIn("\u041f\u043e\u0434\u0440\u043e\u0431\u043d\u0435\u0435 \u043e \u0432\u043b\u0438\u044f\u043d\u0438\u0438 \u043f\u0440\u0438\u0437\u043d\u0430\u043a\u043e\u0432", enabled_labels)
 
     def test_overview_uses_saved_threshold_and_displays_threshold_dto_without_slider(self) -> None:
         ui = _Streamlit()

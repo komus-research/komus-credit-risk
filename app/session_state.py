@@ -45,6 +45,9 @@ _DEFAULTS = {
     "result_v2_local_explanation_evidence": None,
     "result_v2_local_explanation_object_id": None,
     "result_v2_local_explanation_error_code": None,
+    "result_v2_global_oof_explanation": None,
+    "result_v2_global_oof_artifact_id": None,
+    "result_v2_global_oof_error_code": None,
     "result_v2_local_explanation_mode": "BRIEF",
     "result_v2_interpreter_role": "credit_controller",
     "result_v2_interpreter_binding": None,
@@ -487,6 +490,7 @@ def _reset_result_v2_state(state: MutableMapping[str, Any]) -> None:
     """Return Result V2 navigation to its canonical neutral state."""
     state["result_v2_view"] = "OVERVIEW"
     state["result_v2_selected_object_id"] = None
+    _reset_result_v2_global_oof(state)
     state["result_v2_object_detail_cache"] = None
     _reset_result_v2_local_explanation(state)
     _reset_result_v2_interpreter(state, reset_role=True)
@@ -500,6 +504,13 @@ def _reset_result_v2_state(state: MutableMapping[str, Any]) -> None:
     state["result_v2_objects_sort"] = "SCORE_DESC"
     state["result_v2_objects_offset"] = 0
     state["result_v2_objects_query_snapshot"] = None
+
+
+def _reset_result_v2_global_oof(state: MutableMapping[str, Any]) -> None:
+    """Clear the artifact-bound global OOF evidence and its local error."""
+    state["result_v2_global_oof_explanation"] = None
+    state["result_v2_global_oof_artifact_id"] = None
+    state["result_v2_global_oof_error_code"] = None
 
 
 def _reset_result_v2_local_explanation(state: MutableMapping[str, Any]) -> None:

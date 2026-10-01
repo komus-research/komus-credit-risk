@@ -74,6 +74,9 @@ class SessionStateTests(unittest.TestCase):
         self.assertIsNone(self.state["result_v2_local_explanation_evidence"])
         self.assertIsNone(self.state["result_v2_local_explanation_object_id"])
         self.assertIsNone(self.state["result_v2_local_explanation_error_code"])
+        self.assertIsNone(self.state["result_v2_global_oof_explanation"])
+        self.assertIsNone(self.state["result_v2_global_oof_artifact_id"])
+        self.assertIsNone(self.state["result_v2_global_oof_error_code"])
         self.assertEqual(self.state["result_v2_local_explanation_mode"], "BRIEF")
         self.assertEqual(self.state["result_v2_threshold"], 0.5)
 
@@ -118,6 +121,9 @@ class SessionStateTests(unittest.TestCase):
         self.assertEqual(self.state["result_v2_objects_sort"], "SCORE_DESC")
         self.assertEqual(self.state["result_v2_objects_offset"], 0)
         self.state["result_v2_view"] = "THRESHOLD"
+        global_evidence = object()
+        self.state["result_v2_global_oof_explanation"] = global_evidence
+        self.state["result_v2_global_oof_artifact_id"] = "saved-artifact"
         self.state["result_v2_threshold"] = 0.37
         self.state["result_v2_objects_search"] = "keep"
         self.state["result_v2_objects_target"] = "NEGATIVE"
@@ -134,6 +140,8 @@ class SessionStateTests(unittest.TestCase):
         open_home(self.state)
         open_result(self.state)
         self.assertEqual(self.state["result_v2_view"], "THRESHOLD")
+        self.assertIs(self.state["result_v2_global_oof_explanation"], global_evidence)
+        self.assertEqual(self.state["result_v2_global_oof_artifact_id"], "saved-artifact")
         self.assertEqual(self.state["result_v2_selected_object_id"], "keep-on-home")
         self.assertEqual(self.state["result_v2_threshold"], 0.37)
         self.assertEqual(self.state["result_v2_objects_search"], "keep")
@@ -142,6 +150,17 @@ class SessionStateTests(unittest.TestCase):
         self.assertEqual(self.state["result_v2_objects_offset"], 50)
         self.assertEqual(self.state["result_v2_interpreter_binding"], binding)
         self.assertIs(self.state["result_v2_interpreter_outcome"], outcome)
+
+    def test_global_oof_cache_resets_when_a_new_artifact_is_saved(self) -> None:
+        self.state["result_v2_global_oof_explanation"] = object()
+        self.state["result_v2_global_oof_artifact_id"] = "old-artifact"
+        self.state["result_v2_global_oof_error_code"] = "GLOBAL_OOF_EXPLANATION_FAILED"
+
+        save_artifact(self.state, SimpleNamespace(artifact_id="new-artifact"), comparison=None)
+
+        self.assertIsNone(self.state["result_v2_global_oof_explanation"])
+        self.assertIsNone(self.state["result_v2_global_oof_artifact_id"])
+        self.assertIsNone(self.state["result_v2_global_oof_error_code"])
 
     def test_object_change_clears_only_object_local_explanation_cache(self) -> None:
         evidence = object()
