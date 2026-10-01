@@ -1473,6 +1473,8 @@ def _render_result_step(runtime) -> None:
         _render_result_threshold(runtime, artifact)
     elif view == "OBJECTS":
         _render_result_objects(runtime, artifact)
+    elif view == "OBJECT_DETAIL":
+        _render_result_object_detail(runtime, artifact)
     else:
         _render_result_overview(runtime, artifact)
 
@@ -1664,7 +1666,21 @@ def _render_result_objects(runtime, artifact: Any) -> None:
         }
         for item in objects.items
     ]
-    st.dataframe(rows, hide_index=True, use_container_width=True)
+    selection = st.dataframe(
+        rows,
+        hide_index=True,
+        use_container_width=True,
+        on_select="rerun",
+        selection_mode="single-row",
+    )
+    selected_rows = _dataframe_selected_rows(selection)
+    selected_row_index = selected_rows[0] if len(selected_rows) == 1 else None
+    if selected_row_index is not None and 0 <= selected_row_index < len(objects.items):
+        if st.button("Открыть объект"):
+            state["result_v2_selected_object_id"] = objects.items[selected_row_index].object_id
+            state["result_v2_view"] = "OBJECT_DETAIL"
+            st.rerun()
+            return
     if page_controls[1].button(
         "Следующие →", disabled=offset + objects.returned_count >= objects.filtered_count
     ):
@@ -1672,6 +1688,66 @@ def _render_result_objects(runtime, artifact: Any) -> None:
             offset + limit, max(0, objects.filtered_count - 1)
         )
         st.rerun()
+
+
+def _dataframe_selected_rows(selection: Any) -> tuple[int, ...]:
+    """Read selected row positions from Streamlit's dataframe selection state."""
+    if isinstance(selection, Mapping):
+        selection = selection.get("selection", selection)
+        rows = selection.get("rows", ()) if isinstance(selection, Mapping) else ()
+    else:
+        selected = getattr(selection, "selection", selection)
+        rows = getattr(selected, "rows", ())
+    try:
+        return tuple(int(row) for row in rows)
+    except (TypeError, ValueError):
+        return ()
+
+
+def _render_result_object_detail(runtime: Any, artifact: Any) -> None:
+    """Render basic object facts through the public OOF detail service only."""
+    state = st.session_state
+    if st.button("← К объектам"):
+        state["result_v2_view"] = "OBJECTS"
+        st.rerun()
+        return
+
+    selected_object_id = state.get("result_v2_selected_object_id")
+    if not isinstance(selected_object_id, str) or not selected_object_id:
+        st.error("Объект не выбран. Вернитесь к списку объектов и выберите строку.")
+        return
+
+    try:
+        detail = runtime.oof_result_service.object_detail(
+            artifact.artifact_id,
+            selected_object_id,
+            state.get("result_v2_threshold", 0.5),
+        )
+    except Exception:
+        st.error("Не удалось загрузить подтверждённые OOF-данные объекта.")
+        return
+
+    st.subheader(f"Объект {detail.identifier_display}")
+    st.write(f"Оценка: {_number(detail.score)}")
+    st.write(f"Порог: {_number(detail.threshold)}")
+    st.write(f"Целевое событие: {'Да' if detail.y_true == 1 else 'Нет'}")
+    st.write(f"Положение: {'Выше порога' if detail.predicted_positive else 'Ниже порога'}")
+    st.write(f"Исход: {detail.outcome}")
+    st.write(f"Fold: {detail.fold_number}")
+    outcome_explanations = {
+        "TP": "Целевое событие есть, оценка выше порога.",
+        "TN": "Целевого события нет, оценка ниже порога.",
+        "FP": "Целевого события нет, но оценка выше порога.",
+        "FN": "Целевое событие есть, но оценка ниже порога.",
+    }
+    explanation = outcome_explanations.get(detail.outcome)
+    if explanation is not None:
+        st.caption(explanation)
+    st.caption(
+        "Fold — часть cross-validation, на которой получена OOF-оценка объекта. "
+        "Модель, сформировавшая эту оценку, обучалась на других folds "
+        "и не использовала этот объект при обучении. Fold доступен только для чтения."
+    )
 
 
 def _render_result_threshold(runtime, artifact: Any) -> None:

@@ -46,6 +46,8 @@ class _Streamlit:
         self.button_responses = {}
         self.rerun_calls = 0
         self.tables = []
+        self.dataframe_selection = {"selection": {"rows": []}}
+        self.writes = []
 
     def header(self, *args, **kwargs) -> None:
         return None
@@ -81,20 +83,21 @@ class _Streamlit:
     def error(self, message, *args, **kwargs) -> None:
         self.errors.append(message)
 
-    def write(self, *args, **kwargs) -> None:
-        return None
-
     def caption(self, *args, **kwargs) -> None:
-        self.messages.extend(args)
-
-    def subheader(self, *args, **kwargs) -> None:
         self.messages.extend(args)
 
     def columns(self, count):
         return [_Column(self) for _ in range(count)]
 
-    def dataframe(self, *args, **kwargs) -> None:
+    def dataframe(self, *args, **kwargs):
         self.tables.append((args, kwargs))
+        return self.dataframe_selection
+
+    def write(self, *args, **kwargs) -> None:
+        self.writes.extend(args)
+
+    def subheader(self, *args, **kwargs) -> None:
+        self.messages.extend(args)
 
     def expander(self, *args, **kwargs):
         return _Expander()
@@ -315,6 +318,105 @@ class ResultV2UiTests(unittest.TestCase):
             prototype._render_result_step(SimpleNamespace(oof_result_service=broken))
         self.assertEqual(len(failed.errors), 1)
         self.assertEqual(failed.tables, [])
+
+    def test_objects_selection_opens_exact_dto_object_id(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "OBJECTS"
+        ui.dataframe_selection = {"selection": {"rows": [1]}}
+        items = (
+            SimpleNamespace(object_id="opaque-1", identifier_display="SAME", y_true=0, score=0.1, predicted_positive=False, outcome="TN"),
+            SimpleNamespace(object_id="exact-id-2", identifier_display="SAME", y_true=1, score=0.2, predicted_positive=False, outcome="FN"),
+        )
+        objects = self._objects(items=items, returned_count=2)
+        service = SimpleNamespace(objects=Mock(return_value=objects))
+        ui.button_responses["Открыть объект"] = True
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=service))
+
+        self.assertEqual(ui.tables[0][1]["on_select"], "rerun")
+        self.assertEqual(ui.tables[0][1]["selection_mode"], "single-row")
+        self.assertEqual(ui.session_state.result_v2_selected_object_id, "exact-id-2")
+        self.assertEqual(ui.session_state.result_v2_view, "OBJECT_DETAIL")
+        self.assertEqual(ui.rerun_calls, 1)
+
+    def test_detail_uses_exact_service_arguments_once_and_displays_dto_facts(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "OBJECT_DETAIL"
+        ui.session_state.result_v2_selected_object_id = "object-id"
+        ui.session_state.result_v2_threshold = 0.83
+        detail = SimpleNamespace(
+            identifier_display="ORG-7", score=0.2, threshold=0.83, y_true=1,
+            predicted_positive=True, outcome="FN", fold_number=4,
+        )
+        service = SimpleNamespace(object_detail=Mock(return_value=detail))
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=service))
+
+        service.object_detail.assert_called_once_with("artifact-1", "object-id", 0.83)
+        rendered = " ".join(str(value) for value in ui.writes)
+        self.assertIn("ORG-7", " ".join(str(value) for value in ui.messages))
+        self.assertIn("0.2000", rendered)
+        self.assertIn("Целевое событие: Да", rendered)
+        self.assertIn("Положение: Выше порога", rendered)
+        self.assertIn("Исход: FN", rendered)
+        self.assertIn("Fold: 4", rendered)
+
+    def test_detail_missing_id_and_service_error_fail_closed_with_back_available(self) -> None:
+        missing = _Streamlit()
+        missing.session_state.loaded_artifact = _Artifact()
+        missing.session_state.result_v2_view = "OBJECT_DETAIL"
+        service = SimpleNamespace(object_detail=Mock())
+        with patch.object(prototype, "st", missing):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=service))
+        service.object_detail.assert_not_called()
+        self.assertEqual(len(missing.errors), 1)
+        self.assertTrue(any(button[0][0] == "← К объектам" for button in missing.buttons))
+
+        failed = _Streamlit()
+        failed.session_state.loaded_artifact = _Artifact()
+        failed.session_state.result_v2_view = "OBJECT_DETAIL"
+        failed.session_state.result_v2_selected_object_id = "gone"
+        failed_service = SimpleNamespace(object_detail=Mock(side_effect=RuntimeError("missing")))
+        with patch.object(prototype, "st", failed):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=failed_service))
+        failed_service.object_detail.assert_called_once_with("artifact-1", "gone", 0.5)
+        self.assertEqual(len(failed.errors), 1)
+        self.assertEqual(failed.writes, [])
+
+    def test_detail_back_preserves_threshold_and_object_query_state(self) -> None:
+        ui = _Streamlit()
+        ui.session_state.loaded_artifact = _Artifact()
+        ui.session_state.result_v2_view = "OBJECT_DETAIL"
+        ui.session_state.result_v2_selected_object_id = "object-id"
+        ui.session_state.result_v2_threshold = 0.31
+        ui.session_state.update(
+            result_v2_objects_search="search text", result_v2_objects_target="NEGATIVE",
+            result_v2_objects_outcomes=("FP",), result_v2_objects_min_score=0.14,
+            result_v2_objects_max_score=0.72, result_v2_objects_score_range=(0.14, 0.72),
+            result_v2_objects_sort="SCORE_ASC", result_v2_objects_offset=50,
+            result_v2_objects_query_snapshot=("search text", "NEGATIVE", ("FP",), 0.14, 0.72, "SCORE_ASC"),
+        )
+        ui.button_responses["← К объектам"] = True
+        service = SimpleNamespace(object_detail=Mock())
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_step(SimpleNamespace(oof_result_service=service))
+
+        service.object_detail.assert_not_called()
+        self.assertEqual(ui.session_state.result_v2_view, "OBJECTS")
+        self.assertEqual(ui.session_state.result_v2_threshold, 0.31)
+        self.assertEqual(ui.session_state.result_v2_objects_search, "search text")
+        self.assertEqual(ui.session_state.result_v2_objects_target, "NEGATIVE")
+        self.assertEqual(ui.session_state.result_v2_objects_outcomes, ("FP",))
+        self.assertEqual(ui.session_state.result_v2_objects_min_score, 0.14)
+        self.assertEqual(ui.session_state.result_v2_objects_max_score, 0.72)
+        self.assertEqual(ui.session_state.result_v2_objects_sort, "SCORE_ASC")
+        self.assertEqual(ui.session_state.result_v2_objects_offset, 50)
+        self.assertEqual(ui.session_state.result_v2_objects_query_snapshot[0], "search text")
 
     def test_objects_quick_views_and_default_score_range(self) -> None:
         cases = (

@@ -40,6 +40,7 @@ _DEFAULTS = {
     "loaded_artifact": None,
     "comparison_result": None,
     "result_v2_view": "OVERVIEW",
+    "result_v2_selected_object_id": None,
     "result_v2_threshold": 0.5,
     "result_v2_objects_search": "",
     "result_v2_objects_target": "ANY",
@@ -475,6 +476,7 @@ def _clear_plan_and_result(state: MutableMapping[str, Any]) -> None:
 def _reset_result_v2_state(state: MutableMapping[str, Any]) -> None:
     """Return Result V2 navigation to its canonical neutral state."""
     state["result_v2_view"] = "OVERVIEW"
+    state["result_v2_selected_object_id"] = None
     state["result_v2_threshold"] = 0.5
     state["result_v2_objects_search"] = ""
     state["result_v2_objects_target"] = "ANY"
