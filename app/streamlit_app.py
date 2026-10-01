@@ -31,6 +31,7 @@ from app.session_state import (
     has_current_analysis,
     initialize,
     navigate_to_step,
+    open_history,
     open_home,
     open_result,
     request_new_analysis,
@@ -140,6 +141,9 @@ def main() -> None:
     if st.session_state.presentation_surface == "HOME":
         _render_home()
         return
+    if st.session_state.presentation_surface == "HISTORY":
+        _render_history(_runtime())
+        return
     _render_analysis()
 
 
@@ -189,13 +193,125 @@ def _render_axion_sidebar() -> None:
     with st.sidebar:
         st.image(str(_AXION_LOGO_PATH), use_container_width=True)
         is_home = st.session_state.presentation_surface == "HOME"
+        is_history = st.session_state.presentation_surface == "HISTORY"
         st.button("⌂  Главная", key="axion-nav-home", type="primary" if is_home else "secondary", use_container_width=True, on_click=open_home, args=(st.session_state,))
         st.button("⊕  Новый анализ", key="axion-nav-new-analysis", use_container_width=True, on_click=_request_new_analysis_from_ui)
         st.button("▣  Модели", key="axion-nav-models", disabled=True, use_container_width=True)
-        st.button("▤  Проекты / История", key="axion-nav-projects", disabled=True, use_container_width=True)
+        st.button("▤  История", key="axion-nav-history", type="primary" if is_history else "secondary", use_container_width=True, on_click=open_history, args=(st.session_state,))
         st.divider()
         st.button("⚙  Настройки", key="axion-nav-settings", disabled=True, use_container_width=True)
         st.caption("Недоступные разделы будут доступны позже.")
+
+
+def _render_history(runtime: Any) -> None:
+    """Render the read-only catalog from the public AnalysisHistoryService DTOs."""
+    st.html('<div class="axion-kicker">HISTORY</div><div class="axion-page-title">История анализов</div><div class="axion-subtitle">Завершённые сохранённые анализы.</div>')
+    search_col, sort_col = st.columns((3, 1))
+    with search_col:
+        st.text_input(
+            "Поиск по данным или алгоритму",
+            placeholder="Поиск по данным или алгоритму",
+            key="history_search",
+        )
+    with sort_col:
+        st.selectbox(
+            "Сортировка",
+            options=("CREATED_DESC", "CREATED_ASC"),
+            format_func=lambda value: "Сначала новые" if value == "CREATED_DESC" else "Сначала старые",
+            key="history_sort",
+        )
+
+    search = str(st.session_state.history_search).strip() or None
+    sort = st.session_state.history_sort
+    query_snapshot = (search, sort)
+    if st.session_state.history_query_snapshot != query_snapshot:
+        st.session_state.history_offset = 0
+        st.session_state.history_query_snapshot = query_snapshot
+
+    try:
+        page = runtime.analysis_history_service.list(
+            offset=st.session_state.history_offset,
+            limit=20,
+            search=search,
+            model_id=None,
+            sort=sort,
+        )
+    except Exception:
+        st.error("Не удалось загрузить историю анализов.")
+        if st.button("Повторить", key="history-retry", type="secondary"):
+            st.rerun()
+        return
+
+    if page.total_count == 0:
+        st.info("История анализов пока пуста.")
+        return
+    if page.filtered_count == 0:
+        st.info("По заданным условиям анализы не найдены.")
+        return
+
+    rows = [
+        {
+            "Дата": _history_date(item.created_at),
+            "Данные": item.dataset_name,
+            "Алгоритм": item.model_id,
+            "Версия": item.model_version,
+            "Признаки": item.feature_count,
+            "Проверка": _history_evaluation_label(item.evaluation_level, item.folds),
+            "Gini": f"{item.gini:.3f}",
+            "Доступ": "Полный результат" if item.result_access == "FULL_RESULT_V2" else "Только сводка",
+        }
+        for item in page.items
+    ]
+    st.dataframe(rows, hide_index=True, use_container_width=True)
+    start = page.offset + 1 if page.returned_count else 0
+    end = page.offset + page.returned_count
+    previous, count, next_page = st.columns((1, 3, 1))
+    with previous:
+        st.button(
+            "← Предыдущая",
+            key="history-previous",
+            disabled=page.offset == 0,
+            on_click=_change_history_page,
+            args=(-20,),
+        )
+    with count:
+        st.caption(f"Показано {start}–{end} из {page.filtered_count}")
+    with next_page:
+        st.button(
+            "Следующая →",
+            key="history-next",
+            disabled=page.offset + page.returned_count >= page.filtered_count,
+            on_click=_change_history_page,
+            args=(20,),
+        )
+
+
+def _change_history_page(delta: int) -> None:
+    st.session_state.history_offset = max(0, int(st.session_state.history_offset) + delta)
+
+
+def _history_date(value: str) -> str:
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).strftime("%d.%m.%Y")
+    except (TypeError, ValueError):
+        return value
+
+
+def _history_evaluation_label(evaluation_level: str, folds: int) -> str:
+    level = "OOF" if evaluation_level.casefold() == "oof" else evaluation_level
+    last_two_digits = folds % 100
+    last_digit = folds % 10
+    if 11 <= last_two_digits <= 14:
+        fold_word = "фолдов"
+    elif last_digit == 1:
+        fold_word = "фолд"
+    elif 2 <= last_digit <= 4:
+        fold_word = "фолда"
+    else:
+        fold_word = "фолдов"
+    return f"{level} · {folds} {fold_word}"
 
 
 def _request_new_analysis_from_ui() -> None:

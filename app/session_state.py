@@ -20,6 +20,10 @@ RESULT_V2_VIEW_IDS = (
 
 _DEFAULTS = {
     "presentation_surface": "HOME",
+    "history_search": "",
+    "history_sort": "CREATED_DESC",
+    "history_offset": 0,
+    "history_query_snapshot": None,
     "analysis_started": False,
     "new_analysis_confirmation_pending": False,
     "current_step": 0,
@@ -135,6 +139,12 @@ def open_home(state: MutableMapping[str, Any]) -> None:
     state["new_analysis_confirmation_pending"] = False
 
 
+def open_history(state: MutableMapping[str, Any]) -> None:
+    """Switch to the read-only History catalog without touching analysis state."""
+    state["presentation_surface"] = "HISTORY"
+    state["new_analysis_confirmation_pending"] = False
+
+
 def continue_current_analysis(state: MutableMapping[str, Any]) -> None:
     """Return from Home to the exact in-session wizard position."""
     state["presentation_surface"] = "ANALYSIS"
@@ -223,6 +233,11 @@ def confirm_new_analysis(state: MutableMapping[str, Any]) -> None:
 
 def _start_new_analysis(state: MutableMapping[str, Any]) -> None:
     next_context_revision = int(state.get("context_revision", 0)) + 1
+    history_state = {
+        key: state.get(key, value)
+        for key, value in _DEFAULTS.items()
+        if key.startswith("history_")
+    }
     _cleanup_controlled_uploads(state)
     for key, value in _DEFAULTS.items():
         state[key] = {} if isinstance(value, dict) else value
@@ -231,6 +246,7 @@ def _start_new_analysis(state: MutableMapping[str, Any]) -> None:
             state.pop(key, None)
     state["context_revision"] = next_context_revision
     state["presentation_surface"] = "ANALYSIS"
+    state.update(history_state)
     state["analysis_started"] = True
     state["new_analysis_confirmation_pending"] = False
 
