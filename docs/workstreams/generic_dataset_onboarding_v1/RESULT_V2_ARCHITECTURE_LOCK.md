@@ -322,4 +322,20 @@ Overview не имеет второго editable threshold control; Threshold Ex
 
 Accepted limitation: public threshold-sweep/curve contract отсутствует. UI не читает OOF arrays и не строит скрытый grid вызовов `threshold()` ради визуальной имитации Recall/Precision curves.
 
-Следующий stage — R2-UI3 / Objects.
+R2-UI3 — Objects — **ACCEPTED / CLOSED**, source commit `dbe580091e40510022a79ffdf2c67da17016ab70`.
+
+Принятый UI path:
+`result_v2_threshold + object-query state → OOFResultService.objects(...) → server-paged Objects table`.
+
+Canonical runtime facts:
+- chunk size `limit=50`; offset хранится в session state;
+- search/target/outcomes/min_score/max_score/sort передаются в public service без локальной canonical filtering/sorting;
+- quick views — взаимоисключающие frontend presets над тем же query contract;
+- `Пограничные` задаёт `DISTANCE_TO_THRESHOLD_ASC`, `Высокая оценка модели` — `SCORE_DESC`; оба снимают quick-view outcomes, не добавляя hidden cutoffs;
+- `Все объекты` снимает quick-view outcome/sort preset;
+- таблица строится только из DTO fields `identifier_display / score / y_true / predicted_positive / outcome`;
+- Fold не реконструируется для list rows: current list DTO его не содержит, provenance Fold остаётся Object Detail concern;
+- service error fail-closed, без stale/fake rows и без artifact fallback;
+- Object Detail и переход к нему не входят в R2-UI3.
+
+Следующий stage — R2-UI4 / Object Detail.

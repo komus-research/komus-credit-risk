@@ -105,6 +105,8 @@ Visual reference содержит threshold-dependence curves, но public sweep
 
 Visual lock: `04_result_objects_v2.png`.
 
+Implementation status: **R2-UI3 — ACCEPTED / CLOSED**, source commit `dbe580091e40510022a79ffdf2c67da17016ab70`.
+
 Назначение:
 аналитик исследует отдельные OOF-объекты, ошибки модели и переход к detail screen.
 
@@ -150,9 +152,9 @@ Tooltip у «Целевое событие» объясняет эту матр�
 Цвет threshold position не должен подменять TP/TN/FP/FN.
 ### 4.3. Fold
 
-Fold остаётся видимым read-only provenance для аналитика.
+Fold остаётся read-only provenance для аналитика на Object Detail. В текущем R2-UI3 list DTO Fold отсутствует, поэтому Objects runtime его не реконструирует и не делает дополнительный per-row lookup только ради совпадения с PNG.
 
-Tooltip должен объяснять:
+Когда Fold показывается на Object Detail, tooltip должен объяснять:
 - Fold — номер части cross-validation, на которой получена OOF-оценка объекта;
 - модель для этой оценки обучалась на других folds и не использовала этот объект при обучении;
 - Fold нужен для происхождения OOF prediction и связи с моделью, которая его сформировала.
@@ -207,8 +209,9 @@ Canonical UX:
 Backend semantics уже зафиксирована как `min_score` / `max_score` в `RESULT_V2_ARCHITECTURE_LOCK.md`.
 Если текущий visual reference не показывает этот control, это считается известным visual omission: при следующем обновлении макета control нужно вернуть, а не удалять capability из реализации.
 
-Точная backend-supported семантика «пограничные», «высокая оценка модели» и иных derived filters
-должна быть задана public contract. UI не придумывает скрытые формулы.
+Точная backend-supported семантика quick views задана public contract. В принятом R2-UI3 это взаимоисключающие frontend presets: `Ошибки модели → {FP,FN}`, `Пропущенные события → {FN}`, `Ложные срабатывания → {FP}`, `Пограничные → DISTANCE_TO_THRESHOLD_ASC`, `Высокая оценка модели → SCORE_DESC`, `Все объекты → снять quick-view preset`. `Пограничные` и `Высокая оценка модели` очищают quick-view outcomes; это не hidden filtering. Никаких `score >= 0.8`, `threshold ± band` или иных незафиксированных cutoffs нет.
+
+R2-UI3 использует server-side chunks по 50 строк с Previous/Next и compact range indicator. Это допустимая Streamlit V1 реализация принятого offset/limit contract; full Result в UI не загружается. Active Object Detail transition отложен до R2-UI4.
 
 ## 5. Professional analyst principle
 

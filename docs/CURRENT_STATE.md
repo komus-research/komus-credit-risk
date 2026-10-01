@@ -1295,7 +1295,9 @@ R2-UI2 — **Threshold Explorer — ACCEPTED / CLOSED**. Source commit: `8050a9c
 
 Публичного threshold-sweep/curve DTO пока нет, поэтому Recall/Precision curves в runtime R2-UI2 намеренно не реконструируются из OOF arrays и не имитируются серией скрытых threshold-вызовов.
 
-Следующий implementation stage — **R2-UI3 / Objects** поверх принятого `OOFResultService.objects()` contract.
+R2-UI3 — **Objects — ACCEPTED / CLOSED**. Source commit: `dbe580091e40510022a79ffdf2c67da17016ab70`. Экран «Объекты оценки» получает строки только через `OOFResultService.objects(...)` с текущим `result_v2_threshold`, server-side `offset/limit=50`, search/target/outcomes/score-range/sort. UI не читает OOF arrays, не фильтрует и не сортирует canonical Result локально, не использует direct-artifact fallback. Quick views являются взаимоисключающими frontend presets над public query contract; `Пограничные` и `Высокая оценка модели` очищают quick-view outcomes и задают только свой sort, без hidden cutoffs. Score range остаётся явным `0.00–1.00` control и не меняет threshold или scores. Home ↔ Result сохраняет object-query state; новый artifact/upstream invalidation сбрасывает его в defaults. Object Detail намеренно отложен.
+
+Следующий implementation stage — **R2-UI4 / Object Detail** поверх принятого `OOFResultService.object_detail()` + Local Explanation contract.
 
 Result visual locks теперь дополнительно включают Global OOF feature influence (`07_result_global_oof_shap_v1.png`), Local Explanation LOADING (`08_result_object_detail_explanation_loading_v1.png`), Local Explanation ERROR (`09_result_object_detail_explanation_error_v1.png`), detailed Local Explanation (`10_result_object_detail_explanation_detailed_v1.png`), Result Interpreter LOADING (`11_result_object_detail_llm_loading_v1.png`) и Result Interpreter ERROR (`12_result_object_detail_llm_error_v1.png`).
 
