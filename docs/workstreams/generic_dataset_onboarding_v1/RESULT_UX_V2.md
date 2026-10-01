@@ -8,6 +8,9 @@ Primary visual references:
 - `docs/design/screens/result/04_result_objects_v2.png`
 - `docs/design/screens/result/05_result_object_detail_v1.png`
 - `docs/design/screens/result/06_result_object_detail_llm_v1.png`
+- `docs/design/screens/result/07_result_global_oof_shap_v1.png`
+- `docs/design/screens/result/08_result_object_detail_explanation_loading_v1.png`
+- `docs/design/screens/result/09_result_object_detail_explanation_error_v1.png`
 
 Эти PNG фиксируют композицию, визуальную иерархию и пользовательский поток Result V2.
 Фактические данные, доступность действий, persistence, provenance и API semantics определяются только принятыми backend/research contracts.
@@ -25,8 +28,9 @@ Canonical flow шага Result:
 → LLM-интерпретация по явному действию пользователя, если runtime capability доступна
 ```
 
-Пять текущих Result PNG имеют принятый visual lock.
-Для Object Detail отдельно зафиксированы два состояния: Local Explanation READY до вызова LLM и LLM interpretation READY после явного пользовательского действия. Loading/error variants и expanded technical/detail states пока не имеют отдельного visual lock.
+Восемь текущих Result PNG имеют принятый visual lock.
+Для Object Detail зафиксированы состояния Local Explanation LOADING, Local Explanation READY до вызова LLM, Local Explanation ERROR и LLM interpretation READY после явного пользовательского действия. Expanded technical/detail states и отдельные LLM loading/error variants пока не имеют visual lock.
+Global OOF feature influence зафиксирован отдельным экраном `07_result_global_oof_shap_v1.png`.
 
 Result работает на persisted accepted experiment evidence.
 Final test не используется для threshold research, object filtering, selection/tuning или OOF explainability.

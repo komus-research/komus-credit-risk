@@ -42,12 +42,15 @@
 
 Product semantics и backend gap зафиксированы в `docs/workstreams/generic_dataset_onboarding_v1/MODELS_UX_V1.md`.
 
-Для Result V2 приняты пять visual lock:
+Для Result V2 приняты восемь visual lock:
 - `screens/result/02_result_model_overview_v2.png` — общий обзор результата;
 - `screens/result/03_threshold_explorer_v1.png` — исследование threshold по OOF scores;
 - `screens/result/04_result_objects_v2.png` — список OOF-объектов и ошибок;
 - `screens/result/05_result_object_detail_v1.png` — detail одного OOF-объекта, Local Explanation READY и LLM entry;
-- `screens/result/06_result_object_detail_llm_v1.png` — тот же detail после успешной LLM-интерпретации.
+- `screens/result/06_result_object_detail_llm_v1.png` — тот же detail после успешной LLM-интерпретации;
+- `screens/result/07_result_global_oof_shap_v1.png` — Global OOF feature influence: row-weighted mean(abs(local SHAP));
+- `screens/result/08_result_object_detail_explanation_loading_v1.png` — Object Detail во время автоматического расчёта Local Explanation, без блокировки basic result;
+- `screens/result/09_result_object_detail_explanation_error_v1.png` — локальная ошибка Local Explanation: основной Result сохраняется, доступен повторный расчёт, LLM остаётся disabled.
 
 Поведение Result V2 и границы реализации зафиксированы в `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`. Макеты не являются источником backend semantics и не разрешают hardcode демонстрационных данных.
 

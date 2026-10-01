@@ -292,6 +292,8 @@ R2-BE2A — OOF Result Read Core — **ACCEPTED / CLOSED**, source commit `81707
 
 R2-BE2B — Local OOF Explainability — **ACCEPTED / CLOSED**, source commit `1ee6e10f581e5281fc63f21a6a86c7cffcfe0e05`.
 
+R2-BE2C — Global OOF SHAP Aggregate — **ACCEPTED / CLOSED**, source commit `3de33309`. Reviewer corrective cycle закрыт: valid multi-feature Local Explanation может приходить в SHAP-ranked order; Global validation проверяет exact complete `feature_id → column_name` binding без требования positional order.
+
 Принятый backend теперь покрывает:
 - summary;
 - explicit threshold metrics;
@@ -299,8 +301,9 @@ R2-BE2B — Local OOF Explainability — **ACCEPTED / CLOSED**, source commit `1
 - object detail с Fold provenance;
 - exact persisted fold model reload;
 - strict OOF probability replay;
-- validated `LocalExplanationEvidence V2` через trusted `explain_batch()` path.
+- validated `LocalExplanationEvidence V2` через trusted `explain_batch()` path;
+- Global OOF SHAP как row-weighted `mean(abs(local SHAP))` по всем OOF rows, каждая строка через exact assigned fold model.
 
 Final/refit fallback для OOF explanation отсутствует.
 
-Следующий отдельный backend вопрос — Global OOF SHAP aggregate. Frontend не расширять до отдельного Result implementation stage.
+Result V2 backend contract закрыт. Следующий отдельный этап — native Result implementation поверх принятых public Result/Explanation boundaries.

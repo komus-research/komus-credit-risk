@@ -1285,9 +1285,11 @@ Source commit:
 
 Принятый path: `artifact_id + object_id → exact aligned row/fold → store-owned trusted fold reload → strict stored OOF probability replay → trusted explanation provider.explain_batch() → LocalExplanationEvidence V2`. Fold остаётся evaluation evidence и не превращается в `ModelVersion`; final/refit fallback запрещён.
 
-Следующий отдельный backend вопрос — **Global OOF SHAP aggregate**. Параллельно можно готовить native Result implementation только через принятые public Result/Explanation boundaries.
+R2-BE2C — **Global OOF SHAP Aggregate — ACCEPTED / CLOSED**. Source commit: `3de33309`. Canonical aggregate: row-weighted `mean(abs(local SHAP))` по всем OOF rows; каждая строка объясняется exact persisted fold model. Corrective review подтвердил order-independent validation `LocalExplanationEvidence.features`: важны полнота и exact `feature_id → column_name` binding, а не локальный SHAP-ranked order. Verification после FIX: 30 tests PASS, 34 subtests PASS, `compileall src` PASS, `git diff --check` PASS.
 
-Object Detail visual lock теперь покрывает два состояния: Local Explanation READY до вызова LLM (`05_result_object_detail_v1.png`) и LLM READY после успешной интерпретации (`06_result_object_detail_llm_v1.png`). После backend contracts — native Result implementation; отдельные loading/error и expanded-detail states уточняются только при необходимости.
+Result V2 backend закрыт. Следующий этап — native Result implementation только через принятые public Result/Explanation boundaries.
+
+Result visual locks теперь дополнительно включают Global OOF feature influence (`07_result_global_oof_shap_v1.png`), Local Explanation LOADING (`08_result_object_detail_explanation_loading_v1.png`) и Local Explanation ERROR (`09_result_object_detail_explanation_error_v1.png`). Expanded-detail и отдельные LLM loading/error states остаются следующими точечными visual states.
 
 ---
 
