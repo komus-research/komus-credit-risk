@@ -1468,69 +1468,107 @@ def _render_result_step(runtime) -> None:
         _navigation_button(st, "← Назад", 3)
         return
     st.header("5. Результат")
-    result = artifact.run_output.result
-    metrics = result.metrics
-    st.success("Обучение и перекрёстная проверка качества завершены.")
-    st.info(
-        "Ниже показана оценка качества модели на строках, которые она не использовала для своего обучения в соответствующем фолде. "
-        "Если качество вас устраивает, ниже можно обучить итоговую версию для применения к новым данным."
+    _render_result_overview(runtime, artifact)
+
+
+def _render_result_overview(runtime, artifact: Any) -> None:
+    """Render Result V2 overview only through the public OOF result boundary."""
+    state = st.session_state
+    current_threshold = float(state.get("result_v2_threshold", 0.5))
+    selected_threshold = st.slider(
+        "Technical / diagnostic threshold",
+        min_value=0.0,
+        max_value=1.0,
+        value=current_threshold,
+        step=0.01,
     )
-    st.subheader("Качество ранжирования")
-    labels = (("gini", "Gini"), ("roc_auc", "ROC-AUC"), ("pr_auc", "PR-AUC"))
-    columns = st.columns(3)
-    for index, (key, label) in enumerate(labels):
-        columns[index % 3].metric(label, _number(metrics.get(key)))
-    st.subheader("При техническом пороге 0.5")
-    st.caption("Порог 0.5 используется только как единая точка сравнения метрик и не является бизнес-решением.")
-    threshold_columns = st.columns(3)
-    for index, (key, label) in enumerate((("precision_at_0_5", "Precision"), ("recall_at_0_5", "Recall"), ("f1_at_0_5", "F1"))):
-        threshold_columns[index].metric(label, _number(metrics.get(key)))
-    st.subheader("Ошибки модели")
-    errors = st.columns(4)
-    error_labels = (
-        ("tp", "Верно выявленные дефолты (TP)", "Модель предсказала дефолт, и дефолт действительно произошёл."),
-        ("tn", "Верно выявленные недефолты (TN)", "Модель не предсказала дефолт, и дефолта действительно не было."),
-        ("fp", "Ложные тревоги (FP)", "Модель предсказала дефолт, но дефолта не было."),
-        ("fn", "Пропущенные дефолты (FN)", "Модель не предсказала дефолт, хотя он произошёл."),
-    )
-    for index, (key, label, explanation) in enumerate(error_labels):
-        errors[index].metric(label, str(result.confusion[key]))
-        errors[index].caption(explanation)
-    st.subheader("Стабильность по частям проверки")
-    st.dataframe(
-        [
-            {
-                "Часть": fold["fold"],
-                "Gini": _number(fold.get("gini")),
-                "ROC-AUC": _number(fold.get("roc_auc")),
-                "Precision @ 0.5": _number(fold.get("precision_at_0_5")),
-                "Recall @ 0.5": _number(fold.get("recall_at_0_5")),
-            }
-            for fold in result.fold_metrics
-        ],
-        hide_index=True,
-        use_container_width=True,
-    )
-    st.subheader("Ограничения")
-    with st.expander("Показать ограничения", expanded=False):
-        for limitation in result.limitations:
+    state["result_v2_threshold"] = selected_threshold
+    try:
+        summary = runtime.oof_result_service.summary(artifact.artifact_id)
+        threshold = runtime.oof_result_service.threshold(
+            artifact.artifact_id, selected_threshold
+        )
+    except Exception:
+        st.error(
+            "Result is unavailable because confirmed OOF evidence could not be read."
+        )
+    else:
+        st.success("Training and cross-validation completed.")
+        st.info(
+            "This overview is based on out-of-fold (OOF) evaluation: each object "
+            "is evaluated by a model that did not use it for training in that fold."
+        )
+        st.write(f"Model: {summary.model_id} · version: {summary.model_version}")
+        st.caption(
+            f"OOF objects: {summary.object_count:,} · features: "
+            f"{summary.feature_count} · folds: {summary.folds} · "
+            f"evaluation level: {summary.evaluation_level}"
+        )
+        if summary.runtime_seconds is not None:
+            st.caption(f"Runtime: {_number(summary.runtime_seconds)} s")
+
+        st.subheader("Ranking quality")
+        ranking = st.columns(3)
+        for index, (label, value) in enumerate(
+            (("Gini", summary.gini), ("ROC-AUC", summary.roc_auc), ("PR-AUC", summary.pr_auc))
+        ):
+            ranking[index].metric(label, _number(value))
+
+        st.subheader(f"Threshold metrics: {threshold.threshold:.2f}")
+        st.caption(
+            "This is a technical / diagnostic threshold only. It is not an "
+            "optimal, recommended, or business threshold."
+        )
+        threshold_columns = st.columns(3)
+        for index, (label, value) in enumerate(
+            (("Precision", threshold.precision), ("Recall", threshold.recall), ("F1", threshold.f1))
+        ):
+            threshold_columns[index].metric(label, _number(value))
+        confusion = st.columns(4)
+        for index, (label, value) in enumerate(
+            (("TP", threshold.tp), ("TN", threshold.tn), ("FP", threshold.fp), ("FN", threshold.fn))
+        ):
+            confusion[index].metric(label, str(value))
+        st.caption(
+            f"Above threshold: {threshold.above_threshold_count:,} objects "
+            f"({_number(threshold.above_threshold_share)})"
+        )
+
+        st.subheader("Fold stability")
+        st.dataframe(
+            [dict(fold) for fold in summary.fold_metrics],
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.subheader("Limitations")
+        for limitation in summary.limitations:
             st.write(f"- {limitation}")
-    st.subheader("Технические сведения")
-    with st.expander("Показать технические сведения", expanded=False):
-        st.json({
-            "artifact_id": artifact.artifact_id,
-            "result_id": result.result_id,
-            "runtime_seconds": result.runtime_seconds,
-            "evaluation_level": result.evaluation_level,
-            "confusion": _plain(result.confusion),
-            "fold_metrics": _plain(result.fold_metrics),
-        })
-    comparison = st.session_state.comparison_result
-    if comparison is not None:
-        with st.expander("Сравнение с предыдущим результатом", expanded=False):
-            st.write(f"Сопоставимы: {'да' if comparison.is_comparable else 'нет'}")
-            st.write(f"Причины: {', '.join(comparison.reason_codes) or 'не указаны'}")
-            st.json({"metrics": comparison.metric_deltas, "confusion": comparison.confusion_deltas, "feature_change": comparison.feature_change, "model_change": comparison.model_change})
+        with st.expander("Technical details", expanded=False):
+            st.json(
+                {
+                    "artifact_id": summary.artifact_id,
+                    "result_id": summary.result_id,
+                    "runtime_seconds": summary.runtime_seconds,
+                    "evaluation_level": summary.evaluation_level,
+                }
+            )
+
+    directions = st.columns(3)
+    directions[0].button(
+        "Исследовать порог",
+        disabled=True,
+        help="Only the Result V2 overview is available in this stage.",
+    )
+    directions[1].button(
+        "Посмотреть объекты",
+        disabled=True,
+        help="Only the Result V2 overview is available in this stage.",
+    )
+    directions[2].button(
+        "Подробнее о влиянии признаков",
+        disabled=True,
+        help="Only the Result V2 overview is available in this stage.",
+    )
     _render_local_model_use_flow(runtime, artifact)
     navigation = st.columns(3)
     _navigation_button(navigation[0], "← Назад", 3)

@@ -10,6 +10,8 @@ from app.session_state import (
     apply_group_widget_selection,
     initialize,
     navigate_to_step,
+    open_home,
+    open_result,
     return_to_experiment,
     run_request_from_snapshot,
     save_artifact,
@@ -60,6 +62,26 @@ class SessionStateTests(unittest.TestCase):
         self.assertIsNone(self.state["experiment_plan"])
         self.assertIsNone(self.state["loaded_artifact"])
         self.assertIsNone(self.state["comparison_result"])
+        self.assertEqual(self.state["result_v2_view"], "OVERVIEW")
+        self.assertEqual(self.state["result_v2_threshold"], 0.5)
+
+    def test_result_v2_defaults_save_and_navigation_lifecycle(self) -> None:
+        self.assertEqual(self.state["result_v2_view"], "OVERVIEW")
+        self.assertEqual(self.state["result_v2_threshold"], 0.5)
+        self.state["result_v2_view"] = "OBJECTS"
+        self.state["result_v2_threshold"] = 0.72
+        artifact = SimpleNamespace(artifact_id="saved-artifact")
+
+        save_artifact(self.state, artifact, comparison=None)
+
+        self.assertEqual(self.state["result_v2_view"], "OVERVIEW")
+        self.assertEqual(self.state["result_v2_threshold"], 0.5)
+        self.state["result_v2_view"] = "THRESHOLD"
+        self.state["result_v2_threshold"] = 0.37
+        open_home(self.state)
+        open_result(self.state)
+        self.assertEqual(self.state["result_v2_view"], "THRESHOLD")
+        self.assertEqual(self.state["result_v2_threshold"], 0.37)
 
     def test_unprepared_source_clears_context_and_blocks_downstream_state(self) -> None:
         prepared_context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))

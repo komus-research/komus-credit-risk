@@ -10,6 +10,14 @@ from komus_risk.application import RESULT_INTERPRETER_ROLES, RunExperimentReques
 from komus_risk.contracts import FeatureUsageStatus
 from komus_risk.planning import ExperimentPlan, PlanningRequestMetadata
 
+RESULT_V2_VIEW_IDS = (
+    "OVERVIEW",
+    "THRESHOLD",
+    "OBJECTS",
+    "GLOBAL_OOF",
+    "OBJECT_DETAIL",
+)
+
 _DEFAULTS = {
     "presentation_surface": "HOME",
     "analysis_started": False,
@@ -31,6 +39,8 @@ _DEFAULTS = {
     "experiment_plan": None,
     "loaded_artifact": None,
     "comparison_result": None,
+    "result_v2_view": "OVERVIEW",
+    "result_v2_threshold": 0.5,
     "last_successful_artifact_id": None,
     "context_revision": 0,
     "highest_reached_step": 0,
@@ -386,6 +396,7 @@ def save_plan(state: MutableMapping[str, Any], snapshot: PlanningRequestMetadata
     state["experiment_plan"] = plan
     state["loaded_artifact"] = None
     state["comparison_result"] = None
+    _reset_result_v2_state(state)
 
 
 def can_run(state: MutableMapping[str, Any]) -> bool:
@@ -416,6 +427,7 @@ def save_artifact(state: MutableMapping[str, Any], artifact: Any, comparison: An
     _clear_integration_state(state)
     state["loaded_artifact"] = artifact
     state["comparison_result"] = comparison
+    _reset_result_v2_state(state)
     state["last_successful_artifact_id"] = artifact.artifact_id
     state["current_step"] = 4
     state["highest_reached_step"] = 4
@@ -447,7 +459,14 @@ def _clear_plan_and_result(state: MutableMapping[str, Any]) -> None:
     state["experiment_plan"] = None
     state["loaded_artifact"] = None
     state["comparison_result"] = None
+    _reset_result_v2_state(state)
     _clear_integration_state(state)
+
+
+def _reset_result_v2_state(state: MutableMapping[str, Any]) -> None:
+    """Return Result V2 navigation to its canonical neutral state."""
+    state["result_v2_view"] = "OVERVIEW"
+    state["result_v2_threshold"] = 0.5
 
 
 def set_loaded_model_version(state: MutableMapping[str, Any], loaded_model_version: Any) -> None:

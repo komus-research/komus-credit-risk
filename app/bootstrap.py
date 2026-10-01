@@ -20,6 +20,7 @@ from komus_risk.application import (
     FinalModelTrainingService,
     IntegrationWorkflowService,
     ModelInferenceService,
+    OOFResultService,
     ResultInterpreterService,
     NativeDatasetOnboardingService,
 )
@@ -103,6 +104,7 @@ class PrototypeRuntime:
     supported_protocol: "SupportedProtocol"
     integration_workflow_service: IntegrationWorkflowService
     prepared_context_authority: PreparedDatasetContextAuthority
+    oof_result_service: OOFResultService
 
 
 @dataclass(frozen=True, slots=True)
@@ -666,6 +668,7 @@ def create_runtime(
         SUPPORTED_PROTOCOL,
         integration_workflow_service,
         context_authority,
+        OOFResultService(artifact_store),
     )
 
 

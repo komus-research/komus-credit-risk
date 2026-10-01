@@ -505,6 +505,10 @@ class StreamlitBootstrapTests(unittest.TestCase):
                 runtime.application_service.artifact_store,
                 workflow.final_model_training_service.experiment_artifact_store,
             )
+            self.assertIs(
+                runtime.application_service.artifact_store,
+                runtime.oof_result_service.artifact_store,
+            )
             self.assertEqual(workflow.model_version_store.root, Path(directory) / "model_versions")
             self.assertNotEqual(workflow.model_version_store.root, runtime.application_service.artifact_store.root)
 
