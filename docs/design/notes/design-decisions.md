@@ -62,6 +62,8 @@
 60. Settings implementation order: `SET-BE1 — Local Preferences + Interpreter Settings` → `SET-BE2 — Secure Credentials + Connection Check` → `SET-UI1`.
 61. PH-BE1 History backend — ACCEPTED / CLOSED, source commit `4a7d016a`: History list использует lightweight trusted `ExperimentArtifactStore.browse_metadata()` без загрузки OOF arrays/fold models; canonical published corruption и stale content-addressed identity fail closed.
 62. `AnalysisHistoryService.list()` сортирует только по persisted `ExperimentResult.created_at` с stable artifact-id tie-break; V3 → `FULL_RESULT_V2`, V1/V2 → `LEGACY_SUMMARY_ONLY`; full `store.load()` разрешён только для выбранного `detail()`.
-63. PH-UI1 History Catalog — ACCEPTED / CLOSED, source commit `35aba684`: `HISTORY` реализован отдельным presentation surface; каталог использует только `AnalysisHistoryService.list(..., limit=20)` и не мутирует current analysis / Result V2 state.
-64. History row scientific facts берутся только из `AnalysisHistoryItem`; `evaluation_level` не hardcode как OOF, неизвестные значения сохраняются как persisted DTO fact.
-65. PH-UI1 показывает только access status `Полный результат` / `Только сводка`; historical Result opening отложен в `PH-UI2`, потому что current Result V2 state принадлежит текущей analysis session и не должен быть переиспользован ценой её мутации.
+63. Commit `35aba684` реализует History Catalog только в frozen compatibility Streamlit frontend; это не закрывает native History и не задаёт дальнейший product UI path.
+64. Canonical product frontend AXION — `React + TypeScript + Vite → FastAPI → application/core`. Streamlit остаётся frozen compatibility frontend; новые product UI stages не реализуются в нём без отдельного явного решения владельца.
+65. Streamlit `PH-UI2A` был остановлен после review и не вошёл в source branch. Его замечания не исправляются, потому что сам frontend target для нового product stage неверен.
+66. Native History должен использовать `AnalysisHistoryService` через FastAPI, но только после фиксации canonical native artifact ownership. Нельзя смешивать `.native-quality-artifacts` и `.streamlit-artifacts` неявно.
+67. Текущий native React flow заканчивается на Quality V1A/preflight; full experiment/progress/persisted Result ещё не подключены. Приоритет core flow: сначала native full experiment → native Result, затем native History.

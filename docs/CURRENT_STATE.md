@@ -1313,7 +1313,7 @@ Result visual locks теперь дополнительно включают Glo
 
 ## History V1 — product / architecture / visual lock accepted / 2026-10-01
 
-Status: **ACCEPTED PRODUCT / ARCHITECTURE / VISUAL LOCK — BACKEND IMPLEMENTATION PENDING**.
+Status: **PRODUCT / ARCHITECTURE / VISUAL LOCK ACCEPTED; PH-BE1 ACCEPTED; NATIVE UI NOT IMPLEMENTED**.
 
 Visual source of truth:
 `docs/design/screens/history/01_analysis_history_v1.png`.
@@ -1346,19 +1346,17 @@ Backend invariants:
 - `detail()` делает full `store.load()` только для выбранного artifact;
 - тот же `ExperimentArtifactStore` используется application / OOF Result / OOF Explanation / History.
 
-PH-UI1 — **History Catalog — ACCEPTED / CLOSED**, source commit `35aba684`.
+PH-UI1 source commit `35aba684` реализовал History Catalog только в **frozen compatibility Streamlit frontend**. Это НЕ закрывает native React/FastAPI History и не является текущим product UI milestone.
 
-UI invariants:
-- `HISTORY` — отдельный presentation surface;
-- sidebar canonical label `История`, без старого `Проекты / История`;
-- каталог читает только `AnalysisHistoryService.list(..., limit=20, model_id=None)`;
-- search/sort/pagination state сохраняется независимо от current analysis;
-- History не читает filesystem/ArtifactStore/OOF services напрямую;
-- строки строятся только из `AnalysisHistoryItem`; `evaluation_level` берётся из DTO и не hardcode как OOF;
-- History navigation и render не мутируют current analysis / Result V2 / Local Explanation / Interpreter / inference state;
-- PH-UI1 показывает только access status `Полный результат` / `Только сводка`; historical Result opening намеренно не реализован.
+Зафиксированная граница frontend:
+- canonical product frontend AXION: **React + TypeScript + Vite → FastAPI → application/core**;
+- Streamlit: **frozen compatibility frontend**; новые product UI stages туда не добавляются без отдельного явного решения;
+- ранее предложенный Streamlit `PH-UI2A` остановлен после review и не попал в source branch;
+- native History UI и historical Result opening пока НЕ реализованы.
 
-Следующий stage: `PH-UI2 — Historical Result Opening` с отдельным state-isolation contract.
+Фактический native core flow сейчас доходит до **Quality V1A / preflight**. Кнопка `Начать обучение` в React намеренно disabled; full experiment/progress/result ещё не подключены. До native History нужно закончить основной native flow до persisted Result.
+
+Отдельный открытый архитектурный вопрос перед native full-run/history: native runtime сейчас использует `.native-quality-artifacts`, compatibility runtime — `.streamlit-artifacts`. Нельзя подключать native History к случайному/неправильному artifact root; canonical native artifact ownership должен быть явно зафиксирован.
 
 ---
 
