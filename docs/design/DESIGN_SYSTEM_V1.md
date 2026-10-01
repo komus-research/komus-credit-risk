@@ -64,7 +64,7 @@ Status: **PRIMARY VISUAL SYSTEM / IMPLEMENTATION REFERENCE**
 - Главная
 - Новый анализ
 - Модели
-- Проекты / История
+- История
 - Настройки
 
 Во flow нового анализа сохраняется верхний stepper:

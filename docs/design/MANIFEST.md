@@ -16,6 +16,7 @@
 | --- | --- | --- |
 | Главная | `screens/home/01_home_axion_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Главная V2 | `screens/home/01_home_axion_v2_candidate.png` | VISUAL LOCK; основной reference общего AXION shell / Home V2 |
+| История анализов V1 | `screens/history/01_analysis_history_v1.png` | VISUAL LOCK; read-only каталог завершённых ExperimentArtifact, без Project entity |
 | Новый анализ — данные / роли колонок | `screens/new-analysis/01_data_roles_v1.png` | Рабочий референс шага подготовки данных |
 | Новый анализ — подтверждение | `screens/new-analysis/02_data_confirmation_v1.png` | Рабочий референс шага подтверждения |
 | Новый анализ — признаки | `screens/new-analysis/03_features_v1.png` | Рабочий референс выбора признаков |
@@ -77,6 +78,17 @@
 - highlighting не является ranking, winner selection, final-test evidence или business verdict;
 - backend browse/list/history contract пока не реализован; UI не сканирует filesystem и не фабрикует catalog rows/counts;
 - product semantics: `docs/workstreams/generic_dataset_onboarding_v1/MODELS_UX_V1.md`.
+
+### History V1
+
+- `screens/history/01_analysis_history_v1.png` — accepted VISUAL LOCK read-only каталога завершённых анализов;
+- canonical sidebar label — `История`; отдельной `Project` entity в V1 нет;
+- одна строка = один immutable `ExperimentArtifact` / завершённый experiment run;
+- access modes: `FULL_RESULT_V2` и `LEGACY_SUMMARY_ONLY`;
+- History не дублирует Models Hub и targetless inference history;
+- открытие historical result не мутирует текущую analysis session;
+- runtime implementation ждёт `PH-BE1 / PH-UI1`; UI не сканирует filesystem;
+- product/architecture semantics: `docs/workstreams/generic_dataset_onboarding_v1/HISTORY_UX_V1.md`.
 
 ### Quality V1
 

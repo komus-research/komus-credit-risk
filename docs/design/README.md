@@ -42,6 +42,9 @@
 
 Product semantics и backend gap зафиксированы в `docs/workstreams/generic_dataset_onboarding_v1/MODELS_UX_V1.md`.
 
+Для раздела **«История»** принят Visual Lock `screens/history/01_analysis_history_v1.png`.
+History V1 — read-only каталог завершённых `ExperimentArtifact`, а не Project Manager. Отдельной `Project` entity в V1 нет. Исторический V3 result открывается через существующий Result V2, legacy artifact — только в честном `LEGACY_SUMMARY_ONLY` режиме. Product/architecture semantics и будущий `AnalysisHistoryService.list()/detail()` зафиксированы в `docs/workstreams/generic_dataset_onboarding_v1/HISTORY_UX_V1.md`.
+
 Для Result V2 приняты одиннадцать visual lock:
 - `screens/result/02_result_model_overview_v2.png` — общий обзор результата;
 - `screens/result/03_threshold_explorer_v1.png` — исследование threshold по OOF scores;

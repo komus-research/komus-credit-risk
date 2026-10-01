@@ -141,7 +141,7 @@ ExperimentArtifact не считается Project по умолчанию.
 | Главная | Active route. Открывает Home и ничего не сбрасывает. |
 | Новый анализ | Active action. Запускает explicit new-analysis transition. |
 | Модели | В текущем runtime остаётся disabled до trusted browse/list backend contract. Product/visual lock каталога уже принят в `MODELS_UX_V1.md`. |
-| Проекты / История | Disabled/future. Project/history contract отсутствует. |
+| История | Product/architecture/visual lock принят в `HISTORY_UX_V1.md`; текущий runtime остаётся disabled до `PH-BE1 / PH-UI1`. Отдельной Project entity в V1 нет. |
 | Настройки | Disabled/future. Глобального settings contract нет. |
 
 Disabled items должны визуально выглядеть недоступными и не открывать пустые псевдостраницы.
@@ -274,7 +274,9 @@ Future prerequisite для полноценного `Модели`/Home list: о
 - определять «последний проект» по filesystem ordering;
 - присваивать project status по wizard step.
 
-`Последние проекты`, project counts, project search и sidebar `Проекты / История` остаются future/empty.
+`Последние проекты`, project counts и project search остаются future/empty.
+
+Sidebar label `Проекты / История` superseded решением History V1: canonical label теперь **«История»**. Он ведёт в read-only каталог завершённых `ExperimentArtifact`; product/architecture/visual contract зафиксирован в `docs/workstreams/generic_dataset_onboarding_v1/HISTORY_UX_V1.md`. До реализации `PH-BE1 / PH-UI1` route остаётся disabled.
 
 Future Project contract должен проектироваться отдельно только при реальной продуктовой необходимости.
 
@@ -335,7 +337,7 @@ Home не должен превращать отсутствие backend contrac
 6. При наличии текущего анализа Home предлагает `Продолжить текущий анализ`; возврат открывает exact сохранённый `current_step`.
 7. Explicit new analysis при содержательной текущей работе требует подтверждения; cancel сохраняет state, confirm создаёт чистый analysis session.
 8. Confirmed reset очищает старые upload/widget transients, но не удаляет persisted artifacts/models.
-9. `Открыть модель`, `Продолжить последний проект`, `Модели`, `Проекты / История`, `Настройки` и search не притворяются работающими.
+9. `Открыть модель`, `Продолжить последний проект`, `Модели`, `История`, `Настройки` и search не притворяются работающими до появления соответствующего trusted runtime contract. Для `История` product/visual contract уже принят отдельно; это не делает route реализованным в Home V1.
 10. Summary cards показывают `—`, а не invented counts.
 11. `Выполняется сейчас` не изображает background jobs; `Требует внимания` не создаёт invented warnings.
 12. `Последние проекты` не отображает ExperimentArtifact как Project.
@@ -346,8 +348,8 @@ Home не должен превращать отсутствие backend contrac
 ## 14. Non-goals
 
 - Project entity и project persistence.
-- История/каталог проектов.
-- Каталог всех ExperimentArtifact.
+- Project history / каталог проектов.
+- Реализация каталога всех ExperimentArtifact внутри Home V1; отдельный History V1 contract принят в `HISTORY_UX_V1.md`.
 - Каталог всех ModelVersion.
 - Поиск проектов/моделей.
 - Фоновое выполнение экспериментов.

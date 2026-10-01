@@ -1301,6 +1301,35 @@ Result visual locks теперь дополнительно включают Glo
 
 ---
 
+## History V1 — product / architecture / visual lock accepted / 2026-10-01
+
+Status: **ACCEPTED PRODUCT / ARCHITECTURE / VISUAL LOCK — BACKEND IMPLEMENTATION PENDING**.
+
+Visual source of truth:
+`docs/design/screens/history/01_analysis_history_v1.png`.
+
+UX / architecture source of truth:
+`docs/workstreams/generic_dataset_onboarding_v1/HISTORY_UX_V1.md`.
+
+Canonical semantics:
+- sidebar canonical label — **«История»**; прежнее `Проекты / История` superseded;
+- отдельной domain-сущности `Project` в V1 нет;
+- одна History entry = один завершённый immutable `ExperimentArtifact` / experiment run;
+- History не создаёт отдельный store и не копирует scientific evidence;
+- planned public boundary: `AnalysisHistoryService.list()` для каталога и `detail(artifact_id)` для immutable historical summary/access mode;
+- `FULL_RESULT_V2` открывает V3 artifact через существующие Result V2 services;
+- `LEGACY_SUMMARY_ONLY` показывает только реально сохранённые dataset / algorithm / OOF metrics / folds / limitations / technical identity без реконструкции Objects/SHAP;
+- experiment date берётся из `ExperimentResult.created_at`, не filesystem mtime;
+- UI не сканирует artifact directories;
+- открытие historical Result не мутирует текущую analysis session;
+- ModelVersion catalog и targetless inference history остаются только в разделе `Модели`;
+- `Настройки` остаются отдельным будущим Architect question.
+
+Implementation order:
+`PH-BE1 — Analysis History Read Contract` → `PH-UI1 — History Catalog`.
+
+---
+
 ## Connect Algorithm V1 — product / visual lock accepted / 2026-09-30
 
 Status: **ACCEPTED PRODUCT / VISUAL LOCK — BACKEND IMPLEMENTATION PENDING**.
