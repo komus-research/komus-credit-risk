@@ -244,7 +244,9 @@ R2-UI4A foundation уже реализует basic Object Detail: exact object �
 
 R2-UI4B — **ACCEPTED / CLOSED**, source commit `06f13a11`. Basic OOF facts остаются доступными сразу; Local Explanation запускается автоматически отдельным вызовом `OOFExplanationService.local()` и использует accepted READY / LOADING / ERROR / DETAILED semantics. Explanation failure не подменяет evidence final/refit моделью и не ломает Object Detail.
 
-Следующий R2-UI4C подключает Result Interpreter только по явному действию пользователя поверх validated Local Explanation evidence.
+R2-UI4C — **ACCEPTED / CLOSED**, source commit `6c8cdd71`. После READY Local Explanation пользователь явно выбирает одну trusted role и запускает `Сформировать объяснение`; до этого provider call не выполняется. Capability берётся из application workflow, OOF path не передаёт `loaded_model_version`, retry переиспользует prepared request, regenerate готовит новый request. LLM failure локален и не меняет OOF/SHAP evidence; backend response text отображается без UI-реконструкции.
+
+Следующий Result V2 stage — R2-UI5 / Global OOF Feature Influence по accepted `07_result_global_oof_shap_v1.png`.
 
 Final/refit model fallback запрещён.
 

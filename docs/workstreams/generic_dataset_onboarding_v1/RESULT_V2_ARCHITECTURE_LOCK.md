@@ -370,4 +370,22 @@ Runtime invariants:
 - final/refit и saved ModelVersion fallback запрещены;
 - Result Interpreter / external LLM не входят в R2-UI4B.
 
-Следующий stage — R2-UI4C / Result Interpreter.
+R2-UI4C — Result Interpreter — **ACCEPTED / CLOSED**, source commit `6c8cdd71`.
+
+Принятый runtime path:
+`validated LocalExplanationEvidence → capability gate → explicit user action → prepare_interpretation(evidence, recipient_role) → workflow.interpret(request) → backend response/dispatch receipt`.
+
+Runtime invariants:
+- отдельный Result V2 interpreter state не смешивается с saved-model inference state;
+- interpretation binding = exact `artifact_id + object_id + evidence_hash + recipient_role`;
+- смена роли/object/evidence очищает stale request/outcome/error, но не Local Explanation;
+- capability читается только через application workflow boundary;
+- external LLM никогда не запускается автоматически после Local Explanation;
+- OOF path не передаёт `loaded_model_version` в `prepare_interpretation()`;
+- UI не вызывает provider/client/API key/outbound policy напрямую и не строит REDACTED payload;
+- retry использует уже подготовленный request, если он существует;
+- regenerate заново готовит request для текущих evidence/role;
+- provider error не меняет OOF prediction, threshold или SHAP evidence;
+- response text и technical interpreter/policy/prompt identity берутся только из backend outcome.
+
+Следующий stage — R2-UI5 / Global OOF Feature Influence.
