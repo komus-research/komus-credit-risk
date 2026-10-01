@@ -388,4 +388,21 @@ Runtime invariants:
 - provider error не меняет OOF prediction, threshold или SHAP evidence;
 - response text и technical interpreter/policy/prompt identity берутся только из backend outcome.
 
-Следующий stage — R2-UI5 / Global OOF Feature Influence.
+R2-UI5 — Global OOF Feature Influence — **ACCEPTED / CLOSED**, source commit `7aef2893`.
+
+Принятый runtime path:
+`Overview → GLOBAL_OOF → OOFExplanationService.global_oof(artifact_id) → GlobalOOFExplanation`.
+
+Runtime invariants:
+- cache привязан к exact `artifact_id`; stale evidence другого artifact не отображается;
+- returned artifact binding проверяется fail-closed;
+- threshold не передаётся в `global_oof()` и не инвалидирует cache;
+- scientific metric не пересчитывается в UI: используется backend row-weighted `mean(abs(local SHAP))`;
+- trusted `rank`, exact `column_name` и exact `mean_abs_shap` отображаются без локальной нормализации;
+- bar length может масштабироваться только presentation-wise, signed/directional semantics отсутствуют;
+- global influence не трактуется как causality, business importance или feature-selection recommendation;
+- technical provenance берётся только из `GlobalOOFExplanation`;
+- retry повторяет только `global_oof()`;
+- Result Interpreter / external LLM на Global OOF screen не вызывается.
+
+**Result V2 backend + core UI path закрыты.** Дальнейшие product workstreams не должны переоткрывать scientific Result contracts без новой исследовательской причины.

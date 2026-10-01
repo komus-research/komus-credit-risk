@@ -246,7 +246,9 @@ R2-UI4B — **ACCEPTED / CLOSED**, source commit `06f13a11`. Basic OOF facts о�
 
 R2-UI4C — **ACCEPTED / CLOSED**, source commit `6c8cdd71`. После READY Local Explanation пользователь явно выбирает одну trusted role и запускает `Сформировать объяснение`; до этого provider call не выполняется. Capability берётся из application workflow, OOF path не передаёт `loaded_model_version`, retry переиспользует prepared request, regenerate готовит новый request. LLM failure локален и не меняет OOF/SHAP evidence; backend response text отображается без UI-реконструкции.
 
-Следующий Result V2 stage — R2-UI5 / Global OOF Feature Influence по accepted `07_result_global_oof_shap_v1.png`.
+R2-UI5 — **ACCEPTED / CLOSED**, source commit `7aef2893`. `GLOBAL_OOF` использует только `OOFExplanationService.global_oof(artifact_id)`, кешируется по artifact, не зависит от threshold и отображает trusted rank + exact `mean_abs_shap` без нормализации и directional semantics. Error/retry локальны, LLM не вызывается.
+
+**Result V2 core UX implementation закрыта** по accepted visual locks и public scientific contracts.
 
 Final/refit model fallback запрещён.
 
