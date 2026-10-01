@@ -12,15 +12,15 @@ Streamlit — frozen compatibility frontend. Новые продуктовые U
 
 ## Текущая точка
 
-Native AXION подтверждён до экрана «Проверка перед обучением» (Quality preflight). Главная, Данные, Признаки, Алгоритм и Quality preflight готовы. Полное обучение, native Result, History и Models реализованы частично; Settings UI и backend ещё не реализованы. Product / Architecture / Visual Lock для Settings принят.
+Native AXION подтверждён через полный путь Quality → OOF run → реальный progress → persisted `ExperimentArtifact`. Главная, Данные, Признаки, Алгоритм, Quality preflight и запуск полного обучения готовы. Native Result, History и Models реализованы частично; Settings UI и backend ещё не реализованы. Product / Architecture / Visual Lock для Settings принят.
 
 Подробные статусы, границы и evidence — в [`PROJECT_MAP.md`](PROJECT_MAP.md).
 
-## Блокер и следующий этап
+## Следующий этап
 
-Перед native full experiment нужно определить canonical ownership `ExperimentArtifactStore`: native runtime использует `.native-quality-artifacts`, compatibility runtime — `.streamlit-artifacts`. Не объявлять ни один root каноническим без отдельного evidence/решения и не смешивать хранилища автоматически.
+Canonical native artifact ownership уже зафиксирован: один `ExperimentArtifactStore` в `<repository root>/.axion-artifacts`; `.streamlit-artifacts` остаётся compatibility-only storage.
 
-**NEXT:** Quality preflight → полный OOF-эксперимент → реальный progress → persisted `ExperimentArtifact` → native Result.
+**NEXT:** persisted `ExperimentArtifact` → FastAPI Result read contract → native React Result.
 
 ## Уже существующие reusable части
 
@@ -29,7 +29,7 @@ Native AXION подтверждён до экрана «Проверка пер�
 - `OOFResultService`, `OOFExplanationService`, Global OOF SHAP;
 - Result Interpreter — интерпретатор результата;
 - `AnalysisHistoryService`;
-- принятые native Home / Data / Features / Algorithm / Quality preflight.
+- принятые native Home / Data / Features / Algorithm / Quality preflight / full training wiring.
 
 Новый React UI использует существующие application/core контракты через FastAPI, а не создаёт второй ML pipeline.
 

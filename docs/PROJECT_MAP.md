@@ -3,8 +3,7 @@
 > Этот документ — единственный источник ответа на два вопроса: **где проект находится сейчас** и **что делаем следующим**.
 > Архитектурные, исследовательские и UX-документы сохраняют свои решения и доказательства, но не могут самостоятельно менять текущий NEXT.
 
-Проверено относительно ветки `design/home-v2-algorithm-v2`, commit `2cd94ae1b7a6412f13f2c4f6271e773f55aaf4d4`.
-Состояние рабочей копии на момент проверки: чистое, HEAD совпадает с отслеживаемой веткой origin.
+Продуктовый код текущего этапа проверен относительно ветки `design/home-v2-algorithm-v2`, commit `d00b00bd1aeab6ec5b2842600cb4a46e4f8074a5`.
 
 ## Как читать эту карту
 
@@ -35,8 +34,8 @@ React + TypeScript + Vite
 | Данные | Загрузка, роли столбцов, подтверждение подготовки | Native Data и подтверждение реализованы и приняты | React → FastAPI → preparation | **ГОТОВО** | Ничего для текущего пути |
 | Признаки | Выбор разрешённых признаков | Native Features реализован и принят | React → FastAPI → application/core | **ГОТОВО** | Ничего для текущего пути |
 | Алгоритм | Выбор алгоритма и его настроек | Native Algorithm реализован и принят | React → FastAPI → application/core | **ГОТОВО** | Ничего для текущего пути |
-| Проверка перед обучением | Проверка конфигурации и smoke перед полным запуском | Native Quality preflight реализован; полный запуск намеренно не подключён | React → FastAPI → ExperimentApplicationService | **ГОТОВО** | Следующий этап — подключить полный эксперимент |
-| Полное обучение | Запуск полного OOF-эксперимента с реальным прогрессом и сохранением результата | ExperimentApplicationService и экспериментальное ядро существуют; native end-to-end запуск не подключён | application/core; native wiring частичный | **ЧАСТИЧНО** | Сначала решить ownership artifact store; затем Quality → run → persisted artifact |
+| Проверка перед обучением | Проверка конфигурации и smoke перед полным запуском | Native Quality preflight реализован и принят; после PASS доступен явный запуск полного обучения | React → FastAPI → ExperimentApplicationService | **ГОТОВО** | Ничего для текущего пути |
+| Полное обучение | Запуск полного OOF-эксперимента с реальным прогрессом и сохранением результата | Native Quality запускает существующий `ExperimentApplicationService.run_experiment()`, публикует реальные progress events и сохраняет `ExperimentArtifact` в canonical `.axion-artifacts`; дорогой полный OOF на реальном большом dataset в рамках wiring-этапа не запускался | React → FastAPI → application/core | **ГОТОВО** | Следующий этап — native Result из сохранённого artifact |
 | Результат | Метрики, OOF-результат, объяснения и интерпретация сохранённого эксперимента | Result V2 / OOF / SHAP / Interpreter backend/core существуют; native React route/UI отсутствуют | application/core; compatibility UI существует | **ЧАСТИЧНО** | Нужен сохранённый native artifact и FastAPI → React Result |
 | История | Каталог завершённых экспериментов и открытие точного сохранённого результата | AnalysisHistory backend принят; native React History отсутствует | application/core; compatibility Streamlit catalog существует | **ЧАСТИЧНО** | После native Result подключить History к тому же canonical artifact source |
 | Модели | Работа с сохранёнными версиями моделей | Product / Visual Lock принят; ModelVersion и saved-model inference backend/application компоненты существуют, но native React Models UI и полный trusted browse/persistence path не завершены | application/core + accepted UX/visual locks; native UI отсутствует | **ЧАСТИЧНО** | Только после Result и History |
@@ -44,11 +43,11 @@ React + TypeScript + Vite
 
 ## Текущая точка проекта
 
-**Native AXION подтверждён до экрана «Проверка перед обучением»; следующий незавершённый продуктовый участок — полный эксперимент и сохранение его артефакта.**
+**Native AXION подтверждён через полный Quality → OOF run → реальный progress → persisted `ExperimentArtifact`. Следующий незавершённый продуктовый участок — native Result в React.**
 
 ## Следующий этап
 
-**Проверка перед обучением → полный OOF-эксперимент → реальный progress → сохранённый ExperimentArtifact → переход к native Result.**
+**Сохранённый `ExperimentArtifact` → FastAPI Result read contract → native React Result.**
 ## Что уже существует и не должно переписываться с нуля
 
 - Принятый исследовательский pipeline и ограничения по данным.
@@ -63,24 +62,13 @@ React + TypeScript + Vite
 
 Новый React UI должен использовать эти application/core-контракты через FastAPI, а не создавать второй ML-пайплайн.
 
-## Открытые архитектурные вопросы
+## Зафиксированные архитектурные решения
 
-### Ownership ExperimentArtifactStore — блокер перед полным обучением
+### Единое хранилище результатов native AXION
 
-Сейчас подтверждены разные composition roots:
-- `app/native_runtime.py` создаёт `ExperimentArtifactStore(Path(".native-quality-artifacts"))`;
-- compatibility runtime в `app/bootstrap.py` по умолчанию использует `.streamlit-artifacts`.
+Native composition создаёт один application-owned `ExperimentArtifactStore` в `<repository root>/.axion-artifacts`. Тот же store используется `ExperimentApplicationService`, `OOFResultService`, `OOFExplanationService` и `AnalysisHistoryService`.
 
-**Канонический владелец ещё не выбран.** Нельзя автоматически объявлять один root правильным только по имени.
-
-До подключения полного обучения нужно доказать:
-1. кто записывает и читает каждый root;
-2. какие реальные артефакты уже находятся в каждом root;
-3. какие Result/History/Explanation-контракты зависят от каждого store;
-4. какой один application-owned source должен использовать native run, Result и History;
-5. нужны ли старым артефактам compatibility-only чтение или отдельная миграция.
-
-Запрещено молча смешивать roots, выбирать «latest artifact» из разных roots или мигрировать данные без отдельного решения и проверки.
+`.streamlit-artifacts` остаётся compatibility-only storage. Roots не смешиваются, automatic migration / dual-read / выбор «latest artifact» между ними отсутствуют.
 ## Что НЕ является доказательством готовности
 
 - Наличие аналогичного экрана в Streamlit.
