@@ -506,3 +506,10 @@ def _load_oof_object(
     """Shared private read path preserving public Result V2 identity semantics."""
     service = OOFResultService(artifact_store)
     return _resolve_oof_object(service._context(artifact_id), object_id)
+
+
+def _load_oof_context(
+    artifact_store: ExperimentArtifactStore, artifact_id: str
+) -> _OOFContext:
+    """Shared private V3 evidence loader for fold-bound OOF consumers."""
+    return OOFResultService(artifact_store)._context(artifact_id)
