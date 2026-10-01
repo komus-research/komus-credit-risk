@@ -126,6 +126,108 @@ class _Artifact:
 
 
 class ResultV2UiTests(unittest.TestCase):
+    @staticmethod
+    def _interpreter_evidence(evidence_hash="evidence-hash"):
+        return SimpleNamespace(evidence_hash=evidence_hash)
+
+    def test_result_v2_interpreter_is_explicit_and_uses_exact_oof_boundary(self) -> None:
+        ui = _Streamlit()
+        evidence = self._interpreter_evidence()
+        capability = SimpleNamespace(state="AVAILABLE")
+        response = SimpleNamespace(
+            text="Backend text, unchanged.", interpreter_id="interpreter-1", interpreter_model="model-1"
+        )
+        receipt = SimpleNamespace(
+            policy_id="REDACTED_V1", policy_version=1, prompt_id="result-v2", prompt_version="3"
+        )
+        outcome = SimpleNamespace(response=response, dispatch_receipt=receipt)
+        workflow = SimpleNamespace(
+            capabilities=Mock(return_value={"result_interpretation": capability}),
+            prepare_interpretation=Mock(return_value="prepared-request"),
+            interpret=Mock(return_value=outcome),
+        )
+        runtime = SimpleNamespace(integration_workflow_service=workflow)
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_v2_interpreter(runtime, "artifact", "object", evidence)
+
+        workflow.prepare_interpretation.assert_not_called()
+        workflow.interpret.assert_not_called()
+        self.assertTrue(any(args[0] == "Сформировать объяснение" for args, _ in ui.buttons))
+
+        ui.button_responses["Сформировать объяснение"] = True
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_v2_interpreter(runtime, "artifact", "object", evidence)
+            ui.button_responses["Сформировать объяснение"] = False
+            prototype._render_result_v2_interpreter(runtime, "artifact", "object", evidence)
+
+        workflow.prepare_interpretation.assert_called_once_with(
+            evidence=evidence, recipient_role="credit_controller"
+        )
+        workflow.interpret.assert_called_once_with(request="prepared-request")
+        self.assertIs(ui.session_state.result_v2_interpreter_outcome, outcome)
+        self.assertIn(("Backend text, unchanged.",), [args for args, _ in ui.markdowns])
+        self.assertEqual(
+            ui.session_state.result_v2_interpreter_binding,
+            ("artifact", "object", "evidence-hash", "credit_controller"),
+        )
+
+    def test_result_v2_interpreter_unavailable_capability_disables_action(self) -> None:
+        ui = _Streamlit()
+        evidence = self._interpreter_evidence()
+        workflow = SimpleNamespace(
+            capabilities=Mock(return_value={"result_interpretation": SimpleNamespace(state="MISCONFIGURED")}),
+            prepare_interpretation=Mock(),
+            interpret=Mock(),
+        )
+
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_v2_interpreter(
+                SimpleNamespace(integration_workflow_service=workflow), "artifact", "object", evidence
+            )
+
+        workflow.prepare_interpretation.assert_not_called()
+        workflow.interpret.assert_not_called()
+        self.assertTrue(any(kwargs.get("disabled") for _, kwargs in ui.buttons))
+        self.assertTrue(any("не настроено" in str(message) for message in ui.messages))
+
+    def test_result_v2_retry_reuses_prepared_request_and_regenerate_rebuilds(self) -> None:
+        ui = _Streamlit()
+        evidence = self._interpreter_evidence()
+        capability = SimpleNamespace(state="AVAILABLE")
+        first_outcome = SimpleNamespace(response=SimpleNamespace(text="first"), dispatch_receipt=None)
+        second_outcome = SimpleNamespace(response=SimpleNamespace(text="second"), dispatch_receipt=None)
+        workflow = SimpleNamespace(
+            capabilities=Mock(return_value={"result_interpretation": capability}),
+            prepare_interpretation=Mock(return_value="same-request"),
+            interpret=Mock(side_effect=[RuntimeError("private error"), first_outcome, second_outcome]),
+        )
+        runtime = SimpleNamespace(integration_workflow_service=workflow)
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_v2_interpreter(runtime, "artifact", "object", evidence)
+            ui.button_responses["Сформировать объяснение"] = True
+            prototype._render_result_v2_interpreter(runtime, "artifact", "object", evidence)
+            ui.button_responses["Сформировать объяснение"] = False
+            ui.button_responses["Повторить"] = True
+            prototype._render_result_v2_interpreter(runtime, "artifact", "object", evidence)
+
+        workflow.prepare_interpretation.assert_called_once_with(
+            evidence=evidence, recipient_role="credit_controller"
+        )
+        self.assertEqual(
+            workflow.interpret.call_args_list,
+            [unittest.mock.call(request="same-request")] * 2,
+        )
+        self.assertEqual(ui.session_state.result_v2_interpreter_outcome, first_outcome)
+        self.assertEqual(ui.session_state.result_v2_interpreter_error_code, None)
+        self.assertNotIn("private error", str(ui.errors))
+
+        ui.button_responses["Сформировать заново"] = True
+        with patch.object(prototype, "st", ui):
+            prototype._render_result_v2_interpreter(runtime, "artifact", "object", evidence)
+        self.assertEqual(workflow.prepare_interpretation.call_count, 2)
+        self.assertEqual(workflow.interpret.call_count, 3)
+
     def _summary(self):
         return SimpleNamespace(
             artifact_id="artifact-1",

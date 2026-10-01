@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import unittest
 
 from app.session_state import (
+    bind_result_v2_interpreter,
     apply_feature_widget_selection,
     apply_group_widget_selection,
     initialize,
@@ -123,6 +124,13 @@ class SessionStateTests(unittest.TestCase):
         self.state["result_v2_objects_outcomes"] = ("FP",)
         self.state["result_v2_objects_offset"] = 50
         self.state["result_v2_selected_object_id"] = "keep-on-home"
+        binding = ("saved-artifact", "keep-on-home", "evidence-hash", "credit_controller")
+        outcome = object()
+        self.state.update(
+            result_v2_interpreter_binding=binding,
+            result_v2_interpreter_request=object(),
+            result_v2_interpreter_outcome=outcome,
+        )
         open_home(self.state)
         open_result(self.state)
         self.assertEqual(self.state["result_v2_view"], "THRESHOLD")
@@ -132,6 +140,8 @@ class SessionStateTests(unittest.TestCase):
         self.assertEqual(self.state["result_v2_objects_target"], "NEGATIVE")
         self.assertEqual(self.state["result_v2_objects_outcomes"], ("FP",))
         self.assertEqual(self.state["result_v2_objects_offset"], 50)
+        self.assertEqual(self.state["result_v2_interpreter_binding"], binding)
+        self.assertIs(self.state["result_v2_interpreter_outcome"], outcome)
 
     def test_object_change_clears_only_object_local_explanation_cache(self) -> None:
         evidence = object()
@@ -141,6 +151,10 @@ class SessionStateTests(unittest.TestCase):
             result_v2_local_explanation_object_id="object-1",
             result_v2_local_explanation_error_code="old-error",
             result_v2_local_explanation_mode="DETAILED",
+            result_v2_interpreter_binding=("artifact-1", "object-1", "hash", "credit_controller"),
+            result_v2_interpreter_request=object(),
+            result_v2_interpreter_outcome=object(),
+            result_v2_interpreter_error_code="old-interpreter-error",
         )
 
         set_result_v2_selected_object_id(self.state, "object-2")
@@ -150,6 +164,60 @@ class SessionStateTests(unittest.TestCase):
         self.assertIsNone(self.state["result_v2_local_explanation_object_id"])
         self.assertIsNone(self.state["result_v2_local_explanation_error_code"])
         self.assertEqual(self.state["result_v2_local_explanation_mode"], "BRIEF")
+        self.assertIsNone(self.state["result_v2_interpreter_binding"])
+        self.assertIsNone(self.state["result_v2_interpreter_request"])
+        self.assertIsNone(self.state["result_v2_interpreter_outcome"])
+        self.assertIsNone(self.state["result_v2_interpreter_error_code"])
+
+    def test_result_v2_interpreter_binding_preserves_same_result_and_clears_changed_inputs(self) -> None:
+        initialize(self.state)
+        original = ("artifact-1", "object-1", "evidence-1", "credit_controller")
+        self.assertEqual(
+            bind_result_v2_interpreter(
+                self.state,
+                artifact_id=original[0], object_id=original[1],
+                evidence_hash=original[2], recipient_role=original[3],
+            ),
+            original,
+        )
+        outcome, request = object(), object()
+        evidence = object()
+        self.state.update(
+            result_v2_interpreter_outcome=outcome,
+            result_v2_interpreter_request=request,
+            result_v2_local_explanation_evidence=evidence,
+        )
+
+        bind_result_v2_interpreter(
+            self.state,
+            artifact_id=original[0], object_id=original[1],
+            evidence_hash=original[2], recipient_role=original[3],
+        )
+        self.assertIs(self.state["result_v2_interpreter_outcome"], outcome)
+        self.assertIs(self.state["result_v2_interpreter_request"], request)
+
+        bind_result_v2_interpreter(
+            self.state,
+            artifact_id=original[0], object_id=original[1],
+            evidence_hash=original[2], recipient_role="lawyer",
+        )
+        self.assertIsNone(self.state["result_v2_interpreter_outcome"])
+        self.assertIsNone(self.state["result_v2_interpreter_request"])
+        self.assertIsNone(self.state["result_v2_interpreter_error_code"])
+        self.assertIs(self.state["result_v2_local_explanation_evidence"], evidence)
+        self.assertEqual(
+            self.state["result_v2_interpreter_binding"],
+            ("artifact-1", "object-1", "evidence-1", "lawyer"),
+        )
+
+        self.state.update(result_v2_interpreter_outcome=outcome, result_v2_interpreter_request=request)
+        bind_result_v2_interpreter(
+            self.state,
+            artifact_id="artifact-2", object_id="object-1",
+            evidence_hash="evidence-1", recipient_role="lawyer",
+        )
+        self.assertIsNone(self.state["result_v2_interpreter_outcome"])
+        self.assertIsNone(self.state["result_v2_interpreter_request"])
 
     def test_new_artifact_resets_local_explanation_but_home_result_keeps_it(self) -> None:
         self.state.update(
@@ -158,6 +226,9 @@ class SessionStateTests(unittest.TestCase):
             result_v2_local_explanation_object_id="object-1",
             result_v2_local_explanation_error_code="old-error",
             result_v2_local_explanation_mode="DETAILED",
+            result_v2_interpreter_binding=("old-artifact", "object-1", "old-hash", "lawyer"),
+            result_v2_interpreter_request=object(),
+            result_v2_interpreter_outcome=object(),
         )
         open_home(self.state)
         open_result(self.state)
@@ -170,6 +241,10 @@ class SessionStateTests(unittest.TestCase):
         self.assertIsNone(self.state["result_v2_local_explanation_object_id"])
         self.assertIsNone(self.state["result_v2_local_explanation_error_code"])
         self.assertEqual(self.state["result_v2_local_explanation_mode"], "BRIEF")
+        self.assertEqual(self.state["result_v2_interpreter_role"], "credit_controller")
+        self.assertIsNone(self.state["result_v2_interpreter_binding"])
+        self.assertIsNone(self.state["result_v2_interpreter_request"])
+        self.assertIsNone(self.state["result_v2_interpreter_outcome"])
 
     def test_unprepared_source_clears_context_and_blocks_downstream_state(self) -> None:
         prepared_context = SimpleNamespace(context_id="accepted", loaded_dataset=SimpleNamespace(contract="accepted"))

@@ -23,6 +23,7 @@ from app.feature_display import group_feature_ids_by_family
 from app.session_state import (
     apply_feature_widget_selection,
     apply_group_widget_selection,
+    bind_result_v2_interpreter,
     can_run,
     cancel_new_analysis,
     confirm_new_analysis,
@@ -43,6 +44,9 @@ from app.session_state import (
     set_loaded_model_version,
     set_local_explanation_evidence,
     set_result_v2_selected_object_id,
+    set_result_v2_interpreter_error,
+    set_result_v2_interpreter_outcome,
+    set_result_v2_interpreter_request,
     set_prediction_batch,
     set_role_result_interpretation_error,
     set_role_result_interpretation_success,
@@ -1825,6 +1829,117 @@ def _render_oof_object_explanation(runtime: Any, artifact_id: str, object_id: st
         _render_oof_explanation_detailed(evidence)
     else:
         _render_oof_explanation_brief(evidence)
+    _render_result_v2_interpreter(runtime, artifact_id, object_id, evidence)
+
+
+def _render_result_v2_interpreter(
+    runtime: Any, artifact_id: str, object_id: str, evidence: Any
+) -> None:
+    """Offer explicit, capability-gated text interpretation of validated OOF evidence."""
+    state = st.session_state
+    st.subheader("Понятное объяснение")
+    selected_role = st.selectbox(
+        "Роль",
+        options=RESULT_INTERPRETER_ROLES,
+        format_func=lambda role: _RESULT_INTERPRETER_ROLE_LABELS[role],
+        key="result_v2_interpreter_role",
+        label_visibility="collapsed",
+    )
+    evidence_hash = _evidence_value(evidence, "evidence_hash")
+    if not isinstance(evidence_hash, str) or not evidence_hash:
+        # Validated V2 evidence carries its own stable hash. Fail closed if a
+        # malformed object ever crosses the UI boundary.
+        st.info("Текстовое объяснение недоступно для этих данных.")
+        return
+    bind_result_v2_interpreter(
+        state,
+        artifact_id=artifact_id,
+        object_id=object_id,
+        evidence_hash=evidence_hash,
+        recipient_role=selected_role,
+    )
+    workflow = runtime.integration_workflow_service
+    capability = workflow.capabilities(
+        local_explanation_evidence=evidence
+    )["result_interpretation"]
+    if capability.state != "AVAILABLE":
+        unavailable_messages = {
+            "DISABLED": "Формирование текстового объяснения отключено политикой передачи данных.",
+            "MISCONFIGURED": "Текстовое объяснение сейчас не настроено.",
+            "WAITING_FOR_INPUT": "Для текстового объяснения пока не хватает данных.",
+            "UNSUPPORTED": "Текстовое объяснение для этих данных недоступно.",
+        }
+        st.info(unavailable_messages.get(capability.state, "Текстовое объяснение сейчас недоступно."))
+        st.button("Сформировать объяснение", disabled=True, key="result-v2-interpret")
+        return
+
+    outcome = state.get("result_v2_interpreter_outcome")
+    error_code = state.get("result_v2_interpreter_error_code")
+    if outcome is not None:
+        response = getattr(outcome, "response", None)
+        response_text = getattr(response, "text", None)
+        if isinstance(response_text, str):
+            st.markdown(response_text)
+        with st.expander("Технические сведения", expanded=False):
+            st.caption(f"Interpreter: {getattr(response, 'interpreter_id', '')}")
+            st.caption(f"Model: {getattr(response, 'interpreter_model', '')}")
+            receipt = getattr(outcome, "dispatch_receipt", None)
+            if receipt is not None:
+                st.caption(
+                    f"Policy: {getattr(receipt, 'policy_id', '')} v{getattr(receipt, 'policy_version', '')} · "
+                    f"Prompt: {getattr(receipt, 'prompt_id', '')} v{getattr(receipt, 'prompt_version', '')}"
+                )
+        if st.button("Сформировать заново", key="result-v2-regenerate"):
+            _execute_result_v2_interpretation(
+                workflow, evidence, selected_role, fresh_request=True
+            )
+            st.rerun()
+        return
+
+    if error_code is not None:
+        st.error("Не удалось сформировать текстовое объяснение.")
+        if st.button("Повторить", key="result-v2-retry"):
+            _execute_result_v2_interpretation(
+                workflow, evidence, selected_role, fresh_request=False
+            )
+            st.rerun()
+        return
+
+    if st.button("Сформировать объяснение", key="result-v2-interpret"):
+        _execute_result_v2_interpretation(
+            workflow, evidence, selected_role, fresh_request=True
+        )
+        st.rerun()
+
+
+def _execute_result_v2_interpretation(
+    workflow: Any, evidence: Any, recipient_role: str, *, fresh_request: bool
+) -> None:
+    """Prepare only on explicit action, retaining prepared requests for retry."""
+    state = st.session_state
+    request = state.get("result_v2_interpreter_request")
+    if fresh_request:
+        state["result_v2_interpreter_request"] = None
+        state["result_v2_interpreter_outcome"] = None
+        state["result_v2_interpreter_error_code"] = None
+        request = None
+    elif request is None:
+        request = None
+    try:
+        if request is None:
+            request = workflow.prepare_interpretation(
+                evidence=evidence,
+                recipient_role=recipient_role,
+            )
+            set_result_v2_interpreter_request(state, request)
+        with st.spinner("Формируем текстовое объяснение…"):
+            outcome = workflow.interpret(request=request)
+    except Exception:
+        set_result_v2_interpreter_error(
+            state, "RESULT_V2_INTERPRETATION_FAILED"
+        )
+    else:
+        set_result_v2_interpreter_outcome(state, outcome)
 
 
 def _evidence_value(evidence: Any, name: str, default: Any = None) -> Any:

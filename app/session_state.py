@@ -46,6 +46,11 @@ _DEFAULTS = {
     "result_v2_local_explanation_object_id": None,
     "result_v2_local_explanation_error_code": None,
     "result_v2_local_explanation_mode": "BRIEF",
+    "result_v2_interpreter_role": "credit_controller",
+    "result_v2_interpreter_binding": None,
+    "result_v2_interpreter_request": None,
+    "result_v2_interpreter_outcome": None,
+    "result_v2_interpreter_error_code": None,
     "result_v2_threshold": 0.5,
     "result_v2_objects_search": "",
     "result_v2_objects_target": "ANY",
@@ -484,6 +489,7 @@ def _reset_result_v2_state(state: MutableMapping[str, Any]) -> None:
     state["result_v2_selected_object_id"] = None
     state["result_v2_object_detail_cache"] = None
     _reset_result_v2_local_explanation(state)
+    _reset_result_v2_interpreter(state, reset_role=True)
     state["result_v2_threshold"] = 0.5
     state["result_v2_objects_search"] = ""
     state["result_v2_objects_target"] = "ANY"
@@ -501,6 +507,53 @@ def _reset_result_v2_local_explanation(state: MutableMapping[str, Any]) -> None:
     state["result_v2_local_explanation_object_id"] = None
     state["result_v2_local_explanation_error_code"] = None
     state["result_v2_local_explanation_mode"] = "BRIEF"
+    _reset_result_v2_interpreter(state)
+
+
+def _reset_result_v2_interpreter(
+    state: MutableMapping[str, Any], *, reset_role: bool = False
+) -> None:
+    """Clear interpretation state owned by the current OOF evidence binding."""
+    state["result_v2_interpreter_binding"] = None
+    state["result_v2_interpreter_request"] = None
+    state["result_v2_interpreter_outcome"] = None
+    state["result_v2_interpreter_error_code"] = None
+    if reset_role:
+        state["result_v2_interpreter_role"] = "credit_controller"
+
+
+def bind_result_v2_interpreter(
+    state: MutableMapping[str, Any],
+    *,
+    artifact_id: str,
+    object_id: str,
+    evidence_hash: str,
+    recipient_role: str,
+) -> tuple[str, str, str, str]:
+    """Keep interpretation only while its artifact/object/evidence/role is unchanged."""
+    _validate_interpreter_role(recipient_role)
+    binding = (artifact_id, object_id, evidence_hash, recipient_role)
+    current = state.get("result_v2_interpreter_binding")
+    if current is not None and current != binding:
+        _reset_result_v2_interpreter(state)
+    state["result_v2_interpreter_binding"] = binding
+    return binding
+
+
+def set_result_v2_interpreter_request(state: MutableMapping[str, Any], request: Any) -> None:
+    state["result_v2_interpreter_request"] = request
+    state["result_v2_interpreter_outcome"] = None
+    state["result_v2_interpreter_error_code"] = None
+
+
+def set_result_v2_interpreter_outcome(state: MutableMapping[str, Any], outcome: Any) -> None:
+    state["result_v2_interpreter_outcome"] = outcome
+    state["result_v2_interpreter_error_code"] = None
+
+
+def set_result_v2_interpreter_error(state: MutableMapping[str, Any], error_code: str) -> None:
+    state["result_v2_interpreter_outcome"] = None
+    state["result_v2_interpreter_error_code"] = error_code
 
 
 def set_result_v2_selected_object_id(
