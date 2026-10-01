@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from math import isfinite
+from numbers import Real
 from secrets import token_urlsafe
 from threading import RLock
 from typing import Any, Callable
@@ -153,6 +155,7 @@ class _NativeAnalysisSession:
     quality_training_folds_total: int | None = None
     quality_training_artifact_id: str | None = None
     quality_training_failure_code: str | None = None
+    result_threshold: float = 0.5
 
     def snapshot(self) -> NativeSessionSnapshot:
         return NativeSessionSnapshot(
@@ -224,6 +227,33 @@ class NativeSessionStore:
             if session.resume_route() != "#/analysis/result":
                 return None
             return session.quality_training_artifact_id
+
+    def current_result_threshold(self, session_id: str) -> float | None:
+        """Return the transient threshold only while this session has a ready Result."""
+        with self._lock:
+            session = self._session(session_id)
+            if session.resume_route() != "#/analysis/result":
+                return None
+            return session.result_threshold
+
+    def set_current_result_threshold(
+        self, session_id: str, artifact_id: str, threshold: float
+    ) -> bool:
+        """Store a service-validated threshold for the same still-current Result."""
+        if isinstance(threshold, bool) or not isinstance(threshold, Real):
+            raise ValueError("A validated result threshold is required.")
+        value = float(threshold)
+        if not isfinite(value) or not 0 <= value <= 1:
+            raise ValueError("A validated result threshold is required.")
+        with self._lock:
+            session = self._session(session_id)
+            if (
+                session.resume_route() != "#/analysis/result"
+                or session.quality_training_artifact_id != artifact_id
+            ):
+                return False
+            session.result_threshold = value
+            return True
 
     def reconcile_prepared_context(
         self, session_id: str, context_is_trusted: Callable[[str], bool]
@@ -865,6 +895,7 @@ class NativeSessionStore:
         session.quality_training_folds_total = None
         session.quality_training_artifact_id = None
         session.quality_training_failure_code = None
+        session.result_threshold = 0.5
 
     def _require_quality(self, session_id: str) -> _NativeAnalysisSession:
         session = self._require_algorithm(session_id)

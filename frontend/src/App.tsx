@@ -6,6 +6,7 @@ import { AlgorithmPage } from './pages/AlgorithmPage'
 import { FeaturesPage } from './pages/FeaturesPage'
 import { QualityPage } from './pages/QualityPage'
 import { ResultPage } from './pages/ResultPage'
+import { ThresholdPage } from './pages/ThresholdPage'
 import { currentRoute, guardedRoute, navigate, replaceRoute, routes, type CanonicalRoute } from './routing'
 
 const recoveryText = 'Сессия подготовки была сброшена. Загрузите файл повторно.'
@@ -16,6 +17,7 @@ export function App() {
   const [sessionReady, setSessionReady] = useState(false)
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
   const requestedRoute = useRef(route)
+  const resultThresholdAccess = useRef(false)
 
   const sync = useCallback(async (requested: CanonicalRoute, stale = false) => {
     requestedRoute.current = requested
@@ -24,8 +26,9 @@ export function App() {
       if (requestedRoute.current !== requested || currentRoute() !== requested) return
       setSession(next)
       setSessionReady(true)
-      const allowed = guardedRoute(requested, next)
+      const allowed = guardedRoute(requested, next, resultThresholdAccess.current)
       if (allowed !== requested) {
+        if (requested === routes.resultThreshold) resultThresholdAccess.current = false
         if (stale || (requested === routes.roles && allowed === routes.file)) setRecoveryMessage(recoveryText)
         replaceRoute(allowed)
         requestedRoute.current = allowed
@@ -42,12 +45,14 @@ export function App() {
     const onHashChange = () => {
       const next = currentRoute()
       if (next === null) {
+        resultThresholdAccess.current = false
         replaceRoute(routes.home)
         requestedRoute.current = routes.home
         setRoute(routes.home)
         void sync(routes.home)
         return
       }
+      if (next !== routes.resultThreshold) resultThresholdAccess.current = false
       requestedRoute.current = next
       setRoute(next)
       setSessionReady(false)
@@ -86,6 +91,10 @@ export function App() {
   }, [sync])
 
   const openHome = useCallback(() => navigate(routes.home), [])
+  const openResultThreshold = useCallback(() => {
+    resultThresholdAccess.current = true
+    navigate(routes.resultThreshold)
+  }, [])
   const continueAnalysis = useCallback(() => { if (session) navigate(session.resume_route) }, [session])
   const handleDatasetUploaded = useCallback(() => {
     setRecoveryMessage(null)
@@ -97,6 +106,7 @@ export function App() {
   if (route === routes.features) return <FeaturesPage onHome={openHome} onSessionChange={setSession} />
   if (route === routes.algorithm) return <AlgorithmPage onHome={openHome} />
   if (route === routes.quality) return <QualityPage onHome={openHome} />
-  if (route === routes.result) return <ResultPage onHome={openHome} />
+  if (route === routes.result) return <ResultPage onHome={openHome} onOpenThreshold={openResultThreshold} />
+  if (route === routes.resultThreshold) return <ThresholdPage onHome={openHome} />
   return <DataPage route={route} sessionReady={sessionReady} onHome={openHome} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
 }

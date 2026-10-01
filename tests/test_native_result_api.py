@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.main import create_app
+from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.native_session import NativeSessionStore, QualityTrainingStatus
 
 
@@ -50,7 +51,9 @@ class _ResultService:
 
     def threshold(self, artifact_id: str, threshold: float):
         self.calls.append(("threshold", artifact_id, threshold))
-        return self.threshold_value
+        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
+            raise OOFResultError("INVALID_THRESHOLD")
+        return SimpleNamespace(**{**vars(self.threshold_value), "threshold": float(threshold)})
 
 
 def _client(result_service: _ResultService):
@@ -77,6 +80,17 @@ def test_result_is_not_ready_before_current_training_completion() -> None:
     assert service.calls == []
 
 
+def test_threshold_patch_is_not_ready_before_current_training_completion() -> None:
+    service = _ResultService()
+    client, _store, _session_id = _client(service)
+
+    response = client.patch("/api/v1/result/threshold", json={"threshold": 0.65})
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_NOT_READY"
+    assert service.calls == []
+
+
 def test_result_uses_exact_current_artifact_and_returns_service_values() -> None:
     service = _ResultService()
     client, store, session_id = _client(service)
@@ -97,6 +111,69 @@ def test_result_uses_exact_current_artifact_and_returns_service_values() -> None
     assert payload["threshold"]["f1"] == 0.4
     assert payload["threshold"]["above_threshold_share"] == 0.25
     assert "filesystem" not in response.text.lower()
+
+
+def test_threshold_patch_saves_session_value_and_next_get_uses_it() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.patch("/api/v1/result/threshold", json={"threshold": 0.65})
+
+    assert response.status_code == 200, response.text
+    assert service.calls == [("threshold", "artifact-exact", 0.65)]
+    assert response.json() == {
+        "threshold": 0.65, "tp": 10, "tn": 80, "fp": 20, "fn": 10,
+        "precision": 1 / 3, "recall": 0.5, "f1": 0.4,
+        "above_threshold_count": 30, "above_threshold_share": 0.25,
+    }
+    assert store.current_result_threshold(session_id) == 0.65
+
+    service.calls.clear()
+    overview = client.get("/api/v1/result")
+
+    assert overview.status_code == 200
+    assert service.calls == [
+        ("summary", "artifact-exact", None),
+        ("threshold", "artifact-exact", 0.65),
+    ]
+    assert overview.json()["threshold"]["threshold"] == 0.65
+
+
+def test_invalid_threshold_does_not_change_current_session_value() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.patch("/api/v1/result/threshold", json={"threshold": 1.5})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "INVALID_THRESHOLD",
+        "message": "Порог должен быть числом от 0 до 1.",
+    }
+    assert store.current_result_threshold(session_id) == 0.5
+
+
+def test_threshold_patch_service_error_is_safe_and_does_not_change_session() -> None:
+    class BrokenService(_ResultService):
+        def threshold(self, artifact_id: str, threshold: float):
+            self.calls.append(("threshold", artifact_id, threshold))
+            raise RuntimeError("private path and traceback details")
+
+    service = BrokenService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.patch("/api/v1/result/threshold", json={"threshold": 0.65})
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "RESULT_READ_ERROR",
+        "message": "Не удалось прочитать сохранённый результат.",
+    }
+    assert "private path" not in response.text
+    assert store.current_result_threshold(session_id) == 0.5
 
 
 def test_result_service_error_is_safe_and_does_not_leak_exception_text() -> None:
@@ -135,7 +212,12 @@ def test_session_resume_tracks_completed_artifact_and_quality_invalidation() -> 
     _completed_session(store, session_id, "artifact-exact")
     assert store.snapshot(session_id).resume_route == "#/analysis/result"
     assert store.current_result_artifact_id(session_id) == "artifact-exact"
+    assert store.current_result_threshold(session_id) == 0.5
+    assert store.set_current_result_threshold(session_id, "artifact-exact", 0.7)
+    assert store.current_result_threshold(session_id) == 0.7
 
     store.set_quality_settings(session_id, seed=42, folds=5)
     assert store.snapshot(session_id).resume_route == "#/analysis/quality"
     assert store.current_result_artifact_id(session_id) is None
+    assert store.current_result_threshold(session_id) is None
+    assert store._sessions[session_id].result_threshold == 0.5

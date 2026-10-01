@@ -16,7 +16,7 @@ function foldValue(value: unknown): string {
   return JSON.stringify(value)
 }
 
-export function ResultPage({ onHome }: { onHome: () => void }) {
+export function ResultPage({ onHome, onOpenThreshold }: { onHome: () => void; onOpenThreshold: () => void }) {
   const [result, setResult] = useState<ResultOverview | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -54,7 +54,7 @@ export function ResultPage({ onHome }: { onHome: () => void }) {
         <article className="result-ranking panel"><small>PR-AUC</small><strong>{metric(summary.pr_auc)}</strong></article>
       </div></section>
 
-      <section className="result-section"><div className="result-section-heading"><div><h2>Диагностический порог: {thresholdFormat.format(threshold.threshold)}</h2><p>Порог 0,50 используется здесь только для диагностического просмотра и не является автоматически выбранным бизнес-порогом.</p></div></div>
+      <section className="result-section"><div className="result-section-heading"><div><h2>Диагностический порог: {thresholdFormat.format(threshold.threshold)}</h2><p>Порог {thresholdFormat.format(threshold.threshold)} используется здесь только для диагностического просмотра и не является автоматически выбранным бизнес-порогом.</p></div></div>
         <div className="result-threshold-grid">
           <article className="result-threshold-card panel"><small>Precision</small><strong>{metric(threshold.precision)}</strong></article>
           <article className="result-threshold-card panel"><small>Recall</small><strong>{metric(threshold.recall)}</strong></article>
@@ -73,7 +73,7 @@ export function ResultPage({ onHome }: { onHome: () => void }) {
 
       <details className="result-technical panel"><summary>Технические сведения</summary><dl><div><dt>Artifact ID</dt><dd>{summary.artifact_id}</dd></div><div><dt>Result ID</dt><dd>{summary.result_id}</dd></div><div><dt>Уровень оценки</dt><dd>{summary.evaluation_level}</dd></div><div><dt>Время выполнения</dt><dd>{summary.runtime_seconds === null ? 'Не сохранено' : `${numberFormat.format(summary.runtime_seconds)} с`}</dd></div></dl></details>
 
-      <nav className="result-actions" aria-label="Другие разделы результата"><button className="secondary-action" disabled>Исследовать порог</button><button className="secondary-action" disabled>Посмотреть объекты</button><button className="secondary-action" disabled>Подробнее о влиянии признаков</button></nav>
+      <nav className="result-actions" aria-label="Другие разделы результата"><button className="secondary-action" onClick={onOpenThreshold}>Исследовать порог</button><button className="secondary-action" disabled>Посмотреть объекты</button><button className="secondary-action" disabled>Подробнее о влиянии признаков</button></nav>
     </>}
   </main></div>
 }

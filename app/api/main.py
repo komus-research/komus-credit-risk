@@ -214,6 +214,12 @@ class ResultOverviewResponse(BaseModel):
     threshold: ResultThresholdResponse
 
 
+class ResultThresholdPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    threshold: Any
+
+
 def _session_response(snapshot: NativeSessionSnapshot) -> SessionResponse:
     return SessionResponse(
         current_step=snapshot.current_step,
@@ -295,9 +301,15 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 status_code=409,
                 detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
             )
+        current_threshold = store.current_result_threshold(resolved_session_id)
+        if current_threshold is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
         try:
             summary = result_service.summary(artifact_id)
-            threshold = result_service.threshold(artifact_id, 0.5)
+            threshold = result_service.threshold(artifact_id, current_threshold)
         except OOFResultError as exc:
             raise HTTPException(
                 status_code=409,
@@ -337,6 +349,57 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 above_threshold_count=threshold.above_threshold_count,
                 above_threshold_share=threshold.above_threshold_share,
             ),
+        )
+
+    @api.patch("/api/v1/result/threshold", response_model=ResultThresholdResponse)
+    def update_current_result_threshold(
+        payload: ResultThresholdPatch,
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> ResultThresholdResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
+        try:
+            threshold = result_service.threshold(artifact_id, payload.threshold)
+        except OOFResultError as exc:
+            if exc.code == "INVALID_THRESHOLD":
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "INVALID_THRESHOLD", "message": "Порог должен быть числом от 0 до 1."},
+                ) from None
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "RESULT_READ_ERROR", "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+
+        if not store.set_current_result_threshold(
+            resolved_session_id, artifact_id, threshold.threshold
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
+        return ResultThresholdResponse(
+            threshold=threshold.threshold,
+            tp=threshold.tp,
+            tn=threshold.tn,
+            fp=threshold.fp,
+            fn=threshold.fn,
+            precision=threshold.precision,
+            recall=threshold.recall,
+            f1=threshold.f1,
+            above_threshold_count=threshold.above_threshold_count,
+            above_threshold_share=threshold.above_threshold_share,
         )
 
     def features_response(session_id: str) -> FeaturesResponse:

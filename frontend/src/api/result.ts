@@ -38,3 +38,16 @@ export async function getCurrentResult(): Promise<ResultOverview> {
   }
   return response.json() as Promise<ResultOverview>
 }
+
+export async function updateCurrentThreshold(threshold: number): Promise<ThresholdMetrics> {
+  const response = await fetch('/api/v1/result/threshold', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ threshold }),
+  })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { message?: string } } | null
+    throw new Error(payload?.detail?.message ?? 'Не удалось изменить диагностический порог.')
+  }
+  return response.json() as Promise<ThresholdMetrics>
+}
