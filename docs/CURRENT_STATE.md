@@ -1291,7 +1291,11 @@ Result V2 backend закрыт.
 
 R2-UI1 — **Result Overview + Navigation Foundation — ACCEPTED / CLOSED**. Source commit: `d7d3b7073681204a29a53ec3e2e82b854fd0b25b`. `PrototypeRuntime` теперь отдаёт `OOFResultService`; Result Overview получает scientific facts только через `summary()` и `threshold()`, имеет session state `result_v2_view=OVERVIEW` / `result_v2_threshold=0.5`, fail-closed при service error и не возвращается к direct `artifact.run_output.result`. Training, Save Model и targetless inference flow сохранены.
 
-Следующий implementation stage — **R2-UI2 / Threshold Explorer** поверх одного immutable OOF Result и session threshold.
+R2-UI2 — **Threshold Explorer — ACCEPTED / CLOSED**. Source commit: `8050a9c5761963555a1181bede2150305979cfee`. Overview показывает компактную threshold-summary для сохранённого `result_v2_threshold` без второго editable control; отдельный Threshold Explorer меняет только session threshold и получает `Recall / Precision / F1 / TP / TN / FP / FN / above-threshold` исключительно через `OOFResultService.threshold()`. Gini / ROC-AUC / PR-AUC читаются через `summary()` и от threshold не зависят. Изменение threshold не переобучает модель, не меняет OOF scores и не создаёт новый Result. Service errors работают fail-closed без direct-artifact fallback.
+
+Публичного threshold-sweep/curve DTO пока нет, поэтому Recall/Precision curves в runtime R2-UI2 намеренно не реконструируются из OOF arrays и не имитируются серией скрытых threshold-вызовов.
+
+Следующий implementation stage — **R2-UI3 / Objects** поверх принятого `OOFResultService.objects()` contract.
 
 Result visual locks теперь дополнительно включают Global OOF feature influence (`07_result_global_oof_shap_v1.png`), Local Explanation LOADING (`08_result_object_detail_explanation_loading_v1.png`), Local Explanation ERROR (`09_result_object_detail_explanation_error_v1.png`), detailed Local Explanation (`10_result_object_detail_explanation_detailed_v1.png`), Result Interpreter LOADING (`11_result_object_detail_llm_loading_v1.png`) и Result Interpreter ERROR (`12_result_object_detail_llm_error_v1.png`).
 

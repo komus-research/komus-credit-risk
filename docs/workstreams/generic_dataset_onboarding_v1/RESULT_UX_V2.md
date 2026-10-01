@@ -69,6 +69,8 @@ Capture/coverage view не определяет автоматически оп�
 
 Visual lock: `03_threshold_explorer_v1.png`.
 
+Implementation status: **R2-UI2 — ACCEPTED / CLOSED**, source commit `8050a9c5761963555a1181bede2150305979cfee`.
+
 Threshold Explorer работает только с сохранёнными OOF scores текущего accepted run.
 Изменение threshold:
 - НЕ переобучает модель;
@@ -94,6 +96,10 @@ Semantic accents:
 
 Threshold Explorer не выбирает «лучший» или business-optimal threshold автоматически.
 Сохранение сценария возможно только через backend contract, если такой contract принят.
+
+В принятом R2-UI2 runtime один `result_v2_threshold` сохраняется в session state: Overview показывает компактную сводку для текущего значения без editable slider, а отдельный Threshold Explorer является единственной точкой изменения threshold. Все threshold-dependent значения приходят только из `OOFResultService.threshold()`; Gini / ROC-AUC / PR-AUC — из `summary()`.
+
+Visual reference содержит threshold-dependence curves, но public sweep DTO сейчас отсутствует. Поэтому R2-UI2 честно откладывает Recall/Precision curves: UI не читает OOF arrays, не реконструирует их локально и не выполняет скрытый grid вызовов `threshold()` только ради совпадения с PNG.
 
 ## 4. Экран «Объекты оценки»
 
@@ -292,7 +298,7 @@ Product semantics detail зафиксированы:
 ## 9. Acceptance для реализации visual layer
 
 Developer должен:
-1. использовать пять текущих visual lock PNG;
+1. использовать актуальные принятые visual lock PNG из списка в начале документа;
 2. не хардкодить демонстрационные значения;
 3. сохранить semantic colors и marker matrix;
 4. не смешивать target fact, threshold position и classification outcome;

@@ -314,4 +314,12 @@ Native Result migration теперь начата через public boundary:
 `artifact_id → OOFResultService.summary()/threshold() → Result Overview`.
 Direct scientific rendering из `artifact.run_output.result` в Overview больше не является допустимым fallback.
 
-Следующий stage — R2-UI2 / Threshold Explorer.
+R2-UI2 — Threshold Explorer — **ACCEPTED / CLOSED**, source commit `8050a9c5761963555a1181bede2150305979cfee`.
+
+Принятый UI path:
+`result_v2_threshold → OOFResultService.threshold(artifact_id, threshold) → Overview compact summary / Threshold Explorer`.
+Overview не имеет второго editable threshold control; Threshold Explorer является единственным местом изменения session threshold. Возврат в Overview сохраняет выбранное значение. Threshold-dependent metrics не рассчитываются в UI и не восстанавливаются из artifact internals.
+
+Accepted limitation: public threshold-sweep/curve contract отсутствует. UI не читает OOF arrays и не строит скрытый grid вызовов `threshold()` ради визуальной имитации Recall/Precision curves.
+
+Следующий stage — R2-UI3 / Objects.
