@@ -38,6 +38,9 @@
 | Влияние признаков OOF V1 | `screens/result/07_result_global_oof_shap_v1.png` | VISUAL LOCK; Global OOF feature influence через row-weighted mean(abs(local SHAP)) |
 | Объект оценки — explanation loading V1 | `screens/result/08_result_object_detail_explanation_loading_v1.png` | VISUAL LOCK; basic result доступен, Local Explanation рассчитывается отдельно, LLM action disabled |
 | Объект оценки — explanation error V1 | `screens/result/09_result_object_detail_explanation_error_v1.png` | VISUAL LOCK; ошибка Local Explanation локализована, basic result сохраняется, retry доступен, LLM disabled |
+| Объект оценки — detailed explanation V1 | `screens/result/10_result_object_detail_explanation_detailed_v1.png` | VISUAL LOCK; режим `Подробно` того же Object Detail: SHAP base/output, waterfall и полный список вкладов |
+| Объект оценки — LLM loading V1 | `screens/result/11_result_object_detail_llm_loading_v1.png` | VISUAL LOCK; scientific evidence доступно, формируется только текст Result Interpreter |
+| Объект оценки — LLM error V1 | `screens/result/12_result_object_detail_llm_error_v1.png` | VISUAL LOCK; локальная ошибка Result Interpreter, OOF/SHAP evidence не меняется, retry доступен |
 
 ## Правила для V2 references
 
@@ -100,6 +103,9 @@
 - `screens/result/07_result_global_oof_shap_v1.png` — accepted visual lock Global OOF feature influence;
 - `screens/result/08_result_object_detail_explanation_loading_v1.png` — accepted visual lock Object Detail во время Local Explanation loading;
 - `screens/result/09_result_object_detail_explanation_error_v1.png` — accepted visual lock Object Detail при Local Explanation error;
+- `screens/result/10_result_object_detail_explanation_detailed_v1.png` — accepted visual lock режима `Подробно` Local Explanation;
+- `screens/result/11_result_object_detail_llm_loading_v1.png` — accepted visual lock Result Interpreter LOADING;
+- `screens/result/12_result_object_detail_llm_error_v1.png` — accepted visual lock Result Interpreter ERROR;
 - подробная UX/semantic спецификация: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`;
 - backend architecture lock: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_V2_ARCHITECTURE_LOCK.md`;
 - universal model explainability lock: `docs/workstreams/generic_dataset_onboarding_v1/UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`;
@@ -108,7 +114,8 @@
 - Object Detail visual lock включает Local Explanation READY и pre-action LLM entry; отдельный `06_result_object_detail_llm_v1.png` фиксирует LLM READY state;
 - `08_result_object_detail_explanation_loading_v1.png` фиксирует Local Explanation LOADING state без блокировки basic result;
 - `09_result_object_detail_explanation_error_v1.png` фиксирует Local Explanation ERROR state: basic result остаётся доступен, retry повторяет только explanation;
-- отдельные LLM loading/error variants пока не имеют visual lock;
+- `10_result_object_detail_explanation_detailed_v1.png` фиксирует detailed Local Explanation того же Object Detail;
+- `11_result_object_detail_llm_loading_v1.png` и `12_result_object_detail_llm_error_v1.png` фиксируют Result Interpreter LOADING/ERROR без изменения scientific evidence;
 - для objects: target marker, threshold position и TP/TN/FP/FN — разные смыслы и не должны сливаться;
 - object table проектируется как scrollable/virtualizable view, а не как browser-side загрузка всей выборки;
 - Fold остаётся read-only OOF provenance с tooltip;

@@ -1,6 +1,6 @@
 # KOMUS — CURRENT STATE
 
-Дата фиксации: **2026-09-30**
+Дата фиксации: **2026-10-01**
 
 Этот файл содержит только актуальное подтверждённое состояние проекта.
 Он обновляется после принятого исследовательского этапа или существенного изменения требований.
@@ -1287,9 +1287,13 @@ Source commit:
 
 R2-BE2C — **Global OOF SHAP Aggregate — ACCEPTED / CLOSED**. Source commit: `3de33309`. Canonical aggregate: row-weighted `mean(abs(local SHAP))` по всем OOF rows; каждая строка объясняется exact persisted fold model. Corrective review подтвердил order-independent validation `LocalExplanationEvidence.features`: важны полнота и exact `feature_id → column_name` binding, а не локальный SHAP-ranked order. Verification после FIX: 30 tests PASS, 34 subtests PASS, `compileall src` PASS, `git diff --check` PASS.
 
-Result V2 backend закрыт. Следующий этап — native Result implementation только через принятые public Result/Explanation boundaries.
+Result V2 backend закрыт.
 
-Result visual locks теперь дополнительно включают Global OOF feature influence (`07_result_global_oof_shap_v1.png`), Local Explanation LOADING (`08_result_object_detail_explanation_loading_v1.png`) и Local Explanation ERROR (`09_result_object_detail_explanation_error_v1.png`). Expanded-detail и отдельные LLM loading/error states остаются следующими точечными visual states.
+R2-UI1 — **Result Overview + Navigation Foundation — ACCEPTED / CLOSED**. Source commit: `d7d3b7073681204a29a53ec3e2e82b854fd0b25b`. `PrototypeRuntime` теперь отдаёт `OOFResultService`; Result Overview получает scientific facts только через `summary()` и `threshold()`, имеет session state `result_v2_view=OVERVIEW` / `result_v2_threshold=0.5`, fail-closed при service error и не возвращается к direct `artifact.run_output.result`. Training, Save Model и targetless inference flow сохранены.
+
+Следующий implementation stage — **R2-UI2 / Threshold Explorer** поверх одного immutable OOF Result и session threshold.
+
+Result visual locks теперь дополнительно включают Global OOF feature influence (`07_result_global_oof_shap_v1.png`), Local Explanation LOADING (`08_result_object_detail_explanation_loading_v1.png`), Local Explanation ERROR (`09_result_object_detail_explanation_error_v1.png`), detailed Local Explanation (`10_result_object_detail_explanation_detailed_v1.png`), Result Interpreter LOADING (`11_result_object_detail_llm_loading_v1.png`) и Result Interpreter ERROR (`12_result_object_detail_llm_error_v1.png`).
 
 ---
 

@@ -11,6 +11,9 @@ Primary visual references:
 - `docs/design/screens/result/07_result_global_oof_shap_v1.png`
 - `docs/design/screens/result/08_result_object_detail_explanation_loading_v1.png`
 - `docs/design/screens/result/09_result_object_detail_explanation_error_v1.png`
+- `docs/design/screens/result/10_result_object_detail_explanation_detailed_v1.png`
+- `docs/design/screens/result/11_result_object_detail_llm_loading_v1.png`
+- `docs/design/screens/result/12_result_object_detail_llm_error_v1.png`
 
 Эти PNG фиксируют композицию, визуальную иерархию и пользовательский поток Result V2.
 Фактические данные, доступность действий, persistence, provenance и API semantics определяются только принятыми backend/research contracts.
@@ -28,9 +31,9 @@ Canonical flow шага Result:
 → LLM-интерпретация по явному действию пользователя, если runtime capability доступна
 ```
 
-Восемь текущих Result PNG имеют принятый visual lock.
-Для Object Detail зафиксированы состояния Local Explanation LOADING, Local Explanation READY до вызова LLM, Local Explanation ERROR и LLM interpretation READY после явного пользовательского действия. Expanded technical/detail states и отдельные LLM loading/error variants пока не имеют visual lock.
-Global OOF feature influence зафиксирован отдельным экраном `07_result_global_oof_shap_v1.png`.
+Одиннадцать текущих Result PNG имеют принятый visual lock.
+Для Object Detail зафиксированы состояния Local Explanation LOADING, Local Explanation READY, Local Explanation ERROR, detailed Local Explanation, Result Interpreter LOADING, Result Interpreter READY и Result Interpreter ERROR. Global OOF feature influence зафиксирован отдельным экраном `07_result_global_oof_shap_v1.png`.
+`10_result_object_detail_explanation_detailed_v1.png` — это режим `Подробно` того же Object Detail, а не новый top-level экран. Technical explanation method/output space/provider в runtime всегда берутся из backend provenance, даже если PNG содержит демонстрационный текст.
 
 Result работает на persisted accepted experiment evidence.
 Final test не используется для threshold research, object filtering, selection/tuning или OOF explainability.
@@ -269,11 +272,11 @@ Object Detail имеет два принятых visual lock:
 
 LLM-текст обязан опираться только на validated Local Explanation evidence текущего объекта: он не добавляет отсутствующие в SHAP признаки, факты или причинные утверждения.
 
-Пока не имеют отдельного visual lock:
-- loading/error state Local Explanation;
-- expanded «Подробно»;
-- loading/error state LLM;
-- expanded «Данные объекта» / «Технические сведения».
+Пока не имеют отдельного visual lock только дополнительные expanded states:
+- expanded «Данные объекта»;
+- отдельный expanded technical-detail state, если он реально понадобится при реализации.
+
+Local Explanation LOADING/ERROR, режим `Подробно`, Result Interpreter LOADING/READY/ERROR уже имеют accepted visual lock.
 
 Product semantics detail зафиксированы:
 - basic OOF result показывается сразу;

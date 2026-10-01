@@ -306,4 +306,12 @@ R2-BE2C — Global OOF SHAP Aggregate — **ACCEPTED / CLOSED**, source commit `
 
 Final/refit fallback для OOF explanation отсутствует.
 
-Result V2 backend contract закрыт. Следующий отдельный этап — native Result implementation поверх принятых public Result/Explanation boundaries.
+Result V2 backend contract закрыт.
+
+R2-UI1 — Result Overview + Navigation Foundation — **ACCEPTED / CLOSED**, source commit `d7d3b7073681204a29a53ec3e2e82b854fd0b25b`.
+
+Native Result migration теперь начата через public boundary:
+`artifact_id → OOFResultService.summary()/threshold() → Result Overview`.
+Direct scientific rendering из `artifact.run_output.result` в Overview больше не является допустимым fallback.
+
+Следующий stage — R2-UI2 / Threshold Explorer.
