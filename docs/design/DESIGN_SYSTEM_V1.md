@@ -73,6 +73,8 @@ Status: **PRIMARY VISUAL SYSTEM / IMPLEMENTATION REFERENCE**
 
 Навигация не должна менять scientific state без явного действия пользователя.
 
+До отдельного authentication/users workstream sidebar не показывает fake user profile: avatar, имя, роль пользователя, profile menu, login/logout не являются частью V1 shell.
+
 ## 6. Карточки и панели
 
 - поверхность темнее/светлее основного Graphite только настолько, чтобы отделить блок;

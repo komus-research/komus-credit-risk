@@ -1329,10 +1329,40 @@ Canonical semantics:
 - UI не сканирует artifact directories;
 - открытие historical Result не мутирует текущую analysis session;
 - ModelVersion catalog и targetless inference history остаются только в разделе `Модели`;
-- `Настройки` остаются отдельным будущим Architect question.
+- `Настройки` имеют отдельный принятый Product/Architecture/Visual Lock и не являются частью History contract.
 
 Implementation order:
 `PH-BE1 — Analysis History Read Contract` → `PH-UI1 — History Catalog`.
+
+---
+
+## Settings V1 — product / architecture / visual lock accepted / 2026-10-01
+
+Status: **ACCEPTED PRODUCT / ARCHITECTURE / VISUAL LOCK — BACKEND IMPLEMENTATION PENDING**.
+
+Visual sources of truth:
+- `docs/design/screens/settings/01_settings_v1.png` — основной collapsed state;
+- `docs/design/screens/settings/02_settings_privacy_expanded_v1.png` — expanded privacy state.
+
+UX / architecture source of truth:
+`docs/workstreams/generic_dataset_onboarding_v1/SETTINGS_UX_V1.md`.
+
+Canonical semantics:
+- `Настройки` остаются top-level route, но не дублируют Analysis / Algorithm / Quality / Result / Models parameters;
+- V1 содержит `Интерфейс` и `Интеграции / Интерпретатор результатов`;
+- global interface preference: technical details expanded by default;
+- Result Interpreter controls: local enable/disable, trusted supported model, default recipient role, secure credentials, explicit connection check;
+- provider read-only, пока trusted registry содержит один provider;
+- external-data policy read-only; user preference может только сузить deployment security policy, но не ослабить её;
+- API key не отображается и не читается обратно UI; credential editing допускается только через secure credential backend;
+- connection check использует synthetic provider request без client/model data и не обещает persisted history;
+- canonical Artifact / ModelVersion / History storage остаётся application-managed; internal store root не является user setting;
+- до отдельного authentication/users contract sidebar не показывает fake avatar/name/role/profile/login;
+- Settings persistence V1 трактуется как local application preferences, а не account/per-user database;
+- изменение Settings не меняет сохранённые Result, model scores или SHAP.
+
+Implementation order:
+`SET-BE1 — Local Preferences + Interpreter Settings` → `SET-BE2 — Secure Credentials + Connection Check` → `SET-UI1`.
 
 ---
 

@@ -45,6 +45,12 @@ Product semantics и backend gap зафиксированы в `docs/workstreams
 Для раздела **«История»** принят Visual Lock `screens/history/01_analysis_history_v1.png`.
 History V1 — read-only каталог завершённых `ExperimentArtifact`, а не Project Manager. Отдельной `Project` entity в V1 нет. Исторический V3 result открывается через существующий Result V2, legacy artifact — только в честном `LEGACY_SUMMARY_ONLY` режиме. Product/architecture semantics и будущий `AnalysisHistoryService.list()/detail()` зафиксированы в `docs/workstreams/generic_dataset_onboarding_v1/HISTORY_UX_V1.md`.
 
+Для раздела **«Настройки»** приняты два visual lock:
+- `screens/settings/01_settings_v1.png` — основной collapsed state;
+- `screens/settings/02_settings_privacy_expanded_v1.png` — тот же screen с раскрытым privacy explanation.
+
+Settings V1 содержит только реальные global controls: interface presentation preference и Result Interpreter integration controls. ML/Result scientific parameters остаются в своих flows. До отдельного authentication/users contract в shell нет fake profile/login/account UI. Product/architecture semantics и backend order `SET-BE1 → SET-BE2 → SET-UI1` зафиксированы в `docs/workstreams/generic_dataset_onboarding_v1/SETTINGS_UX_V1.md`.
+
 Для Result V2 приняты одиннадцать visual lock:
 - `screens/result/02_result_model_overview_v2.png` — общий обзор результата;
 - `screens/result/03_threshold_explorer_v1.png` — исследование threshold по OOF scores;

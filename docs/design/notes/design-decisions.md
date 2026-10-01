@@ -52,4 +52,11 @@
 50. History V1 visual lock — `docs/design/screens/history/01_analysis_history_v1.png`. Экран показывает дату, dataset, algorithm, feature count, OOF/folds, Gini, access mode и действие открытия сохранённого результата.
 51. History V1 различает `FULL_RESULT_V2` и `LEGACY_SUMMARY_ONLY`: V3 открывает существующий Result V2; legacy показывает только реально сохранённую immutable сводку без реконструкции Objects/SHAP.
 52. History read boundary: `AnalysisHistoryService.list()` + `detail()`. UI не сканирует filesystem; дата берётся из `ExperimentResult.created_at`, а не mtime.
-53. Открытие History не мутирует текущую analysis session. ModelVersion catalog и targetless inference history остаются только в `Модели`; `Настройки` проектируются отдельно.
+53. Открытие History не мутирует текущую analysis session. ModelVersion catalog и targetless inference history остаются только в `Модели`.
+54. Settings V1: `docs/design/screens/settings/01_settings_v1.png` — accepted VISUAL LOCK основного collapsed state; `02_settings_privacy_expanded_v1.png` — accepted expanded privacy state.
+55. Settings V1 содержит две группы: global interface preference и Result Interpreter integration controls. Scientific Analysis/Algorithm/Quality/Result/Inference parameters не переносятся в global Settings.
+56. До отдельного authentication/users contract AXION не показывает fake avatar/name/role/profile/login UI; Settings persistence V1 трактуется как local application preferences, а не account/per-user database.
+57. Result Interpreter Settings: user enable может только сузить deployment policy; provider read-only при одном trusted provider; model выбирается только из trusted catalog; default role — initial UI preference; credentials управляются только через secure credential boundary; external-data policy read-only.
+58. Connection check — explicit real synthetic provider request без client/model data; `Соединение работает` может быть transient state, persisted `Последняя проверка...` не обещается без отдельного contract.
+59. Canonical artifact/model/history storage остаётся application-managed; Settings V1 не содержит переключатель внутренней папки. External export — отдельный будущий flow.
+60. Settings implementation order: `SET-BE1 — Local Preferences + Interpreter Settings` → `SET-BE2 — Secure Credentials + Connection Check` → `SET-UI1`.

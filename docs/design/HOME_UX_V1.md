@@ -142,7 +142,7 @@ ExperimentArtifact не считается Project по умолчанию.
 | Новый анализ | Active action. Запускает explicit new-analysis transition. |
 | Модели | В текущем runtime остаётся disabled до trusted browse/list backend contract. Product/visual lock каталога уже принят в `MODELS_UX_V1.md`. |
 | История | Product/architecture/visual lock принят в `HISTORY_UX_V1.md`; текущий runtime остаётся disabled до `PH-BE1 / PH-UI1`. Отдельной Project entity в V1 нет. |
-| Настройки | Disabled/future. Глобального settings contract нет. |
+| Настройки | Product/architecture/visual lock принят в `SETTINGS_UX_V1.md`; runtime остаётся disabled до `SET-BE1 / SET-BE2 / SET-UI1`. В V1 нет fake profile/login/account UI. |
 
 Disabled items должны визуально выглядеть недоступными и не открывать пустые псевдостраницы.
 Допустим короткий hint `Будет доступно позже`.
@@ -337,7 +337,7 @@ Home не должен превращать отсутствие backend contrac
 6. При наличии текущего анализа Home предлагает `Продолжить текущий анализ`; возврат открывает exact сохранённый `current_step`.
 7. Explicit new analysis при содержательной текущей работе требует подтверждения; cancel сохраняет state, confirm создаёт чистый analysis session.
 8. Confirmed reset очищает старые upload/widget transients, но не удаляет persisted artifacts/models.
-9. `Открыть модель`, `Продолжить последний проект`, `Модели`, `История`, `Настройки` и search не притворяются работающими до появления соответствующего trusted runtime contract. Для `История` product/visual contract уже принят отдельно; это не делает route реализованным в Home V1.
+9. `Открыть модель`, `Продолжить последний проект`, `Модели`, `История`, `Настройки` и search не притворяются работающими до появления соответствующего trusted runtime contract. Для `История` и `Настройки` product/visual contracts уже приняты отдельно; это не делает routes реализованными в Home V1.
 10. Summary cards показывают `—`, а не invented counts.
 11. `Выполняется сейчас` не изображает background jobs; `Требует внимания` не создаёт invented warnings.
 12. `Последние проекты` не отображает ExperimentArtifact как Project.

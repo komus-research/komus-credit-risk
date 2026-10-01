@@ -17,6 +17,8 @@
 | Главная | `screens/home/01_home_axion_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Главная V2 | `screens/home/01_home_axion_v2_candidate.png` | VISUAL LOCK; основной reference общего AXION shell / Home V2 |
 | История анализов V1 | `screens/history/01_analysis_history_v1.png` | VISUAL LOCK; read-only каталог завершённых ExperimentArtifact, без Project entity |
+| Настройки V1 | `screens/settings/01_settings_v1.png` | VISUAL LOCK; основной collapsed state глобальных настроек AXION |
+| Настройки V1 — privacy expanded | `screens/settings/02_settings_privacy_expanded_v1.png` | VISUAL LOCK; тот же Settings screen с раскрытым `Как защищаются данные?` |
 | Новый анализ — данные / роли колонок | `screens/new-analysis/01_data_roles_v1.png` | Рабочий референс шага подготовки данных |
 | Новый анализ — подтверждение | `screens/new-analysis/02_data_confirmation_v1.png` | Рабочий референс шага подтверждения |
 | Новый анализ — признаки | `screens/new-analysis/03_features_v1.png` | Рабочий референс выбора признаков |
@@ -89,6 +91,22 @@
 - открытие historical result не мутирует текущую analysis session;
 - runtime implementation ждёт `PH-BE1 / PH-UI1`; UI не сканирует filesystem;
 - product/architecture semantics: `docs/workstreams/generic_dataset_onboarding_v1/HISTORY_UX_V1.md`.
+
+### Settings V1
+
+- `screens/settings/01_settings_v1.png` — accepted VISUAL LOCK основного collapsed Settings state;
+- `screens/settings/02_settings_privacy_expanded_v1.png` — accepted VISUAL LOCK того же экрана с раскрытым privacy explanation;
+- Settings содержит две группы: `Интерфейс` и `Интеграции / Интерпретатор результатов`;
+- editable controls не смешиваются с read-only system state и actions;
+- privacy по умолчанию collapsed; `Подробнее` открывает единственный блок `Как защищаются данные?`;
+- provider read-only при одном trusted provider; model — только trusted catalog, без free-text;
+- user enable может только сузить deployment policy; external-data policy остаётся read-only;
+- API key никогда не читается/показывается обратно UI; credential editing требует secure backend;
+- connection check — explicit synthetic request без client/model data; persisted health history не обещается;
+- canonical artifact/model/history storage application-managed и не переключается через Settings;
+- до отдельного auth/users contract sidebar не показывает fake profile/avatar/name/login;
+- runtime implementation ждёт `SET-BE1 / SET-BE2 / SET-UI1`;
+- product/architecture semantics: `docs/workstreams/generic_dataset_onboarding_v1/SETTINGS_UX_V1.md`.
 
 ### Quality V1
 
