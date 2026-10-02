@@ -62,6 +62,42 @@ export type ResultObjectDetail = {
   fold_number: number
 }
 
+export type LocalExplanationDirection = 'increases_output' | 'decreases_output' | 'neutral'
+
+export type LocalExplanationFeature = {
+  feature_id: string
+  column_name: string
+  display_name_ru: string | null
+  description_ru: string | null
+  raw_value: number
+  shap_value: number
+  abs_rank: number
+  direction: LocalExplanationDirection
+}
+
+export type LocalExplanationRemainder = {
+  feature_count: number
+  shap_value: number
+  direction: LocalExplanationDirection
+}
+
+export type LocalExplanation = {
+  evidence_version: string
+  artifact_id: string
+  object_id: string
+  evidence_hash: string
+  prediction_probability: number
+  base_value: number
+  explained_output_value: number
+  output_space: string
+  explanation_method_id: string
+  explanation_method_version: string
+  explanation_provider_id: string
+  explanation_provider_version: string
+  features: LocalExplanationFeature[]
+  remainder: LocalExplanationRemainder | null
+}
+
 export type ResultObjectsQuery = {
   offset: number
   limit: number
@@ -130,5 +166,25 @@ export async function getCurrentObjectDetail(objectId: string, signal?: AbortSig
     return await response.json() as ResultObjectDetail
   } catch {
     throw new Error('Не удалось загрузить карточку объекта.')
+  }
+}
+
+export async function getCurrentObjectExplanation(objectId: string, signal?: AbortSignal): Promise<LocalExplanation> {
+  const fallback = 'Не удалось построить объяснение. Сам результат объекта остаётся доступен.'
+  let response: Response
+  try {
+    response = await fetch(`/api/v1/result/objects/${encodeURIComponent(objectId)}/explanation`, { signal })
+  } catch (reason) {
+    if (signal?.aborted) throw reason
+    throw new Error(fallback)
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { message?: string } } | null
+    throw new Error(payload?.detail?.message ?? fallback)
+  }
+  try {
+    return await response.json() as LocalExplanation
+  } catch {
+    throw new Error(fallback)
   }
 }
