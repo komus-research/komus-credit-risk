@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
+  createCurrentObjectInterpretation,
   getCurrentObjectDetail,
   getCurrentObjectExplanation,
   type LocalExplanation,
   type LocalExplanationDirection,
   type LocalExplanationFeature,
+  type ResultInterpretation,
+  type ResultInterpreterRole,
   type ResultObjectDetail,
 } from '../api/result'
 import { Sidebar } from '../components/Sidebar'
@@ -26,6 +29,42 @@ const directionCopy: Record<LocalExplanationDirection, string> = {
   increases_output: '↑ увеличивает оценку модели',
   decreases_output: '↓ уменьшает оценку модели',
   neutral: 'не меняет оценку модели',
+}
+
+const interpreterRoles: Array<{ id: ResultInterpreterRole; name: string; purpose: string }> = [
+  { id: 'sales_manager', name: 'Менеджер по продажам', purpose: 'Коммерческое объяснение результата' },
+  { id: 'credit_controller', name: 'Кредитный контролёр', purpose: 'Разбор оценки и факторов модели' },
+  { id: 'lawyer', name: 'Юрист', purpose: 'Юридически нейтральное объяснение результата' },
+  { id: 'information_security', name: 'Информационная безопасность', purpose: 'Фокус на сигналах, связанных с проверкой и рисками данных' },
+]
+
+type InterpretationStatus = 'IDLE' | 'LOADING' | 'READY' | 'ERROR'
+type InterpretationState = {
+  status: InterpretationStatus
+  response?: ResultInterpretation
+  message?: string
+  refreshing?: boolean
+}
+type InterpretationStates = Record<ResultInterpreterRole, InterpretationState>
+
+function createInterpretationStates(): InterpretationStates {
+  return Object.fromEntries(interpreterRoles.map(({ id }) => [id, { status: 'IDLE' }])) as InterpretationStates
+}
+
+function interpretationStatusCopy(state: InterpretationState) {
+  if (state.refreshing) return 'Обновление'
+  return ({ IDLE: 'Не сформировано', LOADING: 'Формирование', READY: 'Готово', ERROR: 'Ошибка' } as const)[state.status]
+}
+
+function isAbortError(reason: unknown) {
+  return typeof reason === 'object' && reason !== null && 'name' in reason && reason.name === 'AbortError'
+}
+
+function formatCreatedAt(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
 function outcomeClass(outcome: ResultObjectDetail['outcome']) {
@@ -74,11 +113,29 @@ export function ObjectDetailPage({ objectId, onBack, onHome }: { objectId: strin
   const [explanationRetryToken, setExplanationRetryToken] = useState(0)
   const [explanation, setExplanation] = useState<{ artifactId: string; objectId: string; status: 'LOADING' | 'READY' | 'ERROR'; value?: LocalExplanation; message?: string } | null>(null)
   const [modeState, setModeState] = useState<{ objectId: string; mode: 'BRIEF' | 'DETAILED' }>({ objectId, mode: 'BRIEF' })
+  const [selectedRole, setSelectedRole] = useState<ResultInterpreterRole>('sales_manager')
+  const [interpretations, setInterpretations] = useState<InterpretationStates>(createInterpretationStates)
+  const [copiedRole, setCopiedRole] = useState<ResultInterpreterRole | null>(null)
+  const interpretationControllers = useRef<Partial<Record<ResultInterpreterRole, AbortController>>>({})
+  const copyTimer = useRef<number | null>(null)
+  const activeObjectId = useRef(objectId)
+  const currentDetailRef = useRef<ResultObjectDetail | null>(null)
+  activeObjectId.current = objectId
 
   useEffect(() => {
     setExplanation(null)
     setModeState({ objectId, mode: 'BRIEF' })
+    setSelectedRole('sales_manager')
+    setInterpretations(createInterpretationStates())
+    setCopiedRole(null)
+    Object.values(interpretationControllers.current).forEach(controller => controller?.abort())
+    interpretationControllers.current = {}
   }, [objectId])
+
+  useEffect(() => () => {
+    Object.values(interpretationControllers.current).forEach(controller => controller?.abort())
+    if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -109,6 +166,7 @@ export function ObjectDetailPage({ objectId, onBack, onHome }: { objectId: strin
   }, [objectId, retryToken])
 
   const currentDetail = detail?.object_id === objectId ? detail : null
+  currentDetailRef.current = currentDetail
   const currentMode = modeState.objectId === objectId ? modeState.mode : 'BRIEF'
 
   useEffect(() => {
@@ -141,6 +199,61 @@ export function ObjectDetailPage({ objectId, onBack, onHome }: { objectId: strin
   const showLoading = loading || (!currentDetail && !error)
   const explanationIdentityMatches = Boolean(currentDetail && explanation?.artifactId === currentDetail.artifact_id && explanation?.objectId === objectId)
   const currentExplanation = explanationIdentityMatches ? explanation : null
+  const canInterpret = currentExplanation?.status === 'READY'
+  const selectedInterpretation = interpretations[selectedRole]
+
+  function updateInterpretation(role: ResultInterpreterRole, next: InterpretationState) {
+    setInterpretations(current => ({ ...current, [role]: next }))
+  }
+
+  function generateInterpretation(role: ResultInterpreterRole) {
+    if (!currentDetail || !canInterpret || interpretations[role].status === 'LOADING' || interpretations[role].refreshing) return
+    const prior = interpretations[role]
+    if (interpretationControllers.current[role]) return
+    const controller = new AbortController()
+    interpretationControllers.current[role] = controller
+    const regenerating = prior.status === 'READY' && Boolean(prior.response)
+    updateInterpretation(role, regenerating
+      ? { ...prior, refreshing: true, message: undefined }
+      : { status: 'LOADING' })
+
+    void createCurrentObjectInterpretation(objectId, role, controller.signal)
+      .then(response => {
+        const trustedDetail = currentDetailRef.current
+        if (controller.signal.aborted || activeObjectId.current !== objectId) return
+        if (!trustedDetail || response.artifact_id !== trustedDetail.artifact_id || response.object_id !== objectId || response.role !== role) {
+          const message = 'Текущий результат изменился. Сформируйте объяснение заново.'
+          updateInterpretation(role, regenerating ? { ...prior, refreshing: false, message } : { status: 'ERROR', message })
+          return
+        }
+        updateInterpretation(role, { status: 'READY', response })
+      })
+      .catch(reason => {
+        if (controller.signal.aborted || activeObjectId.current !== objectId || isAbortError(reason)) return
+        const message = reason instanceof Error ? reason.message : 'Не удалось сформировать интерпретацию.'
+        updateInterpretation(role, regenerating ? { ...prior, refreshing: false, message } : { status: 'ERROR', message })
+      })
+      .finally(() => {
+        if (interpretationControllers.current[role] === controller) delete interpretationControllers.current[role]
+      })
+  }
+
+  function generateAllInterpretations() {
+    interpreterRoles.forEach(({ id }) => {
+      const state = interpretations[id]
+      if (state.status === 'IDLE' || state.status === 'ERROR') generateInterpretation(id)
+    })
+  }
+
+  function copyInterpretation(role: ResultInterpreterRole, text: string) {
+    void navigator.clipboard.writeText(text)
+      .then(() => {
+        setCopiedRole(role)
+        if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
+        copyTimer.current = window.setTimeout(() => setCopiedRole(current => current === role ? null : current), 1800)
+      })
+      .catch(() => undefined)
+  }
 
   return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace result-workspace object-detail-workspace">
     <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
@@ -176,6 +289,44 @@ export function ObjectDetailPage({ objectId, onBack, onHome }: { objectId: strin
         {currentExplanation?.status === 'READY' && currentExplanation.value && <ExplanationReady explanation={currentExplanation.value} mode={currentMode} />}
         <p className="local-explanation-limitation">Вклад SHAP описывает поведение модели для этого объекта и не доказывает причинное влияние признака.</p>
       </section>
+
+      {currentExplanation?.status === 'ERROR' && <section className="interpreter-unavailable panel" aria-live="polite">
+        Интерпретация недоступна, пока не построено локальное объяснение модели.
+      </section>}
+      {canInterpret && <section className="result-interpreter-section" aria-labelledby="result-interpreter-title">
+        <header className="result-interpreter-heading">
+          <div><p className="eyebrow">Result Interpreter</p><h2 id="result-interpreter-title">Интерпретация результата</h2><p>Выберите роль и сформируйте одно объяснение на основе проверенного результата модели и Local SHAP.</p></div>
+          <button type="button" className="primary-action interpreter-bulk-action" onClick={generateAllInterpretations} disabled={!interpreterRoles.some(({ id }) => interpretations[id].status === 'IDLE' || interpretations[id].status === 'ERROR')}>Сформировать все объяснения</button>
+        </header>
+        <div className="interpreter-safe-notice"><span aria-hidden="true">i</span><p>Интерпретация формируется внешней моделью только после явного запуска. Сервер передаёт данные в соответствии с политикой REDACTED_V1.</p></div>
+        <div className="interpreter-layout">
+          <div className="interpreter-master" role="tablist" aria-label="Роли интерпретации">
+            {interpreterRoles.map(role => {
+              const state = interpretations[role.id]
+              const selected = selectedRole === role.id
+              return <button type="button" key={role.id} role="tab" aria-selected={selected} className={`interpreter-role ${selected ? 'active' : ''}`} onClick={() => setSelectedRole(role.id)}>
+                <span className={`interpreter-role-status status-${state.status.toLowerCase()}`} aria-hidden="true" />
+                <span><strong>{role.name}</strong><small>{role.purpose}</small></span>
+                <em>{interpretationStatusCopy(state)}</em>
+              </button>
+            })}
+          </div>
+          <div className="interpreter-detail panel" role="tabpanel">
+            <div className="interpreter-detail-heading"><div><small>Роль</small><h3>{interpreterRoles.find(role => role.id === selectedRole)?.name}</h3></div><span className={`interpreter-status-badge status-${selectedInterpretation.status.toLowerCase()}`}>{interpretationStatusCopy(selectedInterpretation)}</span></div>
+            {selectedInterpretation.status === 'IDLE' && <div className="interpreter-empty"><p>Объяснение ещё не сформировано.</p><button type="button" className="primary-action" onClick={() => generateInterpretation(selectedRole)}>Сформировать объяснение</button></div>}
+            {selectedInterpretation.status === 'LOADING' && <div className="interpreter-progress" aria-busy="true" aria-live="polite"><span className="object-detail-loading-mark" aria-hidden="true" /><p>Формируем объяснение для выбранной роли…</p></div>}
+            {selectedInterpretation.status === 'ERROR' && <div className="interpreter-error" role="alert"><p>{selectedInterpretation.message}</p><button type="button" className="secondary-action" onClick={() => generateInterpretation(selectedRole)}>Повторить</button></div>}
+            {selectedInterpretation.status === 'READY' && selectedInterpretation.response && <div className="interpreter-ready">
+              {selectedInterpretation.refreshing && <div className="interpreter-refreshing" aria-live="polite"><span className="object-detail-loading-mark" aria-hidden="true" />Обновляем объяснение…</div>}
+              {selectedInterpretation.message && <p className="interpreter-action-error" role="alert">{selectedInterpretation.message}</p>}
+              <p className="interpreter-text">{selectedInterpretation.response.text}</p>
+              <p className="interpreter-created">Сформировано: {formatCreatedAt(selectedInterpretation.response.created_at)}</p>
+              <p className="interpreter-disclaimer">Текст сформирован на основе проверенного результата модели и SHAP. Он не является отдельным прогнозом или автоматическим решением.</p>
+              <div className="interpreter-actions"><button type="button" className="primary-action" onClick={() => generateInterpretation(selectedRole)} disabled={selectedInterpretation.refreshing}>Сформировать заново</button><button type="button" className="secondary-action" onClick={() => copyInterpretation(selectedRole, selectedInterpretation.response!.text)}>{copiedRole === selectedRole ? 'Скопировано' : 'Копировать'}</button></div>
+            </div>}
+          </div>
+        </div>
+      </section>}
     </>}
   </main></div>
 }

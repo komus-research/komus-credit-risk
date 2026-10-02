@@ -125,6 +125,21 @@ export type LocalExplanation = {
   remainder: LocalExplanationRemainder | null
 }
 
+export type ResultInterpreterRole =
+  | 'sales_manager'
+  | 'credit_controller'
+  | 'lawyer'
+  | 'information_security'
+
+export type ResultInterpretation = {
+  artifact_id: string
+  object_id: string
+  role: ResultInterpreterRole
+  text: string
+  created_at: string
+  response_hash: string
+}
+
 export type ResultObjectsQuery = {
   offset: number
   limit: number
@@ -236,6 +251,37 @@ export async function getCurrentObjectExplanation(objectId: string, signal?: Abo
   try {
     return await response.json() as LocalExplanation
   } catch {
+    throw new Error(fallback)
+  }
+}
+
+export async function createCurrentObjectInterpretation(
+  objectId: string,
+  role: ResultInterpreterRole,
+  signal?: AbortSignal,
+): Promise<ResultInterpretation> {
+  const fallback = 'Не удалось сформировать интерпретацию.'
+  const isAbort = (reason: unknown) => signal?.aborted || (typeof reason === 'object' && reason !== null && 'name' in reason && reason.name === 'AbortError')
+  let response: Response
+  try {
+    response = await fetch(`/api/v1/result/objects/${encodeURIComponent(objectId)}/interpretations/${role}`, {
+      method: 'POST',
+      signal,
+    })
+  } catch (reason) {
+    if (isAbort(reason)) throw reason
+    throw new Error(fallback)
+  }
+  if (!response.ok) {
+    let payload: { detail?: { message?: string } } | null = null
+    try { payload = await response.json() as { detail?: { message?: string } } }
+    catch (reason) { if (isAbort(reason)) throw reason }
+    throw new Error(payload?.detail?.message ?? fallback)
+  }
+  try {
+    return await response.json() as ResultInterpretation
+  } catch (reason) {
+    if (isAbort(reason)) throw reason
     throw new Error(fallback)
   }
 }
