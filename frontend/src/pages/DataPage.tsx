@@ -188,7 +188,7 @@ function ConfirmationShell({ preparation, busy, setBusy, setError, onBack, onHom
       <div className="confirmation-policy"><p>Вся подтверждённая популяция используется для OOF-оценки. Защищённая финальная тестовая выборка на этом этапе не создаётся.</p><label><input type="checkbox" checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} /> Я понимаю и подтверждаю эту политику.</label></div>
     </section>
     {message && <div className="data-error confirmation-error" role="alert">{message}</div>}
-    <footer className="data-footer confirmation-footer"><button className="secondary-action" disabled={busy} onClick={onBack}>Назад к ролям</button><div><button className="primary-action" disabled={busy || !acknowledged} onClick={confirm}>Подтвердить и перейти к признакам <Icon name="arrow" size={19} /></button></div></footer>
+    <footer className="data-footer confirmation-footer" aria-busy={busy}><button className="secondary-action" disabled={busy} onClick={onBack}>Назад к ролям</button><div><button className="primary-action" aria-busy={busy} disabled={busy || !acknowledged} onClick={confirm}>{busy ? <><span className="confirmation-progress-spinner" aria-hidden="true" />Подготавливаем признаки…</> : <>Подтвердить и перейти к признакам <Icon name="arrow" size={19} /></>}</button></div></footer>
     </main>
   </div>
 }

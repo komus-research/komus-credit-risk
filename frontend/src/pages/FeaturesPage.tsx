@@ -20,7 +20,7 @@ export function FeaturesPage({ onHome, onSessionChange }: { onHome: () => void; 
 
   useEffect(() => {
     void getFeatures()
-      .then(next => { setData(next); setOpen(new Set(next.groups.map(item => item.group_id))) })
+      .then(next => { setData(next); setOpen(new Set()) })
       .catch(reason => setError(reason instanceof Error ? reason.message : 'Не удалось загрузить признаки.'))
   }, [])
 
