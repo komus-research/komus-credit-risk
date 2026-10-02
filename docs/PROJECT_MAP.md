@@ -3,7 +3,7 @@
 > Этот документ — единственный источник ответа на два вопроса: **где проект находится сейчас** и **что делаем следующим**.
 > Архитектурные, исследовательские и UX-документы сохраняют свои решения и доказательства, но не могут самостоятельно менять текущий NEXT.
 
-Продуктовый код текущего этапа проверен относительно ветки `design/home-v2-algorithm-v2`, commit `351627b4effdf5375da22b766902381e3a16b0b6`.
+Продуктовый код текущего этапа проверен относительно ветки `design/home-v2-algorithm-v2`, commit `81a52b9eed5d3392ef7266124325f3198362896b`.
 
 ## Как читать эту карту
 
@@ -36,18 +36,18 @@ React + TypeScript + Vite
 | Алгоритм | Выбор алгоритма и его настроек | Native Algorithm реализован и принят | React → FastAPI → application/core | **ГОТОВО** | Ничего для текущего пути |
 | Проверка перед обучением | Проверка конфигурации и smoke перед полным запуском | Native Quality preflight реализован и принят; после PASS доступен явный запуск полного обучения | React → FastAPI → ExperimentApplicationService | **ГОТОВО** | Ничего для текущего пути |
 | Полное обучение | Запуск полного OOF-эксперимента с реальным прогрессом и сохранением результата | Native Quality запускает существующий `ExperimentApplicationService.run_experiment()`, публикует реальные progress events и сохраняет `ExperimentArtifact` в canonical `.axion-artifacts`; дорогой полный OOF на реальном большом dataset в рамках wiring-этапа не запускался | React → FastAPI → application/core | **ГОТОВО** | Ничего для текущего пути |
-| Результат | Метрики, OOF-результат, объяснения и интерпретация сохранённого эксперимента | Native React Result Overview, Threshold Explorer и Objects приняты; canonical Objects query state хранится в URL presentation state; public `GET /api/v1/result/objects/{object_id}` через trusted current artifact/current threshold принят; React Object Detail / SHAP / Interpreter ещё не подключены | React → FastAPI → application/core | **ЧАСТИЧНО** | Следующий этап — React Object Detail route + screen |
+| Результат | Метрики, OOF-результат, объяснения и интерпретация сохранённого эксперимента | Native React Result Overview, Threshold Explorer, Objects и basic Object Detail приняты; Objects query сохраняется в URL, object identity живёт в dynamic route, scientific detail читается через trusted public API; Local Explanation/SHAP и Interpreter ещё не подключены | React → FastAPI → application/core | **ЧАСТИЧНО** | Следующий этап — Local Explanation / SHAP |
 | История | Каталог завершённых экспериментов и открытие точного сохранённого результата | AnalysisHistory backend принят; native React History отсутствует | application/core; compatibility Streamlit catalog существует | **ЧАСТИЧНО** | После native Result подключить History к тому же canonical artifact source |
 | Модели | Работа с сохранёнными версиями моделей | Product / Visual Lock принят; ModelVersion и saved-model inference backend/application компоненты существуют, но native React Models UI и полный trusted browse/persistence path не завершены | application/core + accepted UX/visual locks; native UI отсутствует | **ЧАСТИЧНО** | Только после Result и History |
 | Настройки | Настройки продукта | Product / Architecture / Visual Lock принят; SET-BE1 / SET-BE2 и native React Settings UI ещё не реализованы | accepted UX/architecture docs; runtime implementation pending | **НЕ НАЧАТО** | Только после более приоритетных этапов |
 
 ## Текущая точка проекта
 
-**Native AXION подтверждён через полный Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer → Objects; URL-state списка и public Object Detail API приняты. Следующий незавершённый продуктовый участок — React route и экран карточки отдельного OOF-объекта.**
+**Native AXION подтверждён через полный Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer → Objects → basic Object Detail. Следующий незавершённый продуктовый участок — Local Explanation / SHAP для выбранного OOF-объекта.**
 
 ## Следующий этап
 
-**React Objects → dynamic Object Detail route + screen поверх принятого public detail API; после этого — Local Explanation/SHAP отдельным controlled stage.**
+**Local Explanation / SHAP внутри принятого Object Detail route, отдельным controlled stage; после этого — Result Interpreter.**
 ## Что уже существует и не должно переписываться с нуля
 
 - Принятый исследовательский pipeline и ограничения по данным.
