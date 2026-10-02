@@ -12,7 +12,7 @@ Streamlit — frozen compatibility frontend. Новые продуктовые U
 
 ## Текущая точка
 
-Native AXION подтверждён через полный путь Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer → Objects → basic Object Detail. Главная, Данные, Признаки, Алгоритм, Quality preflight, полное обучение, обзор результата, список OOF-объектов и базовая карточка объекта готовы; public Local Explanation API через trusted current artifact и `OOFExplanationService.local()` принят. React Local Explanation/SHAP UI и Interpreter ещё не подключены; History и Models реализованы частично; Settings UI и backend ещё не реализованы.
+Native AXION подтверждён через полный путь Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer → Objects → basic Object Detail → Local Explanation / SHAP. Главная, Данные, Признаки, Алгоритм, Quality preflight, полное обучение, обзор результата, список OOF-объектов, базовая карточка и React Local Explanation/SHAP готовы и приняты. Result Interpreter ещё не подключён; History и Models реализованы частично; Settings UI и backend ещё не реализованы.
 
 Подробные статусы, границы и evidence — в [`PROJECT_MAP.md`](PROJECT_MAP.md).
 
@@ -20,7 +20,7 @@ Native AXION подтверждён через полный путь Quality →
 
 Canonical native artifact ownership уже зафиксирован: один `ExperimentArtifactStore` в `<repository root>/.axion-artifacts`; `.streamlit-artifacts` остаётся compatibility-only storage.
 
-**NEXT:** React Local Explanation / SHAP UI внутри принятого Object Detail route → затем Result Interpreter.
+**NEXT:** Result Interpreter внутри принятого Object Detail flow; новый UX/visual contract V2 фиксируется отдельно.
 
 ## Уже существующие reusable части
 
