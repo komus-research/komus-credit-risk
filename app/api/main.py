@@ -234,6 +234,18 @@ class ResultObjectListResponse(BaseModel):
     items: list[ResultObjectItemResponse]
 
 
+class ResultObjectDetailResponse(BaseModel):
+    artifact_id: str
+    object_id: str
+    identifier_display: str
+    y_true: int
+    score: float
+    threshold: float
+    predicted_positive: bool
+    outcome: str
+    fold_number: int
+
+
 class ResultThresholdPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -439,6 +451,49 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 )
                 for item in objects.items
             ],
+        )
+
+    @api.get("/api/v1/result/objects/{object_id}", response_model=ResultObjectDetailResponse)
+    def get_current_result_object_detail(
+        object_id: str,
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> ResultObjectDetailResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id = store.current_result_artifact_id(resolved_session_id)
+        current_threshold = store.current_result_threshold(resolved_session_id)
+        if artifact_id is None or current_threshold is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
+        try:
+            detail = result_service.object_detail(artifact_id, object_id, current_threshold)
+        except OOFResultError as exc:
+            if exc.code == "OBJECT_NOT_FOUND":
+                raise HTTPException(
+                    status_code=404,
+                    detail={"code": "OBJECT_NOT_FOUND", "message": "Объект не найден в текущем OOF-результате."},
+                ) from None
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "RESULT_READ_ERROR", "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        return ResultObjectDetailResponse(
+            artifact_id=detail.artifact_id,
+            object_id=detail.object_id,
+            identifier_display=detail.identifier_display,
+            y_true=detail.y_true,
+            score=detail.score,
+            threshold=detail.threshold,
+            predicted_positive=detail.predicted_positive,
+            outcome=detail.outcome,
+            fold_number=detail.fold_number,
         )
 
     @api.patch("/api/v1/result/threshold", response_model=ResultThresholdResponse)

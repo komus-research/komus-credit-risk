@@ -33,6 +33,7 @@ class _ResultService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, float | None]] = []
         self.object_calls: list[tuple[object, ...]] = []
+        self.detail_calls: list[tuple[str, str, float]] = []
         self.summary_value = SimpleNamespace(
             artifact_id="artifact-exact", result_id="result-exact", model_id="catboost",
             model_version="4.1", object_count=120, feature_count=7, folds=5,
@@ -72,6 +73,20 @@ class _ResultService:
                 SimpleNamespace(object_id="object-1", identifier_display="Клиент 1", y_true=1, score=0.81, predicted_positive=True, outcome="TP"),
                 SimpleNamespace(object_id="object-2", identifier_display="Клиент 2", y_true=0, score=0.23, predicted_positive=False, outcome="TN"),
             ),
+        )
+
+    def object_detail(self, artifact_id: str, object_id: str, threshold: float):
+        self.detail_calls.append((artifact_id, object_id, threshold))
+        return SimpleNamespace(
+            artifact_id=artifact_id,
+            object_id=object_id,
+            identifier_display="Клиент Detail",
+            y_true=1,
+            score=0.37,
+            threshold=threshold,
+            predicted_positive=False,
+            outcome="FN",
+            fold_number=3,
         )
 
 
@@ -122,6 +137,107 @@ def test_objects_is_not_ready_before_current_training_completion() -> None:
         "message": "Результат полного обучения ещё не готов.",
     }
     assert service.object_calls == []
+
+
+def test_object_detail_is_not_ready_before_current_training_completion() -> None:
+    service = _ResultService()
+    client, _store, _session_id = _client(service)
+
+    response = client.get("/api/v1/result/objects/object-opaque-123")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "RESULT_NOT_READY",
+        "message": "Результат полного обучения ещё не готов.",
+    }
+    assert service.detail_calls == []
+
+
+def test_object_detail_uses_current_artifact_and_threshold_and_returns_exact_service_values() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+    assert store.set_current_result_threshold(session_id, "artifact-exact", 0.65)
+
+    response = client.get("/api/v1/result/objects/object-opaque-123")
+
+    assert response.status_code == 200, response.text
+    assert service.detail_calls == [("artifact-exact", "object-opaque-123", 0.65)]
+    assert response.json() == {
+        "artifact_id": "artifact-exact",
+        "object_id": "object-opaque-123",
+        "identifier_display": "Клиент Detail",
+        "y_true": 1,
+        "score": 0.37,
+        "threshold": 0.65,
+        "predicted_positive": False,
+        "outcome": "FN",
+        "fold_number": 3,
+    }
+
+
+def test_object_detail_not_found_is_mapped_to_404() -> None:
+    class MissingObjectService(_ResultService):
+        def object_detail(self, artifact_id: str, object_id: str, threshold: float):
+            self.detail_calls.append((artifact_id, object_id, threshold))
+            raise OOFResultError("OBJECT_NOT_FOUND")
+
+    service = MissingObjectService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/objects/object-missing")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == {
+        "code": "OBJECT_NOT_FOUND",
+        "message": "Объект не найден в текущем OOF-результате.",
+    }
+    assert service.detail_calls == [("artifact-exact", "object-missing", 0.5)]
+
+
+def test_object_detail_unexpected_error_is_safe() -> None:
+    class BrokenService(_ResultService):
+        def object_detail(self, *args, **kwargs):
+            raise RuntimeError("private artifact path")
+
+    service = BrokenService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/objects/object-opaque-123")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "RESULT_READ_ERROR",
+        "message": "Не удалось прочитать сохранённый результат.",
+    }
+    assert "private artifact path" not in response.text
+
+
+def test_object_detail_uses_new_current_threshold_after_threshold_change() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+
+    assert client.patch("/api/v1/result/threshold", json={"threshold": 0.7}).status_code == 200
+    response = client.get("/api/v1/result/objects/object-opaque-123")
+
+    assert response.status_code == 200
+    assert service.detail_calls == [("artifact-exact", "object-opaque-123", 0.7)]
+
+
+def test_object_detail_is_not_ready_after_quality_invalidation() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+    store.set_quality_settings(session_id, seed=42, folds=5)
+
+    response = client.get("/api/v1/result/objects/object-opaque-123")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_NOT_READY"
+    assert service.detail_calls == []
 
 
 def test_objects_use_current_artifact_threshold_and_exact_query() -> None:
