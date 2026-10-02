@@ -1,3 +1,10 @@
+export type ResultFoldMetric = {
+  fold: number
+  gini: number
+  pr_auc: number
+  recall_at_0_5: number
+}
+
 export type ResultSummary = {
   artifact_id: string
   result_id: string
@@ -11,7 +18,7 @@ export type ResultSummary = {
   gini: number
   roc_auc: number
   pr_auc: number
-  fold_metrics: Array<Record<string, unknown>>
+  fold_metrics: ResultFoldMetric[]
   limitations: string[]
 }
 

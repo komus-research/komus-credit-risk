@@ -85,6 +85,8 @@ export function GlobalExplanationPage({ onHome }: { onHome: () => void }) {
 
   const allFeatures = explanation?.features ?? []
   const maxValue = allFeatures.reduce((max, feature) => Math.max(max, feature.mean_abs_shap), 0)
+  const topFeatures = explanation?.features.slice(0, 10) ?? []
+  const topFeaturesMax = topFeatures.reduce((max, feature) => Math.max(max, feature.mean_abs_shap), 0)
   const presentationFeatures = presentation === 'TOP_10' ? allFeatures.slice(0, 10) : allFeatures
   const visibleFeatures = presentationFeatures.filter(feature => feature.column_name.toLocaleLowerCase('ru').includes(search.trim().toLocaleLowerCase('ru')))
 
@@ -105,6 +107,21 @@ export function GlobalExplanationPage({ onHome }: { onHome: () => void }) {
         <SummaryCard icon="algorithm" label="Модель" value={explanation.model_id} secondary={explanation.model_version} />
         <DatasetSummaryCard dataset={explanation.dataset_name} rowCount={explanation.row_count} />
         <SummaryCard icon="chart" label="Признаков" value={integerFormat.format(explanation.feature_count)} badge="OOF" />
+      </section>
+
+      <section className="global-top-shap-panel panel" aria-labelledby="global-top-shap-title">
+        <div className="global-top-shap-heading">
+          <div><h2 id="global-top-shap-title">Топ-10 признаков по среднему |SHAP|</h2><strong>Среднее |SHAP| по OOF</strong></div>
+          <p>Чем длиннее полоса, тем больше среднее абсолютное влияние признака на оценки модели. Это не причинный эффект.</p>
+        </div>
+        {topFeatures.length ? <ol className="global-top-shap-list">
+          {topFeatures.map(feature => <li key={feature.feature_id}>
+            <span className="global-top-shap-rank">{feature.rank}</span>
+            <span className="global-top-shap-name" title={feature.column_name}>{feature.column_name}</span>
+            <span className="global-top-shap-value">{valueFormat.format(feature.mean_abs_shap)}</span>
+            <span className="global-top-shap-track"><i style={{ width: `${topFeaturesMax > 0 ? Math.max(0, feature.mean_abs_shap / topFeaturesMax) * 100 : 0}%` }} /></span>
+          </li>)}
+        </ol> : <p className="global-top-shap-empty">Данные для графика недоступны.</p>}
       </section>
 
       <section className="global-feature-panel panel">

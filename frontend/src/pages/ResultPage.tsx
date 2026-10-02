@@ -28,9 +28,9 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
 
   const summary = result?.summary
   const threshold = result?.threshold
-  const rocFolds = summary?.fold_metrics
-    .map((fold, index) => ({ index, value: fold.roc_auc }))
-    .filter((fold): fold is { index: number; value: number } => typeof fold.value === 'number' && Number.isFinite(fold.value)) ?? []
+  const foldMetrics = summary?.fold_metrics.filter(fold =>
+    Number.isFinite(fold.fold) && Number.isFinite(fold.gini) && Number.isFinite(fold.pr_auc) && Number.isFinite(fold.recall_at_0_5),
+  ) ?? []
 
   return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace result-workspace">
     <div className="analysis-nav"><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
@@ -67,16 +67,24 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
 
         <section className="result-panel panel">
           <PanelHeading title="Стабильность проверки" action="Подробнее" />
-          {rocFolds.length ? <>
-            <div className="result-fold-chart" role="img" aria-label={`ROC-AUC по ${rocFolds.length} частям проверки`}>
-              <div className="result-chart-ylabels"><span>1,0</span><span>0,5</span><span>0,0</span></div>
-              <div className="result-chart-plot">
+          {foldMetrics.length ? <>
+            <div className="result-quality-chart" role="img" aria-label={`Gini, PR-AUC и Recall по ${foldMetrics.length} fold`}>
+              <div className="result-quality-ylabels"><span>1,0</span><span>0,5</span><span>0,0</span></div>
+              <div className="result-quality-plot">
                 <div className="result-fold-gridline top" /><div className="result-fold-gridline middle" /><div className="result-fold-gridline bottom" />
-                <div className="result-fold-bars">{rocFolds.map(({ index, value }) => <div className="result-fold-bar" key={index}><strong>{metric(value)}</strong><span className="result-fold-track"><i style={{ height: `${Math.max(0, Math.min(value, 1)) * 100}%` }} /></span><small>Часть {index + 1}</small></div>)}</div>
+                <div className="result-quality-folds">{foldMetrics.map(fold => <div className="result-quality-fold" key={fold.fold}>
+                  <div className="result-quality-bars">{[
+                    { label: 'Gini', value: fold.gini, tone: 'gini' },
+                    { label: 'PR-AUC', value: fold.pr_auc, tone: 'pr-auc' },
+                    { label: 'Recall', value: fold.recall_at_0_5, tone: 'recall' },
+                  ].map(series => <div className={`result-quality-bar ${series.tone}`} key={series.label} title={`${series.label}: ${metric(series.value)}`}><strong>{metric(series.value)}</strong><i style={{ height: `${Math.max(0, Math.min(series.value, 1)) * 100}%` }} /></div>)}
+                  </div>
+                  <small>Часть {fold.fold}</small>
+                </div>)}</div>
               </div>
             </div>
-            <p className="result-chart-legend"><i />ROC-AUC по частям проверки</p>
-          </> : <p className="result-muted">В сохранённом результате нет ROC-AUC по частям проверки.</p>}
+            <p className="result-quality-legend"><span className="gini">Gini</span><span className="pr-auc">PR-AUC</span><span className="recall">Recall</span></p>
+          </> : <p className="result-muted">Данные для графика недоступны.</p>}
           <p className="result-note">Разброс по фолдам не доказывает стабильность во времени.</p>
         </section>
 
