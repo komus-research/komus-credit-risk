@@ -457,3 +457,105 @@ body.home-v2-route { min-width: 0; }
   .local-explanation-technical dl { grid-template-columns: 1fr; gap: 3px; }
   .local-explanation-technical dd { margin-bottom: 7px; }
 }
+
+/* Shared interaction states */
+button:not(:disabled) { cursor: pointer; }
+
+:where(
+  .nav-item:is(button, a[href]):not(:disabled),
+  .primary-action:not(:disabled),
+  .secondary-action:not(:disabled),
+  .quick-action:not(:disabled),
+  .text-action:not(:disabled),
+  .accordion-toggle:not(:disabled),
+  .objects-quick-views button:not(:disabled),
+  .objects-back-link:not(:disabled),
+  .threshold-back-link:not(:disabled),
+  .local-explanation-mode button:not(:disabled)
+) {
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease, opacity 150ms ease;
+}
+
+:where(
+  button:not(:disabled),
+  a[href],
+  summary,
+  [role="button"],
+  [tabindex="0"]
+):focus-visible {
+  outline: 2px solid #00d9b9;
+  outline-offset: 2px;
+}
+
+.nav-item:is(button, a[href]):not(:disabled):hover {
+  border-left-color: rgba(0, 217, 185, .62);
+  background: linear-gradient(90deg, rgba(0, 106, 99, .42), rgba(0, 96, 92, .1) 83%, transparent);
+  color: #e5fffa;
+}
+.nav-item.is-active:is(button, a[href]):not(:disabled):hover {
+  border-left-color: #00e5c2;
+  background: linear-gradient(90deg, #006a63 0%, rgba(0, 96, 92, .21) 83%, transparent);
+  color: #00e5c2;
+}
+.nav-item:disabled:hover { background: transparent; }
+
+.primary-action {
+  border: 1px solid rgba(117, 230, 211, .34);
+  color: #effcf9;
+  background: linear-gradient(110deg, #087c69, #0a927d);
+  box-shadow: inset 0 1px rgba(236, 255, 251, .08), 0 2px 7px rgba(0, 0, 0, .16);
+  font-size: 15px;
+  font-weight: 600;
+  opacity: 1;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 150ms ease, opacity 150ms ease;
+}
+.home-shell .header-actions .primary-action > .icon { width: 20px; height: 20px; }
+.primary-action:not(:disabled):hover {
+  border-color: rgba(145, 241, 223, .56);
+  background: linear-gradient(110deg, #0a8a75, #0c9c85);
+  box-shadow: inset 0 1px rgba(236, 255, 251, .1), 0 3px 9px rgba(0, 0, 0, .2);
+}
+.primary-action:not(:disabled):active {
+  background: linear-gradient(110deg, #076f5f, #087e6d);
+  box-shadow: inset 0 1px rgba(0, 0, 0, .12);
+}
+.primary-action:disabled {
+  border-color: #285e56;
+  background: linear-gradient(110deg, #174d44, #1c5b51);
+  box-shadow: none;
+  opacity: .7;
+}
+
+.secondary-action:not(:disabled):hover {
+  border-color: #4b8d83;
+  color: #e5f6f2;
+  background: #103537;
+}
+.secondary-action:not(:disabled):active { background: #0a282b; }
+.text-action:not(:disabled):hover { color: #77ead7; }
+.text-action:not(:disabled):active { color: #00bd9f; }
+
+.quick-action:not(:disabled):hover {
+  border-color: #2d6869;
+  background: rgba(7, 43, 45, .96);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .16);
+}
+.quick-action:not(:disabled):hover > .icon { color: #64dbc9; }
+.quick-action:not(:disabled):active { background: rgba(5, 34, 37, .96); }
+.quick-action:disabled:hover { border-color: #1a383b; background: rgba(7, 27, 31, .8); }
+
+.accordion-toggle:not(:disabled):hover h2,
+.objects-back-link:not(:disabled):hover,
+.threshold-back-link:not(:disabled):hover { color: #77ead7; }
+.objects-quick-views button:not(:disabled):hover,
+.local-explanation-mode button:not(:disabled):hover {
+  border-color: #3b7776;
+  color: #e7f8f5;
+  background-color: #103638;
+}
+.objects-quick-views button.active:not(:disabled):hover,
+.local-explanation-mode button.active:not(:disabled):hover {
+  border-color: #00d9b9;
+  color: #effffa;
+  background-color: #08605a;
+}
