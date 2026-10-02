@@ -50,6 +50,18 @@ export type ResultObjectList = {
   items: ResultObjectItem[]
 }
 
+export type ResultObjectDetail = {
+  artifact_id: string
+  object_id: string
+  identifier_display: string
+  y_true: number
+  score: number
+  threshold: number
+  predicted_positive: boolean
+  outcome: 'TP' | 'TN' | 'FP' | 'FN'
+  fold_number: number
+}
+
 export type ResultObjectsQuery = {
   offset: number
   limit: number
@@ -100,4 +112,23 @@ export async function getCurrentObjects(query: ResultObjectsQuery, signal?: Abor
     throw new Error(payload?.detail?.message ?? 'Не удалось загрузить объекты из сохранённого OOF-результата.')
   }
   return response.json() as Promise<ResultObjectList>
+}
+
+export async function getCurrentObjectDetail(objectId: string, signal?: AbortSignal): Promise<ResultObjectDetail> {
+  let response: Response
+  try {
+    response = await fetch(`/api/v1/result/objects/${encodeURIComponent(objectId)}`, { signal })
+  } catch (reason) {
+    if (signal?.aborted) throw reason
+    throw new Error('Не удалось загрузить карточку объекта.')
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { message?: string } } | null
+    throw new Error(payload?.detail?.message ?? 'Не удалось загрузить карточку объекта.')
+  }
+  try {
+    return await response.json() as ResultObjectDetail
+  } catch {
+    throw new Error('Не удалось загрузить карточку объекта.')
+  }
 }

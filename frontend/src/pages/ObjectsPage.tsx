@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentObjects, getCurrentResult, type ResultObjectItem, type ResultObjectList, type ResultObjectsQuery, type ResultOverview } from '../api/result'
 import { Sidebar } from '../components/Sidebar'
-import { buildObjectsRoute, currentRoute, navigate, navigateObjects, parseObjectsQuery, replaceObjects, routes, type ObjectsQueryState } from '../routing'
+import { buildObjectsRoute, currentRoute, navigate, navigateObjectDetail, navigateObjects, parseObjectsQuery, replaceObjects, routes, type ObjectsQueryState } from '../routing'
 
 const chunkSize = 50
 const integerFormat = new Intl.NumberFormat('ru-RU')
@@ -136,6 +136,7 @@ export function ObjectsPage({ onHome }: { onHome: () => void }) {
 
   const firstShown = objects && objects.returned_count ? objects.offset + 1 : 0
   const lastShown = objects ? objects.offset + objects.returned_count : 0
+  const openObject = (objectId: string) => navigateObjectDetail(objectId, parseObjectsQuery())
 
   return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace result-workspace objects-workspace">
     <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
@@ -169,7 +170,7 @@ export function ObjectsPage({ onHome }: { onHome: () => void }) {
         {loadingObjects && <p className="objects-loading">Загружаем объекты…</p>}
         {objectsError && <div className="objects-error" role="alert"><p>Не удалось загрузить объекты из сохранённого OOF-результата.</p><button className="secondary-action" onClick={() => setRetryToken(value => value + 1)}>Повторить</button></div>}
         {objects && objects.filtered_count === 0 && <p className="objects-empty">По выбранным условиям объекты не найдены.</p>}
-        {objects && objects.filtered_count > 0 && <div className="objects-table-viewport"><table className="objects-table"><thead><tr><th>Объект</th><th>Оценка модели</th><th title="Форма показывает целевое событие: ● — Да, ○ — Нет. Цвет показывает исход TP/TN/FP/FN.">Целевое событие <span aria-hidden="true">ⓘ</span></th><th>Положение относительно порога</th><th>Исход</th></tr></thead><tbody>{objects.items.map(item => <tr key={item.object_id}><td>{item.identifier_display}</td><td>{scoreValueFormat.format(item.score)}</td><td>{targetMarker(item)}</td><td className="objects-threshold-position">{item.predicted_positive ? '↑ Выше порога' : '↓ Ниже порога'}</td><td><span className={outcomeClass(item.outcome)}>{item.outcome}</span></td></tr>)}</tbody></table></div>}
+        {objects && objects.filtered_count > 0 && <div className="objects-table-viewport"><table className="objects-table"><thead><tr><th>Объект</th><th>Оценка модели</th><th title="Форма показывает целевое событие: ● — Да, ○ — Нет. Цвет показывает исход TP/TN/FP/FN.">Целевое событие <span aria-hidden="true">ⓘ</span></th><th>Положение относительно порога</th><th>Исход</th></tr></thead><tbody>{objects.items.map(item => <tr key={item.object_id} tabIndex={0} aria-label={`Открыть карточку объекта ${item.identifier_display}`} onClick={() => openObject(item.object_id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openObject(item.object_id) } }}><td>{item.identifier_display}</td><td>{scoreValueFormat.format(item.score)}</td><td>{targetMarker(item)}</td><td className="objects-threshold-position">{item.predicted_positive ? '↑ Выше порога' : '↓ Ниже порога'}</td><td><span className={outcomeClass(item.outcome)}>{item.outcome}</span></td></tr>)}</tbody></table></div>}
         {objects && objects.filtered_count > 0 && <div className="objects-chunk-controls"><button className="secondary-action" disabled={objects.offset === 0 || loadingObjects} onClick={() => updateObjectsQuery({ ...objectsQuery, offset: Math.max(0, objectsQuery.offset - chunkSize) })}>← Предыдущие</button><button className="secondary-action" disabled={objects.offset + objects.returned_count >= objects.filtered_count || loadingObjects} onClick={() => updateObjectsQuery({ ...objectsQuery, offset: objectsQuery.offset + chunkSize })}>Следующие →</button></div>}
       </section>
     </>}

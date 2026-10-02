@@ -7,21 +7,22 @@ import { FeaturesPage } from './pages/FeaturesPage'
 import { QualityPage } from './pages/QualityPage'
 import { ResultPage } from './pages/ResultPage'
 import { ObjectsPage } from './pages/ObjectsPage'
+import { ObjectDetailPage } from './pages/ObjectDetailPage'
 import { ThresholdPage } from './pages/ThresholdPage'
-import { currentRoute, guardedRoute, navigate, replaceRoute, routes, type CanonicalRoute } from './routing'
+import { currentRoute, guardedRoute, isObjectDetailRoute, navigate, navigateObjects, objectIdFromRoute, parseObjectsQuery, replaceRoute, routes, type AppRoute } from './routing'
 
 const recoveryText = 'Сессия подготовки была сброшена. Загрузите файл повторно.'
 
 export function App() {
-  const [route, setRoute] = useState<CanonicalRoute>(() => currentRoute() ?? routes.home)
+  const [route, setRoute] = useState<AppRoute>(() => currentRoute() ?? routes.home)
   const [session, setSession] = useState<NativeSession | null>(null)
   const [sessionReady, setSessionReady] = useState(false)
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
-  const requestedRoute = useRef(route)
+  const requestedRoute = useRef<AppRoute>(route)
   const resultThresholdAccess = useRef(false)
   const resultObjectsAccess = useRef(false)
 
-  const sync = useCallback(async (requested: CanonicalRoute, stale = false) => {
+  const sync = useCallback(async (requested: AppRoute, stale = false) => {
     requestedRoute.current = requested
     try {
       const next = await getNativeSession()
@@ -31,7 +32,7 @@ export function App() {
       const allowed = guardedRoute(requested, next, resultThresholdAccess.current, resultObjectsAccess.current)
       if (allowed !== requested) {
         if (requested === routes.resultThreshold) resultThresholdAccess.current = false
-        if (requested === routes.resultObjects) resultObjectsAccess.current = false
+        if (requested === routes.resultObjects || isObjectDetailRoute(requested)) resultObjectsAccess.current = false
         if (stale || (requested === routes.roles && allowed === routes.file)) setRecoveryMessage(recoveryText)
         replaceRoute(allowed)
         requestedRoute.current = allowed
@@ -57,7 +58,7 @@ export function App() {
         return
       }
       if (next !== routes.resultThreshold) resultThresholdAccess.current = false
-      if (next !== routes.resultObjects) resultObjectsAccess.current = false
+      if (next !== routes.resultObjects && !isObjectDetailRoute(next)) resultObjectsAccess.current = false
       requestedRoute.current = next
       setRoute(next)
       setSessionReady(false)
@@ -104,6 +105,10 @@ export function App() {
     resultObjectsAccess.current = true
     navigate(routes.resultObjects)
   }, [])
+  const backToObjects = useCallback(() => {
+    resultObjectsAccess.current = true
+    navigateObjects(parseObjectsQuery())
+  }, [])
   const continueAnalysis = useCallback(() => { if (session) navigate(session.resume_route) }, [session])
   const handleDatasetUploaded = useCallback(() => {
     setRecoveryMessage(null)
@@ -118,5 +123,6 @@ export function App() {
   if (route === routes.result) return <ResultPage onHome={openHome} onOpenThreshold={openResultThreshold} onOpenObjects={openResultObjects} />
   if (route === routes.resultThreshold) return <ThresholdPage onHome={openHome} />
   if (route === routes.resultObjects) return <ObjectsPage onHome={openHome} />
+  if (isObjectDetailRoute(route)) return <ObjectDetailPage objectId={objectIdFromRoute(route)!} onBack={backToObjects} onHome={openHome} />
   return <DataPage route={route} sessionReady={sessionReady} onHome={openHome} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
 }

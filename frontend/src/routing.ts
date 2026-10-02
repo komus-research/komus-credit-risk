@@ -15,6 +15,8 @@ export const routes = {
 
 export type CanonicalRoute = typeof routes[keyof typeof routes]
 export type DataRoute = typeof routes.file | typeof routes.roles
+export type ObjectDetailRoute = `${typeof routes.resultObjects}/${string}`
+export type AppRoute = CanonicalRoute | ObjectDetailRoute
 
 type ObjectsOutcome = 'TP' | 'TN' | 'FP' | 'FN'
 type ObjectsTarget = 'ANY' | 'POSITIVE' | 'NEGATIVE'
@@ -37,6 +39,7 @@ const outcomeOrder: ObjectsOutcome[] = ['TP', 'TN', 'FP', 'FN']
 const targets = new Set<ObjectsTarget>(['ANY', 'POSITIVE', 'NEGATIVE'])
 const sorts = new Set<ObjectsSort>(['SCORE_DESC', 'SCORE_ASC', 'DISTANCE_TO_THRESHOLD_ASC'])
 const quickViews = new Set<Exclude<ObjectsQuickView, null>>(['errors', 'high', 'boundary', 'missed', 'false-positive', 'all'])
+const objectDetailPrefix = `${routes.resultObjects}/`
 
 function quickViewMatchesQuery(quickView: ObjectsQuickView, outcomes: ObjectsOutcome[], sort: ObjectsSort) {
   if (quickView === null) return false
@@ -95,16 +98,34 @@ function normalizeObjectsQuery(state: ObjectsQueryState): ObjectsQueryState {
   }
 }
 
-export function currentRoute(): CanonicalRoute | null {
-  const path = hashPath()
-  return knownRoutes.has(path) ? path as CanonicalRoute : null
+export function isObjectDetailRoute(route: string): route is ObjectDetailRoute {
+  return objectIdFromRoute(route) !== null
 }
 
-export function navigate(route: CanonicalRoute) {
+export function objectIdFromRoute(route: string): string | null {
+  const path = route.split('?', 1)[0]
+  if (!path.startsWith(objectDetailPrefix)) return null
+  const encodedObjectId = path.slice(objectDetailPrefix.length)
+  if (!encodedObjectId || encodedObjectId.includes('/')) return null
+  try {
+    const objectId = decodeURIComponent(encodedObjectId)
+    return objectId ? objectId : null
+  } catch {
+    return null
+  }
+}
+
+export function currentRoute(): AppRoute | null {
+  const path = hashPath()
+  if (knownRoutes.has(path)) return path as CanonicalRoute
+  return isObjectDetailRoute(path) ? path : null
+}
+
+export function navigate(route: AppRoute) {
   if (window.location.hash !== route) window.location.hash = route
 }
 
-export function replaceRoute(route: CanonicalRoute) {
+export function replaceRoute(route: AppRoute) {
   window.history.replaceState(null, '', route)
 }
 
@@ -154,6 +175,16 @@ export function navigateObjects(state: ObjectsQueryState) {
   if (window.location.hash !== route) window.location.hash = route
 }
 
+export function buildObjectDetailRoute(objectId: string, state: ObjectsQueryState): ObjectDetailRoute {
+  const query = serializeObjectsQuery(state)
+  const route = `${objectDetailPrefix}${encodeURIComponent(objectId)}${query ? `?${query}` : ''}`
+  return route as ObjectDetailRoute
+}
+
+export function navigateObjectDetail(objectId: string, state: ObjectsQueryState) {
+  navigate(buildObjectDetailRoute(objectId, state))
+}
+
 export function replaceObjects(state: ObjectsQueryState) {
   const route = buildObjectsRoute(state)
   if (window.location.hash === route) return
@@ -161,7 +192,10 @@ export function replaceObjects(state: ObjectsQueryState) {
   window.dispatchEvent(new Event('hashchange'))
 }
 
-export function guardedRoute(route: CanonicalRoute, session: NativeSession, allowResultThreshold = false, allowResultObjects = false): CanonicalRoute {
+export function guardedRoute(route: AppRoute, session: NativeSession, allowResultThreshold = false, allowResultObjects = false): AppRoute {
+  if (isObjectDetailRoute(route)) {
+    return session.resume_route === routes.result ? route : session.resume_route
+  }
   if (route === routes.home || route === routes.file) return route
   if (route === routes.roles) {
     return session.analysis_active && session.data_substep === 'ROLES' ? route : routes.file
