@@ -3,7 +3,7 @@
 > Этот документ — единственный источник ответа на два вопроса: **где проект находится сейчас** и **что делаем следующим**.
 > Архитектурные, исследовательские и UX-документы сохраняют свои решения и доказательства, но не могут самостоятельно менять текущий NEXT.
 
-Продуктовый код текущего этапа проверен относительно ветки `design/home-v2-algorithm-v2`, commit `5906cdfbc6e717473de59728e19b8f8dd5379494`.
+Продуктовый код текущего этапа проверен относительно ветки `design/home-v2-algorithm-v2`, commit `8f4dfdb5eb271f12e6f6a76022a4c0687f7dddbd`.
 
 ## Как читать эту карту
 
@@ -36,18 +36,18 @@ React + TypeScript + Vite
 | Алгоритм | Выбор алгоритма и его настроек | Native Algorithm реализован и принят | React → FastAPI → application/core | **ГОТОВО** | Ничего для текущего пути |
 | Проверка перед обучением | Проверка конфигурации и smoke перед полным запуском | Native Quality preflight реализован и принят; после PASS доступен явный запуск полного обучения | React → FastAPI → ExperimentApplicationService | **ГОТОВО** | Ничего для текущего пути |
 | Полное обучение | Запуск полного OOF-эксперимента с реальным прогрессом и сохранением результата | Native Quality запускает существующий `ExperimentApplicationService.run_experiment()`, публикует реальные progress events и сохраняет `ExperimentArtifact` в canonical `.axion-artifacts`; дорогой полный OOF на реальном большом dataset в рамках wiring-этапа не запускался | React → FastAPI → application/core | **ГОТОВО** | Ничего для текущего пути |
-| Результат | Метрики, OOF-результат, объяснения и интерпретация сохранённого эксперимента | Native React Result Overview и Threshold Explorer приняты; current threshold хранится transient в native session и все threshold-dependent metrics приходят через `OOFResultService.threshold()`; Objects / Object Detail / SHAP / Interpreter в native React ещё не подключены | React → FastAPI → application/core | **ЧАСТИЧНО** | Следующий этап — native Objects |
+| Результат | Метрики, OOF-результат, объяснения и интерпретация сохранённого эксперимента | Native React Result Overview, Threshold Explorer и Objects приняты; Objects читает server-side OOF list через `OOFResultService.objects()` с current artifact/current threshold из trusted session; Object Detail / SHAP / Interpreter в native React ещё не подключены | React → FastAPI → application/core | **ЧАСТИЧНО** | Следующий этап — native Object Detail |
 | История | Каталог завершённых экспериментов и открытие точного сохранённого результата | AnalysisHistory backend принят; native React History отсутствует | application/core; compatibility Streamlit catalog существует | **ЧАСТИЧНО** | После native Result подключить History к тому же canonical artifact source |
 | Модели | Работа с сохранёнными версиями моделей | Product / Visual Lock принят; ModelVersion и saved-model inference backend/application компоненты существуют, но native React Models UI и полный trusted browse/persistence path не завершены | application/core + accepted UX/visual locks; native UI отсутствует | **ЧАСТИЧНО** | Только после Result и History |
 | Настройки | Настройки продукта | Product / Architecture / Visual Lock принят; SET-BE1 / SET-BE2 и native React Settings UI ещё не реализованы | accepted UX/architecture docs; runtime implementation pending | **НЕ НАЧАТО** | Только после более приоритетных этапов |
 
 ## Текущая точка проекта
 
-**Native AXION подтверждён через полный Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer. Следующий незавершённый продуктовый участок — список OOF-объектов в React.**
+**Native AXION подтверждён через полный Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer → Objects. Следующий незавершённый продуктовый участок — карточка отдельного OOF-объекта в React.**
 
 ## Следующий этап
 
-**Native Result → Objects через public `OOFResultService.objects()` с server-side filtering/sorting/paging и без чтения raw OOF arrays во frontend.**
+**Native Objects → Object Detail через public `OOFResultService.object_detail()`; после этого — Local Explanation/SHAP отдельным controlled stage.**
 ## Что уже существует и не должно переписываться с нуля
 
 - Принятый исследовательский pipeline и ограничения по данным.
@@ -58,7 +58,7 @@ React + TypeScript + Vite
 - Global OOF SHAP.
 - Result Interpreter как интерпретатор результата, а не кредитный предиктор.
 - `AnalysisHistoryService` и принятые semantics History.
-- Принятые native Home / Data / Features / Algorithm / Quality preflight / full training / Result Overview / Threshold Explorer.
+- Принятые native Home / Data / Features / Algorithm / Quality preflight / full training / Result Overview / Threshold Explorer / Objects.
 
 Новый React UI должен использовать эти application/core-контракты через FastAPI, а не создавать второй ML-пайплайн.
 

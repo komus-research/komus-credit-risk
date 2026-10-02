@@ -12,7 +12,7 @@ Streamlit — frozen compatibility frontend. Новые продуктовые U
 
 ## Текущая точка
 
-Native AXION подтверждён через полный путь Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer. Главная, Данные, Признаки, Алгоритм, Quality preflight, полное обучение, обзор результата и исследование порога готовы. Native Result дальше Threshold Explorer, History и Models реализованы частично; Settings UI и backend ещё не реализованы. Product / Architecture / Visual Lock для Settings принят.
+Native AXION подтверждён через полный путь Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer → Objects. Главная, Данные, Признаки, Алгоритм, Quality preflight, полное обучение, обзор результата, исследование порога и список OOF-объектов готовы. Native Result дальше Objects, History и Models реализованы частично; Settings UI и backend ещё не реализованы. Product / Architecture / Visual Lock для Settings принят.
 
 Подробные статусы, границы и evidence — в [`PROJECT_MAP.md`](PROJECT_MAP.md).
 
@@ -20,7 +20,7 @@ Native AXION подтверждён через полный путь Quality →
 
 Canonical native artifact ownership уже зафиксирован: один `ExperimentArtifactStore` в `<repository root>/.axion-artifacts`; `.streamlit-artifacts` остаётся compatibility-only storage.
 
-**NEXT:** native Objects через `OOFResultService.objects()` → затем Object Detail.
+**NEXT:** native Object Detail через `OOFResultService.object_detail()` → затем Local Explanation/SHAP.
 
 ## Уже существующие reusable части
 
@@ -29,7 +29,7 @@ Canonical native artifact ownership уже зафиксирован: один `E
 - `OOFResultService`, `OOFExplanationService`, Global OOF SHAP;
 - Result Interpreter — интерпретатор результата;
 - `AnalysisHistoryService`;
-- принятые native Home / Data / Features / Algorithm / Quality preflight / full training / Result Overview / Threshold Explorer.
+- принятые native Home / Data / Features / Algorithm / Quality preflight / full training / Result Overview / Threshold Explorer / Objects.
 
 Новый React UI использует существующие application/core контракты через FastAPI, а не создаёт второй ML pipeline.
 
