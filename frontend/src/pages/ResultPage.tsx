@@ -16,7 +16,7 @@ function foldValue(value: unknown): string {
   return JSON.stringify(value)
 }
 
-export function ResultPage({ onHome, onOpenThreshold }: { onHome: () => void; onOpenThreshold: () => void }) {
+export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome: () => void; onOpenThreshold: () => void; onOpenObjects: () => void }) {
   const [result, setResult] = useState<ResultOverview | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -73,7 +73,7 @@ export function ResultPage({ onHome, onOpenThreshold }: { onHome: () => void; on
 
       <details className="result-technical panel"><summary>Технические сведения</summary><dl><div><dt>Artifact ID</dt><dd>{summary.artifact_id}</dd></div><div><dt>Result ID</dt><dd>{summary.result_id}</dd></div><div><dt>Уровень оценки</dt><dd>{summary.evaluation_level}</dd></div><div><dt>Время выполнения</dt><dd>{summary.runtime_seconds === null ? 'Не сохранено' : `${numberFormat.format(summary.runtime_seconds)} с`}</dd></div></dl></details>
 
-      <nav className="result-actions" aria-label="Другие разделы результата"><button className="secondary-action" onClick={onOpenThreshold}>Исследовать порог</button><button className="secondary-action" disabled>Посмотреть объекты</button><button className="secondary-action" disabled>Подробнее о влиянии признаков</button></nav>
+      <nav className="result-actions" aria-label="Другие разделы результата"><button className="secondary-action" onClick={onOpenThreshold}>Исследовать порог</button><button className="secondary-action" onClick={onOpenObjects}>Посмотреть объекты</button><button className="secondary-action" disabled>Подробнее о влиянии признаков</button></nav>
     </>}
   </main></div>
 }

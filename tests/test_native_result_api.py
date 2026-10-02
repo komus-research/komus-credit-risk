@@ -32,6 +32,7 @@ def _completed_session(store: NativeSessionStore, session_id: str, artifact_id: 
 class _ResultService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, float | None]] = []
+        self.object_calls: list[tuple[object, ...]] = []
         self.summary_value = SimpleNamespace(
             artifact_id="artifact-exact", result_id="result-exact", model_id="catboost",
             model_version="4.1", object_count=120, feature_count=7, folds=5,
@@ -54,6 +55,24 @@ class _ResultService:
         if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
             raise OOFResultError("INVALID_THRESHOLD")
         return SimpleNamespace(**{**vars(self.threshold_value), "threshold": float(threshold)})
+
+    def objects(self, artifact_id: str, threshold: float, offset: int, limit: int, **query):
+        self.object_calls.append((artifact_id, threshold, offset, limit, query))
+        if query["sort"] == "INVALID":
+            raise OOFResultError("INVALID_QUERY")
+        return SimpleNamespace(
+            artifact_id=artifact_id,
+            threshold=threshold,
+            total_count=120,
+            filtered_count=2,
+            offset=offset,
+            limit=limit,
+            returned_count=2,
+            items=(
+                SimpleNamespace(object_id="object-1", identifier_display="Клиент 1", y_true=1, score=0.81, predicted_positive=True, outcome="TP"),
+                SimpleNamespace(object_id="object-2", identifier_display="Клиент 2", y_true=0, score=0.23, predicted_positive=False, outcome="TN"),
+            ),
+        )
 
 
 def _client(result_service: _ResultService):
@@ -89,6 +108,113 @@ def test_threshold_patch_is_not_ready_before_current_training_completion() -> No
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "RESULT_NOT_READY"
     assert service.calls == []
+
+
+def test_objects_is_not_ready_before_current_training_completion() -> None:
+    service = _ResultService()
+    client, _store, _session_id = _client(service)
+
+    response = client.get("/api/v1/result/objects")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "RESULT_NOT_READY",
+        "message": "Результат полного обучения ещё не готов.",
+    }
+    assert service.object_calls == []
+
+
+def test_objects_use_current_artifact_threshold_and_exact_query() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+    assert store.set_current_result_threshold(session_id, "artifact-exact", 0.65)
+
+    response = client.get(
+        "/api/v1/result/objects",
+        params=[
+            ("offset", "120000"), ("limit", "50"), ("search", " Клиент "),
+            ("target", "POSITIVE"), ("outcomes", "FP"), ("outcomes", "FN"),
+            ("min_score", "0.2"), ("max_score", "0.8"),
+            ("sort", "DISTANCE_TO_THRESHOLD_ASC"),
+        ],
+    )
+
+    assert response.status_code == 200, response.text
+    assert service.object_calls == [(
+        "artifact-exact", 0.65, 120000, 50,
+        {"search": " Клиент ", "target": "POSITIVE", "outcomes": ["FP", "FN"], "min_score": 0.2, "max_score": 0.8, "sort": "DISTANCE_TO_THRESHOLD_ASC"},
+    )]
+    assert response.json() == {
+        "artifact_id": "artifact-exact", "threshold": 0.65,
+        "total_count": 120, "filtered_count": 2, "offset": 120000, "limit": 50,
+        "returned_count": 2,
+        "items": [
+            {"object_id": "object-1", "identifier_display": "Клиент 1", "y_true": 1, "score": 0.81, "predicted_positive": True, "outcome": "TP"},
+            {"object_id": "object-2", "identifier_display": "Клиент 2", "y_true": 0, "score": 0.23, "predicted_positive": False, "outcome": "TN"},
+        ],
+    }
+
+
+def test_objects_invalid_query_is_safe() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/objects", params={"sort": "INVALID"})
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "INVALID_QUERY",
+        "message": "Параметры списка объектов некорректны.",
+    }
+
+
+def test_objects_use_new_current_threshold_after_threshold_change() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+
+    assert client.patch("/api/v1/result/threshold", json={"threshold": 0.7}).status_code == 200
+    response = client.get("/api/v1/result/objects")
+
+    assert response.status_code == 200
+    assert service.object_calls == [(
+        "artifact-exact", 0.7, 0, 50,
+        {"search": None, "target": "ANY", "outcomes": None, "min_score": None, "max_score": None, "sort": "SCORE_DESC"},
+    )]
+
+
+def test_objects_are_not_ready_after_quality_invalidation() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+    store.set_quality_settings(session_id, seed=42, folds=5)
+
+    response = client.get("/api/v1/result/objects")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_NOT_READY"
+    assert service.object_calls == []
+
+
+def test_objects_unexpected_error_is_safe() -> None:
+    class BrokenService(_ResultService):
+        def objects(self, *args, **kwargs):
+            raise RuntimeError("private artifact path")
+
+    service = BrokenService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/objects")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "RESULT_READ_ERROR",
+        "message": "Не удалось прочитать сохранённый результат.",
+    }
+    assert "private artifact path" not in response.text
 
 
 def test_result_uses_exact_current_artifact_and_returns_service_values() -> None:

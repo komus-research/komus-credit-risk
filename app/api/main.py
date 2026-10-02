@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import Cookie, FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import Cookie, FastAPI, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -214,6 +214,26 @@ class ResultOverviewResponse(BaseModel):
     threshold: ResultThresholdResponse
 
 
+class ResultObjectItemResponse(BaseModel):
+    object_id: str
+    identifier_display: str
+    y_true: int
+    score: float
+    predicted_positive: bool
+    outcome: str
+
+
+class ResultObjectListResponse(BaseModel):
+    artifact_id: str
+    threshold: float
+    total_count: int
+    filtered_count: int
+    offset: int
+    limit: int
+    returned_count: int
+    items: list[ResultObjectItemResponse]
+
+
 class ResultThresholdPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -349,6 +369,76 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 above_threshold_count=threshold.above_threshold_count,
                 above_threshold_share=threshold.above_threshold_share,
             ),
+        )
+
+    @api.get("/api/v1/result/objects", response_model=ResultObjectListResponse)
+    def get_current_result_objects(
+        response: Response,
+        offset: int = 0,
+        limit: int = 50,
+        search: str | None = None,
+        target: str = "ANY",
+        outcomes: Annotated[list[str] | None, Query()] = None,
+        min_score: float | None = None,
+        max_score: float | None = None,
+        sort: str = "SCORE_DESC",
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> ResultObjectListResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id = store.current_result_artifact_id(resolved_session_id)
+        current_threshold = store.current_result_threshold(resolved_session_id)
+        if artifact_id is None or current_threshold is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
+        try:
+            objects = result_service.objects(
+                artifact_id,
+                current_threshold,
+                offset,
+                limit,
+                search=search,
+                target=target,
+                outcomes=outcomes,
+                min_score=min_score,
+                max_score=max_score,
+                sort=sort,
+            )
+        except OOFResultError as exc:
+            if exc.code == "INVALID_QUERY":
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "INVALID_QUERY", "message": "Параметры списка объектов некорректны."},
+                ) from None
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "RESULT_READ_ERROR", "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        return ResultObjectListResponse(
+            artifact_id=objects.artifact_id,
+            threshold=objects.threshold,
+            total_count=objects.total_count,
+            filtered_count=objects.filtered_count,
+            offset=objects.offset,
+            limit=objects.limit,
+            returned_count=objects.returned_count,
+            items=[
+                ResultObjectItemResponse(
+                    object_id=item.object_id,
+                    identifier_display=item.identifier_display,
+                    y_true=item.y_true,
+                    score=item.score,
+                    predicted_positive=item.predicted_positive,
+                    outcome=item.outcome,
+                )
+                for item in objects.items
+            ],
         )
 
     @api.patch("/api/v1/result/threshold", response_model=ResultThresholdResponse)

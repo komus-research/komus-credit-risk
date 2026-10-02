@@ -10,6 +10,7 @@ export const routes = {
   quality: '#/analysis/quality',
   result: '#/analysis/result',
   resultThreshold: '#/analysis/result/threshold',
+  resultObjects: '#/analysis/result/objects',
 } as const
 
 export type CanonicalRoute = typeof routes[keyof typeof routes]
@@ -29,7 +30,7 @@ export function replaceRoute(route: CanonicalRoute) {
   window.history.replaceState(null, '', route)
 }
 
-export function guardedRoute(route: CanonicalRoute, session: NativeSession, allowResultThreshold = false): CanonicalRoute {
+export function guardedRoute(route: CanonicalRoute, session: NativeSession, allowResultThreshold = false, allowResultObjects = false): CanonicalRoute {
   if (route === routes.home || route === routes.file) return route
   if (route === routes.roles) {
     return session.analysis_active && session.data_substep === 'ROLES' ? route : routes.file
@@ -41,6 +42,9 @@ export function guardedRoute(route: CanonicalRoute, session: NativeSession, allo
   if (route === routes.result) return session.resume_route === routes.result ? route : session.resume_route
   if (route === routes.resultThreshold) {
     return session.resume_route === routes.result && allowResultThreshold ? route : session.resume_route
+  }
+  if (route === routes.resultObjects) {
+    return session.resume_route === routes.result && allowResultObjects ? route : session.resume_route
   }
   return routes.home
 }

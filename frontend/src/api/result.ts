@@ -30,6 +30,37 @@ export type ThresholdMetrics = {
 
 export type ResultOverview = { summary: ResultSummary; threshold: ThresholdMetrics }
 
+export type ResultObjectItem = {
+  object_id: string
+  identifier_display: string
+  y_true: number
+  score: number
+  predicted_positive: boolean
+  outcome: 'TP' | 'TN' | 'FP' | 'FN'
+}
+
+export type ResultObjectList = {
+  artifact_id: string
+  threshold: number
+  total_count: number
+  filtered_count: number
+  offset: number
+  limit: number
+  returned_count: number
+  items: ResultObjectItem[]
+}
+
+export type ResultObjectsQuery = {
+  offset: number
+  limit: number
+  search?: string
+  target: 'ANY' | 'POSITIVE' | 'NEGATIVE'
+  outcomes?: Array<'TP' | 'TN' | 'FP' | 'FN'>
+  min_score: number
+  max_score: number
+  sort: 'SCORE_DESC' | 'SCORE_ASC' | 'DISTANCE_TO_THRESHOLD_ASC'
+}
+
 export async function getCurrentResult(): Promise<ResultOverview> {
   const response = await fetch('/api/v1/result')
   if (!response.ok) {
@@ -50,4 +81,23 @@ export async function updateCurrentThreshold(threshold: number): Promise<Thresho
     throw new Error(payload?.detail?.message ?? 'Не удалось изменить диагностический порог.')
   }
   return response.json() as Promise<ThresholdMetrics>
+}
+
+export async function getCurrentObjects(query: ResultObjectsQuery, signal?: AbortSignal): Promise<ResultObjectList> {
+  const params = new URLSearchParams({
+    offset: String(query.offset),
+    limit: String(query.limit),
+    target: query.target,
+    min_score: String(query.min_score),
+    max_score: String(query.max_score),
+    sort: query.sort,
+  })
+  if (query.search?.trim()) params.set('search', query.search)
+  query.outcomes?.forEach(outcome => params.append('outcomes', outcome))
+  const response = await fetch(`/api/v1/result/objects?${params.toString()}`, { signal })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { message?: string } } | null
+    throw new Error(payload?.detail?.message ?? 'Не удалось загрузить объекты из сохранённого OOF-результата.')
+  }
+  return response.json() as Promise<ResultObjectList>
 }
