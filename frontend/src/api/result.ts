@@ -30,6 +30,26 @@ export type ThresholdMetrics = {
 
 export type ResultOverview = { summary: ResultSummary; threshold: ThresholdMetrics }
 
+export type GlobalOOFFeatureImportance = {
+  feature_id: string
+  column_name: string
+  mean_abs_shap: number
+  rank: number
+}
+
+export type GlobalOOFExplanation = {
+  artifact_id: string
+  model_id: string
+  model_version: string
+  dataset_name: string
+  row_count: number
+  feature_count: number
+  folds: number
+  output_space: string
+  evidence_hash: string
+  features: GlobalOOFFeatureImportance[]
+}
+
 export type ResultObjectItem = {
   object_id: string
   identifier_display: string
@@ -116,6 +136,30 @@ export async function getCurrentResult(): Promise<ResultOverview> {
     throw new Error(payload?.detail?.message ?? 'Не удалось загрузить результат обучения.')
   }
   return response.json() as Promise<ResultOverview>
+}
+
+export async function getCurrentGlobalOOFExplanation(signal?: AbortSignal): Promise<GlobalOOFExplanation> {
+  const fallback = 'Не удалось загрузить влияние признаков.'
+  const abort = (reason: unknown) => signal?.aborted || (typeof reason === 'object' && reason !== null && 'name' in reason && reason.name === 'AbortError')
+  let response: Response
+  try {
+    response = await fetch('/api/v1/result/explanation/global', { signal })
+  } catch (reason) {
+    if (signal?.aborted || (reason instanceof DOMException && reason.name === 'AbortError')) throw reason
+    throw new Error(fallback)
+  }
+  if (!response.ok) {
+    let payload: { detail?: { message?: string } } | null = null
+    try { payload = await response.json() as { detail?: { message?: string } } }
+    catch (reason) { if (abort(reason)) throw reason }
+    throw new Error(payload?.detail?.message ?? fallback)
+  }
+  try {
+    return await response.json() as GlobalOOFExplanation
+  } catch (reason) {
+    if (abort(reason)) throw reason
+    throw new Error(fallback)
+  }
 }
 
 export async function updateCurrentThreshold(threshold: number): Promise<ThresholdMetrics> {

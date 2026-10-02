@@ -9,6 +9,7 @@ import { ResultPage } from './pages/ResultPage'
 import { ObjectsPage } from './pages/ObjectsPage'
 import { ObjectDetailPage } from './pages/ObjectDetailPage'
 import { ThresholdPage } from './pages/ThresholdPage'
+import { GlobalExplanationPage } from './pages/GlobalExplanationPage'
 import { currentRoute, guardedRoute, isObjectDetailRoute, navigate, navigateObjects, objectIdFromRoute, parseObjectsQuery, replaceRoute, routes, type AppRoute } from './routing'
 
 const recoveryText = 'Сессия подготовки была сброшена. Загрузите файл повторно.'
@@ -121,6 +122,7 @@ export function App() {
   if (route === routes.algorithm) return <AlgorithmPage onHome={openHome} />
   if (route === routes.quality) return <QualityPage onHome={openHome} />
   if (route === routes.result) return <ResultPage onHome={openHome} onOpenThreshold={openResultThreshold} onOpenObjects={openResultObjects} />
+  if (route === routes.resultGlobalExplanation) return <GlobalExplanationPage onHome={openHome} />
   if (route === routes.resultThreshold) return <ThresholdPage onHome={openHome} />
   if (route === routes.resultObjects) return <ObjectsPage onHome={openHome} />
   if (isObjectDetailRoute(route)) return <ObjectDetailPage objectId={objectIdFromRoute(route)!} onBack={backToObjects} onHome={openHome} />

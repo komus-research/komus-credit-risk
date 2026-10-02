@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getCurrentResult, type ResultOverview } from '../api/result'
 import { Icon } from '../components/Icon'
 import { Sidebar } from '../components/Sidebar'
+import { navigate, routes } from '../routing'
 
 const numberFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 })
 const percentFormat = new Intl.NumberFormat('ru-RU', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 })
@@ -101,8 +102,8 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
         </section>
 
         <section className="result-panel result-influence-panel panel">
-          <PanelHeading title="На какие признаки модель опиралась сильнее всего" icon="info" action="Подробнее" />
-          <div className="result-influence-content"><div className="result-influence-unavailable">Глобальное влияние признаков пока не подключено</div><aside><Icon name="info" size={20} /><p>Этот блок объясняет поведение модели, но не доказывает причинность.</p></aside></div>
+          <PanelHeading title="На какие признаки модель опиралась сильнее всего" icon="info" action="Подробнее" onAction={() => navigate(routes.resultGlobalExplanation)} />
+          <div className="result-influence-content"><div className="result-influence-unavailable">Откройте полный список и ранжирование признаков.</div><aside><Icon name="info" size={20} /><p>Этот блок объясняет поведение модели, но не доказывает причинность.</p></aside></div>
         </section>
       </div>
 
@@ -129,8 +130,8 @@ function SummaryFact({ icon, label, value, detail }: { icon: 'algorithm' | 'tabl
   return <div className="result-summary-fact"><span className="result-summary-icon"><Icon name={icon} size={24} /></span><div><small>{label}</small><strong>{value}</strong>{detail && <span>{detail}</span>}</div></div>
 }
 
-function PanelHeading({ title, icon, action, badge }: { title: string; icon?: 'info'; action?: string; badge?: string }) {
-  return <div className="result-panel-heading"><h2>{title}{icon && <span className="result-heading-info" title={title}><Icon name={icon} size={17} /></span>}</h2>{badge && <span className="result-heading-badge">{badge}</span>}{action && <button className="result-heading-action" disabled title={unavailable} aria-label={`${action} о разделе «${title}». ${unavailable}`}>{action} <Icon name="arrow" size={15} /></button>}</div>
+function PanelHeading({ title, icon, action, badge, onAction }: { title: string; icon?: 'info'; action?: string; badge?: string; onAction?: () => void }) {
+  return <div className="result-panel-heading"><h2>{title}{icon && <span className="result-heading-info" title={title}><Icon name={icon} size={17} /></span>}</h2>{badge && <span className="result-heading-badge">{badge}</span>}{action && <button className="result-heading-action" disabled={!onAction} onClick={onAction} title={onAction ? undefined : unavailable} aria-label={onAction ? `${action}: ${title}` : `${action} о разделе «${title}». ${unavailable}`}>{action} <Icon name="arrow" size={15} /></button>}</div>
 }
 
 function Metric({ label, value, bar, tone }: { label: string; value: string; bar?: number; tone?: 'negative' | 'warning' }) {

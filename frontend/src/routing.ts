@@ -9,6 +9,7 @@ export const routes = {
   algorithm: '#/analysis/algorithm',
   quality: '#/analysis/quality',
   result: '#/analysis/result',
+  resultGlobalExplanation: '#/analysis/result/explanation/global',
   resultThreshold: '#/analysis/result/threshold',
   resultObjects: '#/analysis/result/objects',
 } as const
@@ -205,6 +206,7 @@ export function guardedRoute(route: AppRoute, session: NativeSession, allowResul
   if (route === routes.algorithm) return session.data_substep === 'PREPARED' && session.current_step >= 2 ? route : session.resume_route
   if (route === routes.quality) return session.resume_route === routes.quality || session.resume_route === routes.result ? route : session.resume_route
   if (route === routes.result) return session.resume_route === routes.result ? route : session.resume_route
+  if (route === routes.resultGlobalExplanation) return session.resume_route === routes.result ? route : session.resume_route
   if (route === routes.resultThreshold) {
     return session.resume_route === routes.result && allowResultThreshold ? route : session.resume_route
   }
