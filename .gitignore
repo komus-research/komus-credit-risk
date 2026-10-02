@@ -82,3 +82,4 @@ Thumbs.db
 # Local Streamlit runtime artifacts
 /.streamlit-artifacts/
 /.axion-artifacts/
+/.axion-run/
