@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentObjects, getCurrentResult, type ResultObjectItem, type ResultObjectList, type ResultObjectsQuery, type ResultOverview } from '../api/result'
 import { Sidebar } from '../components/Sidebar'
-import { navigate, routes } from '../routing'
+import { buildObjectsRoute, currentRoute, navigate, navigateObjects, parseObjectsQuery, replaceObjects, routes, type ObjectsQueryState } from '../routing'
 
 const chunkSize = 50
 const integerFormat = new Intl.NumberFormat('ru-RU')
@@ -33,15 +33,12 @@ export function ObjectsPage({ onHome }: { onHome: () => void }) {
   const [objects, setObjects] = useState<ResultObjectList | null>(null)
   const [objectsError, setObjectsError] = useState<string | null>(null)
   const [loadingObjects, setLoadingObjects] = useState(true)
-  const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
-  const [target, setTarget] = useState<ResultObjectsQuery['target']>('ANY')
-  const [outcomes, setOutcomes] = useState<Outcome[]>([])
-  const [sort, setSort] = useState<Sort>('SCORE_DESC')
-  const [scoreDraft, setScoreDraft] = useState({ min: 0, max: 1 })
-  const [scoreRange, setScoreRange] = useState({ min: 0, max: 1 })
-  const [offset, setOffset] = useState(0)
-  const [quickView, setQuickView] = useState<QuickView>(null)
+  const [objectsQuery, setObjectsQuery] = useState<ObjectsQueryState>(() => parseObjectsQuery())
+  const [searchInput, setSearchInput] = useState(() => parseObjectsQuery().search)
+  const [scoreDraft, setScoreDraft] = useState(() => {
+    const query = parseObjectsQuery()
+    return { min: query.minScore, max: query.maxScore }
+  })
   const [retryToken, setRetryToken] = useState(0)
   const requestGeneration = useRef(0)
 
@@ -54,31 +51,52 @@ export function ObjectsPage({ onHome }: { onHome: () => void }) {
   }, [])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setSearch(searchInput)
-      setOffset(0)
-    }, 250)
-    return () => window.clearTimeout(timer)
-  }, [searchInput])
+    const syncQuery = () => {
+      if (currentRoute() === routes.resultObjects) setObjectsQuery(parseObjectsQuery())
+    }
+    window.addEventListener('hashchange', syncQuery)
+    return () => window.removeEventListener('hashchange', syncQuery)
+  }, [])
+
+  useEffect(() => { setSearchInput(objectsQuery.search) }, [objectsQuery.search])
 
   useEffect(() => {
+    setScoreDraft({ min: objectsQuery.minScore, max: objectsQuery.maxScore })
+  }, [objectsQuery.minScore, objectsQuery.maxScore])
+
+  const updateObjectsQuery = (next: ObjectsQueryState, replace = false) => {
+    const normalized = parseObjectsQuery(buildObjectsRoute(next))
+    setObjectsQuery(normalized)
+    if (replace) replaceObjects(normalized)
+    else navigateObjects(normalized)
+  }
+
+  useEffect(() => {
+    if (searchInput.trim() === objectsQuery.search) return
     const timer = window.setTimeout(() => {
-      setScoreRange(scoreDraft)
-      setOffset(0)
+      updateObjectsQuery({ ...objectsQuery, search: searchInput.trim(), offset: 0 }, true)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [searchInput, objectsQuery])
+
+  useEffect(() => {
+    if (scoreDraft.min === objectsQuery.minScore && scoreDraft.max === objectsQuery.maxScore) return
+    const timer = window.setTimeout(() => {
+      updateObjectsQuery({ ...objectsQuery, minScore: scoreDraft.min, maxScore: scoreDraft.max, offset: 0 }, true)
     }, 200)
     return () => window.clearTimeout(timer)
-  }, [scoreDraft])
+  }, [scoreDraft, objectsQuery])
 
   const query = useMemo<ResultObjectsQuery>(() => ({
-    offset,
+    offset: objectsQuery.offset,
     limit: chunkSize,
-    search,
-    target,
-    outcomes: outcomes.length ? outcomes : undefined,
-    min_score: scoreRange.min,
-    max_score: scoreRange.max,
-    sort,
-  }), [offset, search, target, outcomes, scoreRange, sort])
+    search: objectsQuery.search,
+    target: objectsQuery.target,
+    outcomes: objectsQuery.outcomes.length ? objectsQuery.outcomes : undefined,
+    min_score: objectsQuery.minScore,
+    max_score: objectsQuery.maxScore,
+    sort: objectsQuery.sort,
+  }), [objectsQuery])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -101,20 +119,19 @@ export function ObjectsPage({ onHome }: { onHome: () => void }) {
   }, [query, retryToken])
 
   const applyQuickView = (view: Exclude<QuickView, null>) => {
-    setQuickView(view)
-    if (view === 'errors') { setOutcomes(['FP', 'FN']); setSort('SCORE_DESC') }
-    if (view === 'high') { setOutcomes([]); setSort('SCORE_DESC') }
-    if (view === 'boundary') { setOutcomes([]); setSort('DISTANCE_TO_THRESHOLD_ASC') }
-    if (view === 'missed') { setOutcomes(['FN']); setSort('SCORE_DESC') }
-    if (view === 'false-positive') { setOutcomes(['FP']); setSort('SCORE_DESC') }
-    if (view === 'all') { setOutcomes([]); setSort('SCORE_DESC') }
-    setOffset(0)
+    const preset = view === 'errors' ? { outcomes: ['FP', 'FN'] as Outcome[], sort: 'SCORE_DESC' as Sort }
+      : view === 'boundary' ? { outcomes: [] as Outcome[], sort: 'DISTANCE_TO_THRESHOLD_ASC' as Sort }
+      : view === 'missed' ? { outcomes: ['FN'] as Outcome[], sort: 'SCORE_DESC' as Sort }
+      : view === 'false-positive' ? { outcomes: ['FP'] as Outcome[], sort: 'SCORE_DESC' as Sort }
+      : { outcomes: [] as Outcome[], sort: 'SCORE_DESC' as Sort }
+    updateObjectsQuery({ ...objectsQuery, ...preset, quickView: view, offset: 0 })
   }
 
   const toggleOutcome = (value: Outcome) => {
-    setQuickView(null)
-    setOutcomes(current => current.includes(value) ? current.filter(item => item !== value) : [...current, value])
-    setOffset(0)
+    const outcomes = objectsQuery.outcomes.includes(value)
+      ? objectsQuery.outcomes.filter(item => item !== value)
+      : [...objectsQuery.outcomes, value]
+    updateObjectsQuery({ ...objectsQuery, outcomes, quickView: null, offset: 0 })
   }
 
   const firstShown = objects && objects.returned_count ? objects.offset + 1 : 0
@@ -138,12 +155,12 @@ export function ObjectsPage({ onHome }: { onHome: () => void }) {
 
       <section className="objects-controls panel" aria-label="Поиск, фильтры и сортировка объектов">
         <label className="objects-search"><span aria-hidden="true">⌕</span><input value={searchInput} onChange={event => setSearchInput(event.target.value)} placeholder="Найти объект…" aria-label="Найти объект" /></label>
-        <div className="objects-quick-views">{quickViews.map(view => <button key={view.id} className={quickView === view.id ? 'active' : ''} onClick={() => applyQuickView(view.id)}>{view.label}</button>)}</div>
+        <div className="objects-quick-views">{quickViews.map(view => <button key={view.id} className={objectsQuery.quickView === view.id ? 'active' : ''} onClick={() => applyQuickView(view.id)}>{view.label}</button>)}</div>
         <div className="objects-filter-grid">
-          <label>Целевое событие<select value={target} onChange={event => { setTarget(event.target.value as ResultObjectsQuery['target']); setQuickView(null); setOffset(0) }}><option value="ANY">Все</option><option value="POSITIVE">Да</option><option value="NEGATIVE">Нет</option></select></label>
-          <fieldset className="objects-outcome-filter"><legend>Исход</legend><div>{(['TP', 'TN', 'FP', 'FN'] as Outcome[]).map(outcome => <label key={outcome}><input type="checkbox" checked={outcomes.includes(outcome)} onChange={() => toggleOutcome(outcome)} />{outcome}</label>)}</div></fieldset>
+          <label>Целевое событие<select value={objectsQuery.target} onChange={event => updateObjectsQuery({ ...objectsQuery, target: event.target.value as ResultObjectsQuery['target'], quickView: null, offset: 0 })}><option value="ANY">Все</option><option value="POSITIVE">Да</option><option value="NEGATIVE">Нет</option></select></label>
+          <fieldset className="objects-outcome-filter"><legend>Исход</legend><div>{(['TP', 'TN', 'FP', 'FN'] as Outcome[]).map(outcome => <label key={outcome}><input type="checkbox" checked={objectsQuery.outcomes.includes(outcome)} onChange={() => toggleOutcome(outcome)} />{outcome}</label>)}</div></fieldset>
           <fieldset className="objects-range"><legend>Диапазон оценки модели</legend><div className="objects-range-values"><output>{scoreFormat.format(scoreDraft.min)}</output><span>—</span><output>{scoreFormat.format(scoreDraft.max)}</output></div><div className="objects-range-inputs"><input type="range" min="0" max="1" step="0.01" value={scoreDraft.min} onChange={event => setScoreDraft(current => ({ min: Math.min(Number(event.target.value), current.max), max: current.max }))} aria-label="Минимальная оценка модели" /><input type="range" min="0" max="1" step="0.01" value={scoreDraft.max} onChange={event => setScoreDraft(current => ({ min: current.min, max: Math.max(Number(event.target.value), current.min) }))} aria-label="Максимальная оценка модели" /></div></fieldset>
-          <label>Сортировка<select value={sort} onChange={event => { setSort(event.target.value as Sort); setQuickView(null); setOffset(0) }}><option value="SCORE_DESC">Оценка: по убыванию</option><option value="SCORE_ASC">Оценка: по возрастанию</option><option value="DISTANCE_TO_THRESHOLD_ASC">Ближе к порогу</option></select></label>
+          <label>Сортировка<select value={objectsQuery.sort} onChange={event => updateObjectsQuery({ ...objectsQuery, sort: event.target.value as Sort, quickView: null, offset: 0 })}><option value="SCORE_DESC">Оценка: по убыванию</option><option value="SCORE_ASC">Оценка: по возрастанию</option><option value="DISTANCE_TO_THRESHOLD_ASC">Ближе к порогу</option></select></label>
         </div>
       </section>
 
@@ -153,7 +170,7 @@ export function ObjectsPage({ onHome }: { onHome: () => void }) {
         {objectsError && <div className="objects-error" role="alert"><p>Не удалось загрузить объекты из сохранённого OOF-результата.</p><button className="secondary-action" onClick={() => setRetryToken(value => value + 1)}>Повторить</button></div>}
         {objects && objects.filtered_count === 0 && <p className="objects-empty">По выбранным условиям объекты не найдены.</p>}
         {objects && objects.filtered_count > 0 && <div className="objects-table-viewport"><table className="objects-table"><thead><tr><th>Объект</th><th>Оценка модели</th><th title="Форма показывает целевое событие: ● — Да, ○ — Нет. Цвет показывает исход TP/TN/FP/FN.">Целевое событие <span aria-hidden="true">ⓘ</span></th><th>Положение относительно порога</th><th>Исход</th></tr></thead><tbody>{objects.items.map(item => <tr key={item.object_id}><td>{item.identifier_display}</td><td>{scoreValueFormat.format(item.score)}</td><td>{targetMarker(item)}</td><td className="objects-threshold-position">{item.predicted_positive ? '↑ Выше порога' : '↓ Ниже порога'}</td><td><span className={outcomeClass(item.outcome)}>{item.outcome}</span></td></tr>)}</tbody></table></div>}
-        {objects && objects.filtered_count > 0 && <div className="objects-chunk-controls"><button className="secondary-action" disabled={objects.offset === 0 || loadingObjects} onClick={() => setOffset(value => Math.max(0, value - chunkSize))}>← Предыдущие</button><button className="secondary-action" disabled={objects.offset + objects.returned_count >= objects.filtered_count || loadingObjects} onClick={() => setOffset(value => value + chunkSize)}>Следующие →</button></div>}
+        {objects && objects.filtered_count > 0 && <div className="objects-chunk-controls"><button className="secondary-action" disabled={objects.offset === 0 || loadingObjects} onClick={() => updateObjectsQuery({ ...objectsQuery, offset: Math.max(0, objectsQuery.offset - chunkSize) })}>← Предыдущие</button><button className="secondary-action" disabled={objects.offset + objects.returned_count >= objects.filtered_count || loadingObjects} onClick={() => updateObjectsQuery({ ...objectsQuery, offset: objectsQuery.offset + chunkSize })}>Следующие →</button></div>}
       </section>
     </>}
   </main></div>
