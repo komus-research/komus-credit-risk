@@ -1,20 +1,17 @@
 import { useEffect, useState } from 'react'
 import { getCurrentResult, type ResultOverview } from '../api/result'
+import { Icon } from '../components/Icon'
 import { Sidebar } from '../components/Sidebar'
-import { navigate, routes } from '../routing'
 
 const numberFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 })
+const percentFormat = new Intl.NumberFormat('ru-RU', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 })
 const integerFormat = new Intl.NumberFormat('ru-RU')
 const thresholdFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const unavailable = 'Действие пока недоступно: соответствующая возможность не подключена.'
 
 function metric(value: number) { return numberFormat.format(value) }
-function percentage(value: number) { return `${numberFormat.format(value * 100)}%` }
-function foldValue(value: unknown): string {
-  if (typeof value === 'number') return numberFormat.format(value)
-  if (value === null || value === undefined) return '—'
-  if (typeof value === 'string' || typeof value === 'boolean') return String(value)
-  return JSON.stringify(value)
-}
+function percent(value: number) { return percentFormat.format(value) }
+function errorRate(numerator: number, denominator: number) { return denominator === 0 ? '—' : percentFormat.format(numerator / denominator) }
 
 export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome: () => void; onOpenThreshold: () => void; onOpenObjects: () => void }) {
   const [result, setResult] = useState<ResultOverview | null>(null)
@@ -30,50 +27,121 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
 
   const summary = result?.summary
   const threshold = result?.threshold
-  const foldColumns = summary?.fold_metrics.length ? Object.keys(summary.fold_metrics[0]) : []
+  const rocFolds = summary?.fold_metrics
+    .map((fold, index) => ({ index, value: fold.roc_auc }))
+    .filter((fold): fold is { index: number; value: number } => typeof fold.value === 'number' && Number.isFinite(fold.value)) ?? []
 
   return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace result-workspace">
-    <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
-    <header className="result-header"><p className="eyebrow">Шаг 5 из 5</p><h1>Результат модели</h1><p>Сводка сохранённого эксперимента и его перекрёстной проверки.</p></header>
-    {error && <section className="result-error" role="alert"><strong>Результат недоступен</strong><p>{error}</p><button className="secondary-action" onClick={() => navigate(routes.quality)}>← Вернуться к проверке качества</button></section>}
+    <div className="analysis-nav"><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
+    <header className="result-header">
+      <div><h1>Результат модели</h1><p>Итоги обучения, проверка качества и анализ поведения модели на всей оценочной выборке.</p></div>
+      <div className="result-header-actions" aria-label="Действия с результатом">
+        <button className="secondary-action" disabled title={unavailable} aria-label={`Сохранить модель. ${unavailable}`}><Icon name="file" size={17} />Сохранить модель</button>
+        <button className="secondary-action" disabled title={unavailable} aria-label={`Экспорт отчёта. ${unavailable}`}><Icon name="download" size={17} />Экспорт отчёта</button>
+        <button className="primary-action" disabled title={unavailable} aria-label={`Обзор проекта. ${unavailable}`}><Icon name="folder" size={17} />Обзор проекта</button>
+      </div>
+    </header>
+    {error && <section className="result-error" role="alert"><strong>Результат недоступен</strong><p>{error}</p></section>}
     {!result && !error && <p className="feature-loading">Загружаем сохранённый результат…</p>}
-    {result && summary && threshold && <>
-      <section className="result-complete panel"><b>✓</b><div><h2>Обучение и перекрёстная проверка завершены.</h2><p>Каждый объект оценивала модель, которая не использовала этот объект для обучения в соответствующем фолде.</p></div></section>
-
-      <section className="result-section"><h2>Сводка эксперимента</h2><div className="result-summary-grid">
-        <article className="result-card panel"><small>Алгоритм</small><strong>{summary.model_id}</strong><span>Версия модели {summary.model_version}</span></article>
-        <article className="result-card panel"><small>Объекты</small><strong>{integerFormat.format(summary.object_count)}</strong><span>оценено в OOF</span></article>
-        <article className="result-card panel"><small>Признаки</small><strong>{integerFormat.format(summary.feature_count)}</strong><span>в эксперименте</span></article>
-        <article className="result-card panel"><small>Перекрёстная проверка</small><strong>{integerFormat.format(summary.folds)} фолдов</strong><span>{summary.evaluation_level}</span></article>
-          {summary.runtime_seconds !== null && <article className="result-card panel"><small>Время обучения</small><strong>{numberFormat.format(summary.runtime_seconds)} с</strong></article>}
-      </div></section>
-
-      <section className="result-section"><h2>Качество ранжирования</h2><div className="result-ranking-grid">
-        <article className="result-ranking panel"><small>Gini</small><strong>{metric(summary.gini)}</strong></article>
-        <article className="result-ranking panel"><small>ROC-AUC</small><strong>{metric(summary.roc_auc)}</strong></article>
-        <article className="result-ranking panel"><small>PR-AUC</small><strong>{metric(summary.pr_auc)}</strong></article>
-      </div></section>
-
-      <section className="result-section"><div className="result-section-heading"><div><h2>Диагностический порог: {thresholdFormat.format(threshold.threshold)}</h2><p>Порог {thresholdFormat.format(threshold.threshold)} используется здесь только для диагностического просмотра и не является автоматически выбранным бизнес-порогом.</p></div></div>
-        <div className="result-threshold-grid">
-          <article className="result-threshold-card panel"><small>Precision</small><strong>{metric(threshold.precision)}</strong></article>
-          <article className="result-threshold-card panel"><small>Recall</small><strong>{metric(threshold.recall)}</strong></article>
-          <article className="result-threshold-card panel"><small>F1</small><strong>{metric(threshold.f1)}</strong></article>
-          <article className="result-threshold-card panel"><small>TP</small><strong>{integerFormat.format(threshold.tp)}</strong></article>
-          <article className="result-threshold-card panel"><small>TN</small><strong>{integerFormat.format(threshold.tn)}</strong></article>
-          <article className="result-threshold-card panel"><small>FP</small><strong>{integerFormat.format(threshold.fp)}</strong></article>
-          <article className="result-threshold-card panel"><small>FN</small><strong>{integerFormat.format(threshold.fn)}</strong></article>
-          <article className="result-threshold-card panel"><small>Выше порога</small><strong>{integerFormat.format(threshold.above_threshold_count)}</strong><span>{percentage(threshold.above_threshold_share)} объектов</span></article>
-        </div>
+    {result && summary && threshold && <div className="result-dashboard">
+      <section className="result-summary-strip panel" aria-label="Сводка эксперимента">
+        <SummaryFact icon="algorithm" label="Алгоритм" value={summary.model_id} detail={`Версия ${summary.model_version}`} />
+        <SummaryFact icon="table" label="Данные" value={`${integerFormat.format(summary.object_count)} объектов`} />
+        <SummaryFact icon="chart" label="Признаки" value={integerFormat.format(summary.feature_count)} />
+        <SummaryFact icon="layers" label="Проверка" value={`OOF · ${integerFormat.format(summary.folds)} части`} />
+        <SummaryFact icon="clock" label="Время обучения" value={summary.runtime_seconds === null ? '—' : `${numberFormat.format(summary.runtime_seconds)} с`} />
       </section>
 
-      <section className="result-section"><h2>Стабильность по фолдам</h2>{summary.fold_metrics.length ? <div className="result-table-wrap panel"><table className="result-fold-table"><thead><tr>{foldColumns.map(column => <th key={column}>{column}</th>)}</tr></thead><tbody>{summary.fold_metrics.map((fold, index) => <tr key={index}>{foldColumns.map(column => <td key={column}>{foldValue(fold[column])}</td>)}</tr>)}</tbody></table></div> : <p className="result-muted">В сохранённом результате нет метрик по фолдам.</p>}<p className="result-note">Метрики показывают разброс между фолдами и не подтверждают стабильность во времени.</p></section>
+      <aside className="result-info-banner"><Icon name="info" size={22} /><p>Метрики рассчитаны по OOF-прогнозам: каждая строка оценивалась моделью, которая не обучалась на этой строке.</p></aside>
 
-      <section className="result-section"><h2>Ограничения результата</h2>{summary.limitations.length ? <ul className="result-limitations">{summary.limitations.map((limitation, index) => <li key={`${index}-${limitation}`}>{limitation}</li>)}</ul> : <p className="result-muted">Backend не передал ограничений для этого результата.</p>}</section>
+      <div className="result-top-grid">
+        <section className="result-panel panel">
+          <PanelHeading title="Качество модели" icon="info" action="Подробнее о качестве" />
+          <div className="result-quality-metrics">
+            <Metric label="Gini" value={metric(summary.gini)} bar={summary.gini} />
+            <Metric label="ROC-AUC" value={metric(summary.roc_auc)} bar={summary.roc_auc} />
+            <Metric label="PR-AUC" value={metric(summary.pr_auc)} bar={summary.pr_auc} />
+          </div>
+        </section>
 
-      <details className="result-technical panel"><summary>Технические сведения</summary><dl><div><dt>Artifact ID</dt><dd>{summary.artifact_id}</dd></div><div><dt>Result ID</dt><dd>{summary.result_id}</dd></div><div><dt>Уровень оценки</dt><dd>{summary.evaluation_level}</dd></div><div><dt>Время выполнения</dt><dd>{summary.runtime_seconds === null ? 'Не сохранено' : `${numberFormat.format(summary.runtime_seconds)} с`}</dd></div></dl></details>
+        <section className="result-panel panel">
+          <PanelHeading title="Стабильность проверки" action="Подробнее" />
+          {rocFolds.length ? <>
+            <div className="result-fold-chart" role="img" aria-label={`ROC-AUC по ${rocFolds.length} частям проверки`}>
+              <div className="result-chart-ylabels"><span>1,0</span><span>0,5</span><span>0,0</span></div>
+              <div className="result-chart-plot">
+                <div className="result-fold-gridline top" /><div className="result-fold-gridline middle" /><div className="result-fold-gridline bottom" />
+                <div className="result-fold-bars">{rocFolds.map(({ index, value }) => <div className="result-fold-bar" key={index}><strong>{metric(value)}</strong><span className="result-fold-track"><i style={{ height: `${Math.max(0, Math.min(value, 1)) * 100}%` }} /></span><small>Часть {index + 1}</small></div>)}</div>
+              </div>
+            </div>
+            <p className="result-chart-legend"><i />ROC-AUC по частям проверки</p>
+          </> : <p className="result-muted">В сохранённом результате нет ROC-AUC по частям проверки.</p>}
+          <p className="result-note">Разброс по фолдам не доказывает стабильность во времени.</p>
+        </section>
 
-      <nav className="result-actions" aria-label="Другие разделы результата"><button className="secondary-action" onClick={onOpenThreshold}>Исследовать порог</button><button className="secondary-action" onClick={onOpenObjects}>Посмотреть объекты</button><button className="secondary-action" disabled>Подробнее о влиянии признаков</button></nav>
-    </>}
+        <section className="result-panel result-capture-panel panel">
+          <PanelHeading title="Сколько событий находим" action="Подробнее" />
+          <div className="result-unavailable-chart" role="img" aria-label="График охвата: данные пока не подключены"><div className="result-capture-ylabels"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div><div className="result-capture-plot"><div /><div /><div /><div /><div /><p>Данные охвата пока не подключены</p></div><div className="result-capture-ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div><span className="result-capture-xlabel">Доля объектов, %</span></div>
+        </section>
+      </div>
+
+      <div className="result-middle-grid">
+        <section className="result-panel result-errors-panel panel">
+          <PanelHeading title="Ошибки и порог" icon="info" badge="Диагностический порог" />
+          <div className="result-error-top-metrics">
+            <Metric label="Порог" value={thresholdFormat.format(threshold.threshold)} />
+            <Metric label="Recall" value={percent(threshold.recall)} />
+            <Metric label="Precision" value={percent(threshold.precision)} />
+          </div>
+          <div className="result-error-counts">
+            <ErrorCountRow label="Пропущено событий" count={integerFormat.format(threshold.fn)} rate={errorRate(threshold.fn, threshold.tp + threshold.fn)} tone="negative" />
+            <ErrorCountRow label="Ложных срабатываний" count={integerFormat.format(threshold.fp)} rate={errorRate(threshold.fp, threshold.tn + threshold.fp)} tone="warning" />
+          </div>
+          <button className="primary-action result-panel-action" onClick={onOpenThreshold}>Исследовать порог <Icon name="arrow" size={18} /></button>
+        </section>
+
+        <section className="result-panel result-influence-panel panel">
+          <PanelHeading title="На какие признаки модель опиралась сильнее всего" icon="info" action="Подробнее" />
+          <div className="result-influence-content"><div className="result-influence-unavailable">Глобальное влияние признаков пока не подключено</div><aside><Icon name="info" size={20} /><p>Этот блок объясняет поведение модели, но не доказывает причинность.</p></aside></div>
+        </section>
+      </div>
+
+      <section className="result-objects-strip panel">
+        <span className="result-objects-icon"><Icon name="users" size={26} /></span>
+        <div className="result-objects-copy"><h2>Объекты оценки</h2><p>Посмотрите отдельные объекты и причины конкретных прогнозов.</p></div>
+        <ObjectFact icon="alert-circle" tone="negative" label="Сложные случаи" value="—" unavailable />
+        <ObjectFact icon="warning" tone="warning" label="Пограничные" value="—" unavailable />
+        <ObjectFact icon="info" tone="info" label="Пропущенные события" value={integerFormat.format(threshold.fn)} />
+        <button className="primary-action" onClick={onOpenObjects}>Посмотреть объекты <Icon name="arrow" size={18} /></button>
+      </section>
+
+      <details className="result-collapsible panel"><summary><Icon name="warning" size={22} /><span>Ограничения и предупреждения</span><small>Важная информация об интерпретации результата модели</small></summary>
+        {summary.limitations.length ? <ul className="result-limitations">{summary.limitations.map((limitation, index) => <li key={`${index}-${limitation}`}>{limitation}</li>)}</ul> : <p className="result-muted">Backend не передал ограничений для этого результата.</p>}
+      </details>
+      <details className="result-collapsible result-technical panel"><summary><Icon name="file" size={22} /><span>Технические сведения</span><small>Детальная информация о модели, данных и процессе обучения</small></summary>
+        <dl><div><dt>Artifact ID</dt><dd>{summary.artifact_id}</dd></div><div><dt>Result ID</dt><dd>{summary.result_id}</dd></div><div><dt>Уровень оценки</dt><dd>{summary.evaluation_level}</dd></div><div><dt>Время выполнения</dt><dd>{summary.runtime_seconds === null ? '—' : `${numberFormat.format(summary.runtime_seconds)} с`}</dd></div></dl>
+      </details>
+    </div>}
   </main></div>
+}
+
+function SummaryFact({ icon, label, value, detail }: { icon: 'algorithm' | 'table' | 'chart' | 'layers' | 'clock'; label: string; value: string; detail?: string }) {
+  return <div className="result-summary-fact"><span className="result-summary-icon"><Icon name={icon} size={24} /></span><div><small>{label}</small><strong>{value}</strong>{detail && <span>{detail}</span>}</div></div>
+}
+
+function PanelHeading({ title, icon, action, badge }: { title: string; icon?: 'info'; action?: string; badge?: string }) {
+  return <div className="result-panel-heading"><h2>{title}{icon && <span className="result-heading-info" title={title}><Icon name={icon} size={17} /></span>}</h2>{badge && <span className="result-heading-badge">{badge}</span>}{action && <button className="result-heading-action" disabled title={unavailable} aria-label={`${action} о разделе «${title}». ${unavailable}`}>{action} <Icon name="arrow" size={15} /></button>}</div>
+}
+
+function Metric({ label, value, bar, tone }: { label: string; value: string; bar?: number; tone?: 'negative' | 'warning' }) {
+  const boundedBar = typeof bar === 'number' && Number.isFinite(bar) ? Math.max(0, Math.min(bar, 1)) : null
+  return <div className={`result-metric${tone ? ` ${tone}` : ''}`}><small>{label}</small><strong>{value}</strong>{boundedBar !== null && <span className="result-metric-track"><i style={{ width: `${boundedBar * 100}%` }} /></span>}</div>
+}
+
+function ErrorCountRow({ label, count, rate, tone }: { label: string; count: string; rate: string; tone: 'negative' | 'warning' }) {
+  return <div className={`result-error-count-row tone-${tone}`}><div><small>{label}</small><strong>{count}</strong></div><span className="result-error-rate">{rate}</span></div>
+}
+
+function ObjectFact({ icon, tone, label, value, unavailable: isUnavailable }: { icon: 'alert-circle' | 'warning' | 'info'; tone: 'negative' | 'warning' | 'info'; label: string; value: string; unavailable?: boolean }) {
+  return <div className={`result-object-fact tone-${tone}`} title={isUnavailable ? 'Данные пока не подключены' : undefined}><span className="result-object-fact-label"><Icon name={icon} size={15} /><small>{label}</small></span><strong>{value}</strong></div>
 }
