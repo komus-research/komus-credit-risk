@@ -12,7 +12,7 @@ Streamlit — frozen compatibility frontend. Новые продуктовые U
 
 ## Текущая точка
 
-Native AXION подтверждён через полный путь Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer → Objects. Главная, Данные, Признаки, Алгоритм, Quality preflight, полное обучение, обзор результата, исследование порога и список OOF-объектов готовы. Native Result дальше Objects, History и Models реализованы частично; Settings UI и backend ещё не реализованы. Product / Architecture / Visual Lock для Settings принят.
+Native AXION подтверждён через полный путь Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer → Objects. Главная, Данные, Признаки, Алгоритм, Quality preflight, полное обучение, обзор результата и список OOF-объектов готовы; canonical query state Objects уже перенесён в URL presentation state и принят отдельным review. Native Result дальше Objects, History и Models реализованы частично; Settings UI и backend ещё не реализованы. Product / Architecture / Visual Lock для Settings принят.
 
 Подробные статусы, границы и evidence — в [`PROJECT_MAP.md`](PROJECT_MAP.md).
 
