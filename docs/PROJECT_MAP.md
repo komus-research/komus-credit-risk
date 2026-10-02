@@ -3,7 +3,7 @@
 > Этот документ — единственный источник ответа на два вопроса: **где проект находится сейчас** и **что делаем следующим**.
 > Архитектурные, исследовательские и UX-документы сохраняют свои решения и доказательства, но не могут самостоятельно менять текущий NEXT.
 
-Продуктовый код текущего этапа проверен относительно ветки `design/home-v2-algorithm-v2`, commit `e17a0a25a187e8a768ee32199077f568563cc22b`.
+Актуальное состояние проверено на ветке `design/home-v2-algorithm-v2`, HEAD `778f4cd71c5dccd77cf79cb88a00a2e1e2ccd728`.
 
 ## Как читать эту карту
 
@@ -36,18 +36,18 @@ React + TypeScript + Vite
 | Алгоритм | Выбор алгоритма и его настроек | Native Algorithm реализован и принят | React → FastAPI → application/core | **ГОТОВО** | Ничего для текущего пути |
 | Проверка перед обучением | Проверка конфигурации и smoke перед полным запуском | Native Quality preflight реализован и принят; после PASS доступен явный запуск полного обучения | React → FastAPI → ExperimentApplicationService | **ГОТОВО** | Ничего для текущего пути |
 | Полное обучение | Запуск полного OOF-эксперимента с реальным прогрессом и сохранением результата | Native Quality запускает существующий `ExperimentApplicationService.run_experiment()`, публикует реальные progress events и сохраняет `ExperimentArtifact` в canonical `.axion-artifacts`; дорогой полный OOF на реальном большом dataset в рамках wiring-этапа не запускался | React → FastAPI → application/core | **ГОТОВО** | Ничего для текущего пути |
-| Результат | Метрики, OOF-результат, объяснения и интерпретация сохранённого эксперимента | Native React Result Overview, Threshold Explorer, Objects, basic Object Detail и React Local Explanation/SHAP приняты; SHAP использует trusted public API и сохраняет scientific boundary; Result Interpreter ещё не подключён | React → FastAPI → application/core | **ЧАСТИЧНО** | Следующий этап — Result Interpreter |
+| Результат | Метрики, OOF-результат, объяснения и интерпретация сохранённого эксперимента | Native React Result Overview, Threshold Explorer, Objects, Object Detail и Local Explanation/SHAP приняты; Result Interpreter V2 UX/architecture lock принят, native FastAPI/React integration ещё не реализована | React → FastAPI → application/core | **ЧАСТИЧНО** | Следующий этап — **RI-BE**, затем RI-UI → RI-EXPORT |
 | История | Каталог завершённых экспериментов и открытие точного сохранённого результата | AnalysisHistory backend принят; native React History отсутствует | application/core; compatibility Streamlit catalog существует | **ЧАСТИЧНО** | После native Result подключить History к тому же canonical artifact source |
 | Модели | Работа с сохранёнными версиями моделей | Product / Visual Lock принят; ModelVersion и saved-model inference backend/application компоненты существуют, но native React Models UI и полный trusted browse/persistence path не завершены | application/core + accepted UX/visual locks; native UI отсутствует | **ЧАСТИЧНО** | Только после Result и History |
 | Настройки | Настройки продукта | Product / Architecture / Visual Lock принят; SET-BE1 / SET-BE2 и native React Settings UI ещё не реализованы | accepted UX/architecture docs; runtime implementation pending | **НЕ НАЧАТО** | Только после более приоритетных этапов |
 
 ## Текущая точка проекта
 
-**Native AXION подтверждён через полный Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer → Objects → basic Object Detail → Local Explanation / SHAP. Следующий незавершённый продуктовый участок — Result Interpreter для выбранного OOF-объекта.**
+**Native AXION подтверждён через Quality → OOF run → persisted `ExperimentArtifact` → Result Overview → Threshold Explorer → Objects → Object Detail → Local Explanation/SHAP. SHAP закрыт. Следующий незавершённый участок — native Result Interpreter V2.**
 
 ## Следующий этап
 
-**Result Interpreter внутри принятого Object Detail flow; его новый UX/visual contract V2 сейчас фиксируется отдельно, без изменения scientific Result/SHAP boundary.**
+**RI-BE:** role-specific FastAPI endpoint поверх trusted current artifact → `OOFExplanationService.local()` → existing `IntegrationWorkflowService`. Затем **RI-UI → RI-EXPORT**. Canonical lock: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_INTERPRETER_V2_LOCK.md`.
 ## Что уже существует и не должно переписываться с нуля
 
 - Принятый исследовательский pipeline и ограничения по данным.
@@ -79,7 +79,7 @@ Native composition создаёт один application-owned `ExperimentArtifact
 - Существование файла артефакта без проверки identity/manifest/contract.
 - Random CV/OOF как доказательство временной стабильности.
 
-На последней целевой проверке native backend-тестов было **45 passed, 1 warning**, а `npm run build` завершался успешно. При этом собственных React UI-тестов в `frontend/` не было обнаружено; это отдельный пробел проверки, а не основание считать принятые этапы несуществующими.
+На последней целевой проверке native Result/Quality backend-тестов было **46 passed, 1 warning**, а `npm run build` завершался успешно. При этом собственных React UI-тестов в `frontend/` не было обнаружено; это отдельный пробел проверки, а не основание считать принятые этапы несуществующими.
 
 ## Исторические и compatibility-реализации
 

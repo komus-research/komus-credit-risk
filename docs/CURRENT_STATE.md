@@ -12,7 +12,7 @@ Streamlit — frozen compatibility frontend. Новые продуктовые U
 
 ## Текущая точка
 
-Native AXION подтверждён через полный путь Quality → OOF run → persisted `ExperimentArtifact` → React Result Overview → Threshold Explorer → Objects → basic Object Detail → Local Explanation / SHAP. Главная, Данные, Признаки, Алгоритм, Quality preflight, полное обучение, обзор результата, список OOF-объектов, базовая карточка и React Local Explanation/SHAP готовы и приняты. Result Interpreter ещё не подключён; History и Models реализованы частично; Settings UI и backend ещё не реализованы.
+Native AXION подтверждён через Quality → OOF run → persisted `ExperimentArtifact` → Result Overview → Threshold Explorer → Objects → Object Detail → Local Explanation/SHAP. SHAP закрыт и принят. Result Interpreter V2 UX/architecture lock принят, но native FastAPI/React integration ещё не реализована. History и Models реализованы частично; Settings UI/backend ещё не реализованы.
 
 Подробные статусы, границы и evidence — в [`PROJECT_MAP.md`](PROJECT_MAP.md).
 
@@ -20,16 +20,16 @@ Native AXION подтверждён через полный путь Quality →
 
 Canonical native artifact ownership уже зафиксирован: один `ExperimentArtifactStore` в `<repository root>/.axion-artifacts`; `.streamlit-artifacts` остаётся compatibility-only storage.
 
-**NEXT:** Result Interpreter внутри принятого Object Detail flow; новый UX/visual contract V2 фиксируется отдельно.
+**NEXT:** RI-BE → RI-UI → RI-EXPORT. Текущий шаг — **RI-BE**, role-specific FastAPI contract поверх trusted Local SHAP и существующего `IntegrationWorkflowService`. Canonical lock: [`RESULT_INTERPRETER_V2_LOCK.md`](workstreams/generic_dataset_onboarding_v1/RESULT_INTERPRETER_V2_LOCK.md).
 
 ## Уже существующие reusable части
 
 - `ExperimentApplicationService` и путь полного эксперимента;
 - `ExperimentArtifact` V3 и проверяемая persistence-семантика;
 - `OOFResultService`, `OOFExplanationService`, Global OOF SHAP;
-- Result Interpreter — интерпретатор результата;
+- Result Interpreter core/runtime: 4 роли, `ResultInterpreterResponse`, `REDACTED_V1`, provider/runtime capability и `IntegrationWorkflowService`;
 - `AnalysisHistoryService`;
-- принятые native Home / Data / Features / Algorithm / Quality preflight / full training / Result Overview / Threshold Explorer / Objects.
+- принятые native Home / Data / Features / Algorithm / Quality preflight / full training / Result Overview / Threshold Explorer / Objects / Object Detail / Local SHAP.
 
 Новый React UI использует существующие application/core контракты через FastAPI, а не создаёт второй ML pipeline.
 

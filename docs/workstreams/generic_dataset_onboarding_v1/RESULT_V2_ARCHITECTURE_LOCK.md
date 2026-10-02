@@ -308,101 +308,20 @@ Final/refit fallback для OOF explanation отсутствует.
 
 Result V2 backend contract закрыт.
 
-R2-UI1 — Result Overview + Navigation Foundation — **ACCEPTED / CLOSED**, source commit `d7d3b7073681204a29a53ec3e2e82b854fd0b25b`.
+## Native migration status
 
-Native Result migration теперь начата через public boundary:
-`artifact_id → OOFResultService.summary()/threshold() → Result Overview`.
-Direct scientific rendering из `artifact.run_output.result` в Overview больше не является допустимым fallback.
+Scientific Result V2 backend contract закрыт и не переоткрывается без новой исследовательской причины.
 
-R2-UI2 — Threshold Explorer — **ACCEPTED / CLOSED**, source commit `8050a9c5761963555a1181bede2150305979cfee`.
+Canonical React/FastAPI path уже принят для:
+- Result Overview;
+- Threshold Explorer;
+- Objects;
+- Object Detail;
+- Local Explanation / SHAP.
 
-Принятый UI path:
-`result_v2_threshold → OOFResultService.threshold(artifact_id, threshold) → Overview compact summary / Threshold Explorer`.
-Overview не имеет второго editable threshold control; Threshold Explorer является единственным местом изменения session threshold. Возврат в Overview сохраняет выбранное значение. Threshold-dependent metrics не рассчитываются в UI и не восстанавливаются из artifact internals.
+Эти экраны используют public service/API boundaries, trusted current artifact/object identity и не читают scientific internals напрямую.
+Исторические Streamlit/R2-UI implementation commits сохранены в git/history и не используются для определения текущего NEXT.
 
-Accepted limitation: public threshold-sweep/curve contract отсутствует. UI не читает OOF arrays и не строит скрытый grid вызовов `threshold()` ради визуальной имитации Recall/Precision curves.
+Native Global OOF UI не входит в текущую последовательность `Object Detail → Local SHAP → Result Interpreter`; existing Global OOF core остаётся reusable и подключается отдельным stage по принятому public contract.
 
-R2-UI3 — Objects — **ACCEPTED / CLOSED**, source commit `dbe580091e40510022a79ffdf2c67da17016ab70`.
-
-Принятый UI path:
-`result_v2_threshold + object-query state → OOFResultService.objects(...) → server-paged Objects table`.
-
-Canonical runtime facts:
-- chunk size `limit=50`; offset хранится в session state;
-- search/target/outcomes/min_score/max_score/sort передаются в public service без локальной canonical filtering/sorting;
-- quick views — взаимоисключающие frontend presets над тем же query contract;
-- `Пограничные` задаёт `DISTANCE_TO_THRESHOLD_ASC`, `Высокая оценка модели` — `SCORE_DESC`; оба снимают quick-view outcomes, не добавляя hidden cutoffs;
-- `Все объекты` снимает quick-view outcome/sort preset;
-- таблица строится только из DTO fields `identifier_display / score / y_true / predicted_positive / outcome`;
-- Fold не реконструируется для list rows: current list DTO его не содержит, provenance Fold остаётся Object Detail concern;
-- service error fail-closed, без stale/fake rows и без artifact fallback;
-- Object Detail и переход к нему не входят в R2-UI3.
-
-R2-UI4A — Object Detail Foundation — **ACCEPTED / CLOSED**, source commit `fbc389f3`.
-
-Принятый UI path:
-`Objects single-row selection → exact object_id from OOFObjectList.items → OOFResultService.object_detail(artifact_id, object_id, current_threshold) → basic Object Detail`.
-
-Runtime invariants:
-- `identifier_display` не используется как identity;
-- list row служит только для выбора opaque `object_id`;
-- scientific detail заново читается через public service;
-- detail display следует DTO facts и не пересчитывает `score >= threshold` или TP/TN/FP/FN;
-- `fold_number` приходит только из Object Detail DTO и остаётся read-only provenance;
-- missing selected object и service failure fail closed, без artifact/list-row fallback;
-- Back сохраняет current threshold и Objects query state;
-- Local Explanation / SHAP / LLM не входят в R2-UI4A.
-
-R2-UI4B — Local Explanation — **ACCEPTED / CLOSED**, source commit `06f13a11`.
-
-Принятый runtime path:
-`Object Detail → OOFExplanationService.local(artifact_id, object_id) → LocalExplanationEvidence → BRIEF / DETAILED`.
-
-Runtime invariants:
-- `OOFExplanationService` создаётся в composition root с тем же artifact store и trusted plugin registry;
-- explanation cache принадлежит exact selected `object_id` и не переиспользуется между объектами;
-- basic OOF detail остаётся доступным при explanation failure;
-- retry повторяет только `local()` и не перезапрашивает scientific object detail;
-- BRIEF следует trusted `abs_rank`, top-5 и sign semantics; `Остальные признаки` = exact sum оставшихся `shap_value`;
-- feature label использует trusted `display_name_ru`, иначе `column_name`; metadata не придумывается;
-- base/output-space и DETAILED provenance берутся только из `LocalExplanationEvidence`;
-- UI не пересчитывает probability/SHAP/additivity и не загружает fold model;
-- final/refit и saved ModelVersion fallback запрещены;
-- Result Interpreter / external LLM не входят в R2-UI4B.
-
-R2-UI4C — Result Interpreter — **ACCEPTED / CLOSED**, source commit `6c8cdd71`.
-
-Принятый runtime path:
-`validated LocalExplanationEvidence → capability gate → explicit user action → prepare_interpretation(evidence, recipient_role) → workflow.interpret(request) → backend response/dispatch receipt`.
-
-Runtime invariants:
-- отдельный Result V2 interpreter state не смешивается с saved-model inference state;
-- interpretation binding = exact `artifact_id + object_id + evidence_hash + recipient_role`;
-- смена роли/object/evidence очищает stale request/outcome/error, но не Local Explanation;
-- capability читается только через application workflow boundary;
-- external LLM никогда не запускается автоматически после Local Explanation;
-- OOF path не передаёт `loaded_model_version` в `prepare_interpretation()`;
-- UI не вызывает provider/client/API key/outbound policy напрямую и не строит REDACTED payload;
-- retry использует уже подготовленный request, если он существует;
-- regenerate заново готовит request для текущих evidence/role;
-- provider error не меняет OOF prediction, threshold или SHAP evidence;
-- response text и technical interpreter/policy/prompt identity берутся только из backend outcome.
-
-R2-UI5 — Global OOF Feature Influence — **ACCEPTED / CLOSED**, source commit `7aef2893`.
-
-Принятый runtime path:
-`Overview → GLOBAL_OOF → OOFExplanationService.global_oof(artifact_id) → GlobalOOFExplanation`.
-
-Runtime invariants:
-- cache привязан к exact `artifact_id`; stale evidence другого artifact не отображается;
-- returned artifact binding проверяется fail-closed;
-- threshold не передаётся в `global_oof()` и не инвалидирует cache;
-- scientific metric не пересчитывается в UI: используется backend row-weighted `mean(abs(local SHAP))`;
-- trusted `rank`, exact `column_name` и exact `mean_abs_shap` отображаются без локальной нормализации;
-- bar length может масштабироваться только presentation-wise, signed/directional semantics отсутствуют;
-- global influence не трактуется как causality, business importance или feature-selection recommendation;
-- technical provenance берётся только из `GlobalOOFExplanation`;
-- retry повторяет только `global_oof()`;
-- Result Interpreter / external LLM на Global OOF screen не вызывается.
-
-**Result V2 backend + core UI path закрыты.** Дальнейшие product workstreams не должны переоткрывать scientific Result contracts без новой исследовательской причины.
+Следующий этап native product path — Result Interpreter V2. Его role-specific HTTP boundary, master/detail lifecycle, bulk semantics, Copy/PDF/Print и persistence restrictions зафиксированы в `RESULT_INTERPRETER_V2_LOCK.md`.

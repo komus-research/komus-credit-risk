@@ -51,20 +51,16 @@ History V1 — read-only каталог завершённых `ExperimentArtifa
 
 Settings V1 содержит только реальные global controls: interface presentation preference и Result Interpreter integration controls. ML/Result scientific parameters остаются в своих flows. До отдельного authentication/users contract в shell нет fake profile/login/account UI. Product/architecture semantics и backend order `SET-BE1 → SET-BE2 → SET-UI1` зафиксированы в `docs/workstreams/generic_dataset_onboarding_v1/SETTINGS_UX_V1.md`.
 
-Для Result V2 приняты одиннадцать visual lock:
-- `screens/result/02_result_model_overview_v2.png` — общий обзор результата;
-- `screens/result/03_threshold_explorer_v1.png` — исследование threshold по OOF scores;
-- `screens/result/04_result_objects_v2.png` — список OOF-объектов и ошибок;
-- `screens/result/05_result_object_detail_v1.png` — detail одного OOF-объекта, Local Explanation READY и LLM entry;
-- `screens/result/06_result_object_detail_llm_v1.png` — тот же detail после успешной LLM-интерпретации;
-- `screens/result/07_result_global_oof_shap_v1.png` — Global OOF feature influence: row-weighted mean(abs(local SHAP));
-- `screens/result/08_result_object_detail_explanation_loading_v1.png` — Object Detail во время автоматического расчёта Local Explanation, без блокировки basic result;
-- `screens/result/09_result_object_detail_explanation_error_v1.png` — локальная ошибка Local Explanation: основной Result сохраняется, доступен повторный расчёт, LLM остаётся disabled;
-- `screens/result/10_result_object_detail_explanation_detailed_v1.png` — режим `Подробно` того же Object Detail: base value, waterfall, полный список SHAP-вкладов;
-- `screens/result/11_result_object_detail_llm_loading_v1.png` — Result Interpreter формирует текст, scientific evidence остаётся доступным;
-- `screens/result/12_result_object_detail_llm_error_v1.png` — локальная ошибка Result Interpreter без потери OOF/SHAP evidence.
+Для Result V2 active visual locks перечислены в `docs/design/MANIFEST.md`. Для Result Interpreter единственный canonical reference — `screens/result/06_result_object_detail_llm_v2.png` (master/detail: роли слева, один широкий response справа).
 
-Поведение Result V2 и границы реализации зафиксированы в `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`. Макеты не являются источником backend semantics и не разрешают hardcode демонстрационных данных.
+Старые `06_result_object_detail_llm_v1.png`, `11_result_object_detail_llm_loading_v1.png`, `12_result_object_detail_llm_error_v1.png` — historical/non-canonical и не используются как visual authority.
+
+Контракты:
+- Result/SHAP UX: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_UX_V2.md`;
+- scientific Result/OOF/SHAP: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_V2_ARCHITECTURE_LOCK.md`;
+- current Result Interpreter V2: `docs/workstreams/generic_dataset_onboarding_v1/RESULT_INTERPRETER_V2_LOCK.md`.
+
+Макеты не являются источником backend semantics и не разрешают hardcode демонстрационных данных.
 
 Дизайн отдельных экранов уточняется по факту реализации, но без самовольной смены общего визуального языка.
 

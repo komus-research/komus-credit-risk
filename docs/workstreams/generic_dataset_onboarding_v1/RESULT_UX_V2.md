@@ -7,13 +7,13 @@ Primary visual references:
 - `docs/design/screens/result/03_threshold_explorer_v1.png`
 - `docs/design/screens/result/04_result_objects_v2.png`
 - `docs/design/screens/result/05_result_object_detail_v1.png`
-- `docs/design/screens/result/06_result_object_detail_llm_v1.png`
 - `docs/design/screens/result/07_result_global_oof_shap_v1.png`
 - `docs/design/screens/result/08_result_object_detail_explanation_loading_v1.png`
 - `docs/design/screens/result/09_result_object_detail_explanation_error_v1.png`
 - `docs/design/screens/result/10_result_object_detail_explanation_detailed_v1.png`
-- `docs/design/screens/result/11_result_object_detail_llm_loading_v1.png`
-- `docs/design/screens/result/12_result_object_detail_llm_error_v1.png`
+- `docs/design/screens/result/06_result_object_detail_llm_v2.png` — единственный active visual lock Result Interpreter.
+
+Исторические `06_result_object_detail_llm_v1.png`, `11_result_object_detail_llm_loading_v1.png`, `12_result_object_detail_llm_error_v1.png` не являются visual authority и будут архивированы отдельной cleanup-задачей после implementation/review.
 
 Эти PNG фиксируют композицию, визуальную иерархию и пользовательский поток Result V2.
 Фактические данные, доступность действий, persistence, provenance и API semantics определяются только принятыми backend/research contracts.
@@ -31,8 +31,7 @@ Canonical flow шага Result:
 → LLM-интерпретация по явному действию пользователя, если runtime capability доступна
 ```
 
-Одиннадцать текущих Result PNG имеют принятый visual lock.
-Для Object Detail зафиксированы состояния Local Explanation LOADING, Local Explanation READY, Local Explanation ERROR, detailed Local Explanation, Result Interpreter LOADING, Result Interpreter READY и Result Interpreter ERROR. Global OOF feature influence зафиксирован отдельным экраном `07_result_global_oof_shap_v1.png`.
+Для Local Explanation остаются принятые READY/LOADING/ERROR/DETAILED references. Для Result Interpreter canonical composition теперь задаёт только `06_result_object_detail_llm_v2.png`: master ролей слева, один широкий detail справа; LOADING/ERROR отображаются внутри этого detail, а не отдельными старым layout. Global OOF feature influence зафиксирован `07_result_global_oof_shap_v1.png`.
 `10_result_object_detail_explanation_detailed_v1.png` — это режим `Подробно` того же Object Detail, а не новый top-level экран. Technical explanation method/output space/provider в runtime всегда берутся из backend provenance, даже если PNG содержит демонстрационный текст.
 
 Result работает на persisted accepted experiment evidence.
@@ -229,30 +228,24 @@ UI не обходит research/protocol invariants ради «гибкости�
 
 ## 6. OOF provenance / explainability boundary
 
-Для конкретного OOF object нельзя показывать Local Explanation от другой модели,
-если prediction был сформирован fold-specific model.
-
 Canonical invariant:
 ```text
 object → OOF prediction → fold identity → model/artifact identity → explanation identity
 ```
 
-Artifact/provenance contract зафиксирован в `RESULT_V2_ARCHITECTURE_LOCK.md`.
-Universal provider/explanation contract зафиксирован в `UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`.
+Scientific contracts находятся в `RESULT_V2_ARCHITECTURE_LOCK.md` и `UNIVERSAL_MODEL_EXPLAINABILITY_V1.md`.
 
-R2-UI4A foundation уже реализует basic Object Detail: exact object выбирается по opaque `object_id`, подтверждается через `OOFResultService.object_detail()` и показывает DTO facts вместе с Fold provenance. Local Explanation в этом stage намеренно не вызывается.
+Native AXION уже принял:
+- exact Object Detail по opaque `object_id`;
+- Local SHAP auto-load после подтверждённого basic detail;
+- BRIEF = top-5 + backend remainder;
+- DETAILED = все trusted features без повторного remainder;
+- Local SHAP failure не ломает basic detail и не допускает final/refit fallback.
 
-R2-UI4B — **ACCEPTED / CLOSED**, source commit `06f13a11`. Basic OOF facts остаются доступными сразу; Local Explanation запускается автоматически отдельным вызовом `OOFExplanationService.local()` и использует accepted READY / LOADING / ERROR / DETAILED semantics. Explanation failure не подменяет evidence final/refit моделью и не ломает Object Detail.
+Следующий native stage — Result Interpreter V2. Его UX/state/export/backend boundary **не дублируется здесь**; единственный актуальный источник — `RESULT_INTERPRETER_V2_LOCK.md`.
 
-R2-UI4C — **ACCEPTED / CLOSED**, source commit `6c8cdd71`. После READY Local Explanation пользователь явно выбирает одну trusted role и запускает `Сформировать объяснение`; до этого provider call не выполняется. Capability берётся из application workflow, OOF path не передаёт `loaded_model_version`, retry переиспользует prepared request, regenerate готовит новый request. LLM failure локален и не меняет OOF/SHAP evidence; backend response text отображается без UI-реконструкции.
+External LLM запускается только по explicit user action после validated Local SHAP. Role switch, открытие Object Detail, Copy/PDF/Print не запускают provider автоматически и не меняют OOF/SHAP evidence.
 
-R2-UI5 — **ACCEPTED / CLOSED**, source commit `7aef2893`. `GLOBAL_OOF` использует только `OOFExplanationService.global_oof(artifact_id)`, кешируется по artifact, не зависит от threshold и отображает trusted rank + exact `mean_abs_shap` без нормализации и directional semantics. Error/retry локальны, LLM не вызывается.
-
-**Result V2 core UX implementation закрыта** по accepted visual locks и public scientific contracts.
-
-Final/refit model fallback запрещён.
-
-External LLM не запускается автоматически: после READY Local Explanation пользователь явно запускает «Сформировать объяснение», если external-data policy и provider capability это разрешают.
 ## 7. Source-of-truth priority
 
 Для Result V2:
@@ -271,29 +264,17 @@ External LLM не запускается автоматически: после 
 
 Backend architecture Result V2 зафиксирована в `RESULT_V2_ARCHITECTURE_LOCK.md`: ExperimentArtifact V3, fold-model provenance, Local/Global OOF SHAP semantics, threshold read contract и Object List random-access contract.
 
-Object Detail имеет два принятых visual lock:
-- `05_result_object_detail_v1.png` — Local Explanation READY, LLM ещё не вызван;
-- `06_result_object_detail_llm_v1.png` — та же страница после успешной LLM-интерпретации.
+Object Detail / Local SHAP visual authority:
+- `05_result_object_detail_v1.png` — basic Object Detail;
+- `08_result_object_detail_explanation_loading_v1.png` — Local SHAP LOADING;
+- `09_result_object_detail_explanation_error_v1.png` — Local SHAP ERROR;
+- `10_result_object_detail_explanation_detailed_v1.png` — Local SHAP DETAILED.
 
-Они фиксируют:
-- summary конкретного OOF-объекта;
-- deterministic FN/TP/TN/FP explanation;
-- Local Explanation success-state в режиме «Кратко»;
-- направление вкладов: pink увеличивает model score, cyan уменьшает;
-- обязательный агрегат «Остальные признаки»;
-- понятную «Начальную оценку модели» как SHAP reference point с info-tooltip;
-- LLM entry с выбором роли и явным действием пользователя;
-- LLM READY state: «Краткий вывод / Что увеличило оценку / Что уменьшило оценку / Что важно учитывать»;
-- действие «Сформировать заново» после успешной интерпретации;
-- collapsed «Данные объекта» и «Технические сведения».
+Result Interpreter visual authority:
+- `06_result_object_detail_llm_v2.png` — canonical master/detail layout для четырёх ролей.
+- Старые `06...llm_v1`, `11...llm_loading_v1`, `12...llm_error_v1` — historical/non-canonical.
 
-LLM-текст обязан опираться только на validated Local Explanation evidence текущего объекта: он не добавляет отсутствующие в SHAP признаки, факты или причинные утверждения.
-
-Пока не имеют отдельного visual lock только дополнительные expanded states:
-- expanded «Данные объекта»;
-- отдельный expanded technical-detail state, если он реально понадобится при реализации.
-
-Local Explanation LOADING/ERROR, режим `Подробно`, Result Interpreter LOADING/READY/ERROR уже имеют accepted visual lock.
+Полный текущий Result Interpreter contract не дублируется здесь: использовать `RESULT_INTERPRETER_V2_LOCK.md`. Ключевая граница неизменна: LLM получает только backend-resolved trusted Local Explanation через существующую outbound policy и не создаёт новый prediction.
 
 Product semantics detail зафиксированы:
 - basic OOF result показывается сразу;
