@@ -281,6 +281,26 @@ class LocalExplanationResponse(BaseModel):
     remainder: LocalExplanationRemainderResponse | None
 
 
+class GlobalOOFFeatureImportanceResponse(BaseModel):
+    feature_id: str
+    column_name: str
+    mean_abs_shap: float
+    rank: int
+
+
+class GlobalOOFExplanationResponse(BaseModel):
+    artifact_id: str
+    model_id: str
+    model_version: str
+    dataset_name: str
+    row_count: int
+    feature_count: int
+    folds: int
+    output_space: str
+    evidence_hash: str
+    features: list[GlobalOOFFeatureImportanceResponse]
+
+
 class ResultThresholdPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -308,13 +328,14 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None) -> FastAPI:
     """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
     runtime = create_native_experiment_runtime()
     result_service = oof_result_service or runtime.oof_result_service
     explanation_service = oof_explanation_service or runtime.oof_explanation_service
+    artifact_store = experiment_artifact_store or runtime.artifact_store
     context_authority = prepared_context_authority or runtime.prepared_context_authority
     feature_selection = FeatureSelectionService()
     planning = planning_service or runtime.planning_service
@@ -624,6 +645,126 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             explanation_provider_version=evidence.provider_version,
             features=features,
             remainder=remainder,
+        )
+
+    @api.get(
+        "/api/v1/result/explanation/global",
+        response_model=GlobalOOFExplanationResponse,
+    )
+    async def get_current_global_oof_explanation(
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> GlobalOOFExplanationResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id_at_start = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id_at_start is None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "RESULT_NOT_READY",
+                    "message": "Результат полного обучения ещё не готов.",
+                },
+            )
+
+        try:
+            artifact = artifact_store.load(artifact_id_at_start)
+            evidence = await run_in_threadpool(
+                explanation_service.global_oof, artifact_id_at_start
+            )
+        except OOFExplanationError as exc:
+            if exc.code == "GLOBAL_OOF_EXPLANATION_UNSUPPORTED":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": exc.code,
+                        "message": "Для этой модели глобальное OOF-объяснение недоступно.",
+                    },
+                ) from None
+            integrity_codes = {
+                "OOF_RESULT_EVIDENCE_INCOMPLETE",
+                "FOLD_MODEL_UNAVAILABLE",
+                "PROVENANCE_MISMATCH",
+                "OOF_PREDICTION_MISMATCH",
+                "GLOBAL_OOF_EXPLANATION_INCOMPATIBLE",
+            }
+            if exc.code in integrity_codes:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": exc.code,
+                        "message": (
+                            "Не удалось безопасно построить глобальное объяснение "
+                            "сохранённого OOF-результата. Сам результат остаётся доступен."
+                        ),
+                    },
+                ) from None
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "GLOBAL_OOF_EXPLANATION_ERROR",
+                    "message": (
+                        "Не удалось построить глобальное объяснение. "
+                        "Сам результат остаётся доступен."
+                    ),
+                },
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "GLOBAL_OOF_EXPLANATION_ERROR",
+                    "message": (
+                        "Не удалось построить глобальное объяснение. "
+                        "Сам результат остаётся доступен."
+                    ),
+                },
+            ) from None
+
+        artifact_id_at_end = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id_at_end != artifact_id_at_start:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "RESULT_CHANGED",
+                    "message": (
+                        "Текущий результат изменился. Откройте влияние признаков заново."
+                    ),
+                },
+            )
+
+        features = list(evidence.features)
+        ranks = [feature.rank for feature in features]
+        if ranks != list(range(1, evidence.feature_count + 1)) or len(features) != evidence.feature_count:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "GLOBAL_OOF_EXPLANATION_INCOMPATIBLE",
+                    "message": (
+                        "Не удалось безопасно построить глобальное объяснение "
+                        "сохранённого OOF-результата. Сам результат остаётся доступен."
+                    ),
+                },
+            )
+
+        return GlobalOOFExplanationResponse(
+            artifact_id=artifact_id_at_start,
+            model_id=evidence.model_id,
+            model_version=evidence.model_version,
+            dataset_name=artifact.dataset_contract.dataset_name,
+            row_count=evidence.row_count,
+            feature_count=evidence.feature_count,
+            folds=artifact.config.folds,
+            output_space=evidence.output_space,
+            evidence_hash=evidence.evidence_hash,
+            features=[
+                GlobalOOFFeatureImportanceResponse(
+                    feature_id=feature.feature_id,
+                    column_name=feature.column_name,
+                    mean_abs_shap=feature.mean_abs_shap,
+                    rank=feature.rank,
+                )
+                for feature in features
+            ],
         )
 
     @api.patch("/api/v1/result/threshold", response_model=ResultThresholdResponse)

@@ -136,13 +136,67 @@ class _ExplanationService:
         return self.evidence
 
 
-def _client(result_service: _ResultService, explanation_service: _ExplanationService | None = None):
+class _ArtifactStore:
+    def __init__(self) -> None:
+        self.loads: list[str] = []
+        self.artifact = SimpleNamespace(
+            dataset_contract=SimpleNamespace(dataset_name="Trusted dataset"),
+            config=SimpleNamespace(folds=4),
+        )
+
+    def load(self, artifact_id: str):
+        self.loads.append(artifact_id)
+        return self.artifact
+
+
+class _GlobalExplanationService:
+    def __init__(self, *, error: Exception | None = None, on_call=None) -> None:
+        self.calls: list[str] = []
+        self.error = error
+        self.on_call = on_call
+        self.evidence = SimpleNamespace(
+            artifact_id="untrusted-other-artifact",
+            model_id="catboost",
+            model_version="4.1",
+            row_count=120,
+            feature_count=3,
+            output_space="raw_margin",
+            evidence_hash="global-hash",
+            provider_id="private-provider",
+            provider_version="private-version",
+            explanation_method_id="private-method",
+            explanation_method_version="private-method-version",
+            background_policy_id="private-background",
+            feature_binding_hash="private-binding-hash",
+            fold_model_binding_ids=("private-fold-binding",),
+            features=(
+                SimpleNamespace(feature_id="feature-1", column_name="column_1", mean_abs_shap=0.6, rank=1),
+                SimpleNamespace(feature_id="feature-2", column_name="column_2", mean_abs_shap=0.3, rank=2),
+                SimpleNamespace(feature_id="feature-3", column_name="column_3", mean_abs_shap=0.1, rank=3),
+            ),
+        )
+
+    def global_oof(self, artifact_id: str):
+        self.calls.append(artifact_id)
+        if self.on_call is not None:
+            self.on_call()
+        if self.error is not None:
+            raise self.error
+        return self.evidence
+
+
+def _client(
+    result_service: _ResultService,
+    explanation_service: _ExplanationService | _GlobalExplanationService | None = None,
+    artifact_store: _ArtifactStore | None = None,
+):
     store = NativeSessionStore()
     authority = SimpleNamespace(resolve=lambda _context_id: object())
     client = TestClient(create_app(
         session_store=store,
         oof_result_service=result_service,
         oof_explanation_service=explanation_service,
+        experiment_artifact_store=artifact_store,
         prepared_context_authority=authority,
     ))
     assert client.get("/api/v1/session").status_code == 200
@@ -681,3 +735,151 @@ def test_explanation_unexpected_error_does_not_leak_exception_text() -> None:
         "message": "Не удалось построить объяснение. Сам результат объекта остаётся доступен.",
     }
     assert "private fold model path" not in response.text
+
+
+def test_global_explanation_is_not_ready_without_current_result() -> None:
+    explanation = _GlobalExplanationService()
+    artifact_store = _ArtifactStore()
+    client, _store, _session_id = _client(
+        _ResultService(), explanation, artifact_store
+    )
+
+    response = client.get("/api/v1/result/explanation/global")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_NOT_READY"
+    assert explanation.calls == []
+    assert artifact_store.loads == []
+
+
+def test_global_explanation_projects_complete_safe_ranked_dto_from_trusted_artifact() -> None:
+    explanation = _GlobalExplanationService()
+    artifact_store = _ArtifactStore()
+    client, store, session_id = _client(
+        _ResultService(), explanation, artifact_store
+    )
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/explanation/global")
+
+    assert response.status_code == 200, response.text
+    assert explanation.calls == ["artifact-exact"]
+    assert artifact_store.loads == ["artifact-exact"]
+    payload = response.json()
+    assert set(payload) == {
+        "artifact_id", "model_id", "model_version", "dataset_name", "row_count",
+        "feature_count", "folds", "output_space", "evidence_hash", "features",
+    }
+    assert payload == {
+        "artifact_id": "artifact-exact",
+        "model_id": "catboost",
+        "model_version": "4.1",
+        "dataset_name": "Trusted dataset",
+        "row_count": 120,
+        "feature_count": 3,
+        "folds": 4,
+        "output_space": "raw_margin",
+        "evidence_hash": "global-hash",
+        "features": [
+            {"feature_id": "feature-1", "column_name": "column_1", "mean_abs_shap": 0.6, "rank": 1},
+            {"feature_id": "feature-2", "column_name": "column_2", "mean_abs_shap": 0.3, "rank": 2},
+            {"feature_id": "feature-3", "column_name": "column_3", "mean_abs_shap": 0.1, "rank": 3},
+        ],
+    }
+    assert "threshold" not in payload
+    for internal_name in (
+        "provider_id", "provider_version", "explanation_method_id",
+        "explanation_method_version", "background_policy_id", "feature_binding_hash",
+        "fold_model_binding_ids", "fold_model_paths", "background_hashes", "provenance",
+    ):
+        assert internal_name not in response.text
+
+
+def test_global_explanation_error_mappings_are_safe() -> None:
+    cases = [
+        ("GLOBAL_OOF_EXPLANATION_UNSUPPORTED", "Для этой модели глобальное OOF-объяснение недоступно."),
+        ("OOF_RESULT_EVIDENCE_INCOMPLETE", "Не удалось безопасно построить глобальное объяснение сохранённого OOF-результата. Сам результат остаётся доступен."),
+        ("FOLD_MODEL_UNAVAILABLE", "Не удалось безопасно построить глобальное объяснение сохранённого OOF-результата. Сам результат остаётся доступен."),
+        ("PROVENANCE_MISMATCH", "Не удалось безопасно построить глобальное объяснение сохранённого OOF-результата. Сам результат остаётся доступен."),
+        ("OOF_PREDICTION_MISMATCH", "Не удалось безопасно построить глобальное объяснение сохранённого OOF-результата. Сам результат остаётся доступен."),
+        ("GLOBAL_OOF_EXPLANATION_INCOMPATIBLE", "Не удалось безопасно построить глобальное объяснение сохранённого OOF-результата. Сам результат остаётся доступен."),
+    ]
+    for code, message in cases:
+        explanation = _GlobalExplanationService(error=OOFExplanationError(code))
+        client, store, session_id = _client(_ResultService(), explanation, _ArtifactStore())
+        _completed_session(store, session_id, "artifact-exact")
+
+        response = client.get("/api/v1/result/explanation/global")
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == {"code": code, "message": message}
+
+
+def test_global_explanation_unexpected_error_does_not_leak_details() -> None:
+    explanation = _GlobalExplanationService(error=RuntimeError("private provider path"))
+    client, store, session_id = _client(_ResultService(), explanation, _ArtifactStore())
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/explanation/global")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "GLOBAL_OOF_EXPLANATION_ERROR",
+        "message": "Не удалось построить глобальное объяснение. Сам результат остаётся доступен.",
+    }
+    assert "private provider path" not in response.text
+
+
+def test_global_explanation_discards_result_when_current_artifact_changes_during_call() -> None:
+    store = NativeSessionStore()
+    session_id, _snapshot = store.get_or_create(None)
+    _completed_session(store, session_id, "artifact-exact")
+
+    def invalidate() -> None:
+        store.set_quality_settings(session_id, seed=42, folds=5)
+
+    explanation = _GlobalExplanationService(on_call=invalidate)
+    artifact_store = _ArtifactStore()
+    authority = SimpleNamespace(resolve=lambda _context_id: object())
+    client = TestClient(create_app(
+        session_store=store,
+        oof_result_service=_ResultService(),
+        oof_explanation_service=explanation,
+        experiment_artifact_store=artifact_store,
+        prepared_context_authority=authority,
+    ))
+    client.cookies.set("axion_session", session_id)
+
+    response = client.get("/api/v1/result/explanation/global")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "RESULT_CHANGED",
+        "message": "Текущий результат изменился. Откройте влияние признаков заново.",
+    }
+
+
+def test_global_explanation_is_independent_of_diagnostic_threshold() -> None:
+    explanation = _GlobalExplanationService()
+    client, store, session_id = _client(_ResultService(), explanation, _ArtifactStore())
+    _completed_session(store, session_id, "artifact-exact")
+
+    threshold_response = client.patch("/api/v1/result/threshold", json={"threshold": 0.8})
+    response = client.get("/api/v1/result/explanation/global")
+
+    assert threshold_response.status_code == 200
+    assert response.status_code == 200
+    assert explanation.calls == ["artifact-exact"]
+    assert "threshold" not in response.json()
+
+
+def test_global_explanation_rejects_unordered_features_without_resorting() -> None:
+    explanation = _GlobalExplanationService()
+    explanation.evidence.features = tuple(reversed(explanation.evidence.features))
+    client, store, session_id = _client(_ResultService(), explanation, _ArtifactStore())
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/explanation/global")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "GLOBAL_OOF_EXPLANATION_INCOMPATIBLE"
