@@ -301,6 +301,15 @@ class GlobalOOFExplanationResponse(BaseModel):
     features: list[GlobalOOFFeatureImportanceResponse]
 
 
+class ResultInterpretationResponse(BaseModel):
+    artifact_id: str
+    object_id: str
+    role: str
+    text: str
+    created_at: str
+    response_hash: str
+
+
 class ResultThresholdPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -328,13 +337,18 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None) -> FastAPI:
     """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
     runtime = create_native_experiment_runtime()
     result_service = oof_result_service or runtime.oof_result_service
     explanation_service = oof_explanation_service or runtime.oof_explanation_service
+    workflow = (
+        integration_workflow_service
+        if integration_workflow_service is not None
+        else runtime.integration_workflow_service
+    )
     artifact_store = experiment_artifact_store or runtime.artifact_store
     context_authority = prepared_context_authority or runtime.prepared_context_authority
     feature_selection = FeatureSelectionService()
@@ -645,6 +659,135 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             explanation_provider_version=evidence.provider_version,
             features=features,
             remainder=remainder,
+        )
+
+    @api.post(
+        "/api/v1/result/objects/{object_id}/interpretations/{role}",
+        response_model=ResultInterpretationResponse,
+    )
+    def create_result_interpretation(
+        object_id: str,
+        role: str,
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> ResultInterpretationResponse:
+        allowed_roles = {
+            "sales_manager",
+            "credit_controller",
+            "lawyer",
+            "information_security",
+        }
+        if role not in allowed_roles:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_INTERPRETER_ROLE", "message": "Роль интерпретации не поддерживается."},
+            )
+
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id_at_start = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id_at_start is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
+
+        try:
+            evidence = explanation_service.local(artifact_id_at_start, object_id)
+        except OOFExplanationError as exc:
+            if exc.code == "OBJECT_NOT_FOUND":
+                raise HTTPException(
+                    status_code=404,
+                    detail={"code": "OBJECT_NOT_FOUND", "message": "Объект не найден в текущем OOF-результате."},
+                ) from None
+            if exc.code == "LOCAL_OOF_EXPLANATION_UNSUPPORTED":
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": exc.code, "message": "Для этой модели локальное объяснение недоступно."},
+                ) from None
+            if exc.code in {
+                "OOF_RESULT_EVIDENCE_INCOMPLETE",
+                "FOLD_MODEL_UNAVAILABLE",
+                "PROVENANCE_MISMATCH",
+                "OOF_PREDICTION_MISMATCH",
+            }:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": exc.code,
+                        "message": "Не удалось безопасно построить объяснение для сохранённой OOF-оценки. Сам результат объекта остаётся доступен.",
+                    },
+                ) from None
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": exc.code,
+                    "message": "Не удалось построить объяснение. Сам результат объекта остаётся доступен.",
+                },
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": "LOCAL_EXPLANATION_ERROR",
+                    "message": "Не удалось построить объяснение. Сам результат объекта остаётся доступен.",
+                },
+            ) from None
+
+        if getattr(evidence, "object_id", None) != object_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "PROVENANCE_MISMATCH",
+                    "message": "Не удалось безопасно построить объяснение для сохранённой OOF-оценки. Сам результат объекта остаётся доступен.",
+                },
+            )
+
+        try:
+            capability = workflow.capabilities(
+                local_explanation_evidence=evidence
+            )["result_interpretation"]
+            if capability.state != "AVAILABLE":
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": capability.reason_code,
+                        "message": "Интерпретация результата сейчас недоступна.",
+                    },
+                )
+            request = workflow.prepare_interpretation(
+                evidence=evidence,
+                recipient_role=role,
+            )
+            outcome = workflow.interpret(request=request)
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "RESULT_INTERPRETER_ERROR",
+                    "message": "Не удалось сформировать интерпретацию. Результат модели и SHAP остаются доступными.",
+                },
+            ) from None
+
+        artifact_id_at_end = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id_at_end != artifact_id_at_start:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "RESULT_CHANGED",
+                    "message": "Текущий результат изменился. Откройте объект заново.",
+                },
+            )
+
+        result = outcome.response
+        return ResultInterpretationResponse(
+            artifact_id=artifact_id_at_start,
+            object_id=object_id,
+            role=role,
+            text=result.text,
+            created_at=result.created_at,
+            response_hash=result.response_hash,
         )
 
     @api.get(

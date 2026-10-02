@@ -434,3 +434,19 @@ def test_native_runtime_services_share_canonical_artifact_store() -> None:
     assert runtime.oof_result_service.artifact_store is runtime.artifact_store
     assert runtime.oof_explanation_service.artifact_store is runtime.artifact_store
     assert runtime.analysis_history_service.artifact_store is runtime.artifact_store
+
+    workflow = runtime.integration_workflow_service
+    final_training = workflow.final_model_training_service
+    assert final_training.experiment_artifact_store is runtime.artifact_store
+    assert final_training.model_version_store is workflow.model_version_store
+    assert workflow.model_version_store.root == expected_root / "model_versions"
+    assert workflow.model_version_store.root.is_relative_to(expected_root)
+    assert runtime.application_service.code_version == "native-quality-v1a"
+    assert final_training.code_version == runtime.application_service.code_version
+    assert workflow.model_version_store.code_version == runtime.application_service.code_version
+    for native_root in (
+        runtime.artifact_store.root,
+        final_training.experiment_artifact_store.root,
+        workflow.model_version_store.root,
+    ):
+        assert ".streamlit-artifacts" not in str(native_root)

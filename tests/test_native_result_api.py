@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.main import create_app
+from app.native_runtime import create_native_experiment_runtime
 from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.oof_explanation import OOFExplanationError
 from komus_risk.application.native_session import NativeSessionStore, QualityTrainingStatus
@@ -185,10 +187,56 @@ class _GlobalExplanationService:
         return self.evidence
 
 
+class _IntegrationWorkflowService:
+    def __init__(self, *, state: str = "AVAILABLE", reason_code: str = "RESULT_INTERPRETER_READY", error: Exception | None = None, fail_at: str | None = None, on_interpret=None) -> None:
+        self.state = state
+        self.reason_code = reason_code
+        self.error = error
+        self.fail_at = fail_at
+        self.on_interpret = on_interpret
+        self.capability_calls: list[object] = []
+        self.prepare_calls: list[tuple[object, str]] = []
+        self.interpret_calls: list[object] = []
+        self.request = object()
+        self.outcome = SimpleNamespace(
+            response=SimpleNamespace(
+                text="Trusted interpretation",
+                created_at="2026-10-02T10:00:00Z",
+                response_hash="response-hash",
+                request_hash="private-request-hash",
+                prompt_id="private-prompt",
+                prompt_version="private-version",
+                prompt_hash="private-prompt-hash",
+                interpreter_id="private-interpreter",
+                interpreter_model="private-model",
+            ),
+            dispatch_receipt=SimpleNamespace(payload={"secret": "private-provider-payload"}),
+        )
+
+    def capabilities(self, *, local_explanation_evidence):
+        self.capability_calls.append(local_explanation_evidence)
+        return {"result_interpretation": SimpleNamespace(state=self.state, reason_code=self.reason_code)}
+
+    def prepare_interpretation(self, *, evidence, recipient_role):
+        self.prepare_calls.append((evidence, recipient_role))
+        if self.fail_at == "prepare":
+            raise self.error or RuntimeError("private prepare details")
+        return self.request
+
+    def interpret(self, *, request):
+        self.interpret_calls.append(request)
+        if self.on_interpret is not None:
+            self.on_interpret()
+        if self.fail_at == "interpret":
+            raise self.error or RuntimeError("private provider details")
+        return self.outcome
+
+
 def _client(
     result_service: _ResultService,
     explanation_service: _ExplanationService | _GlobalExplanationService | None = None,
     artifact_store: _ArtifactStore | None = None,
+    integration_workflow_service: _IntegrationWorkflowService | None = None,
 ):
     store = NativeSessionStore()
     authority = SimpleNamespace(resolve=lambda _context_id: object())
@@ -198,6 +246,7 @@ def _client(
         oof_explanation_service=explanation_service,
         experiment_artifact_store=artifact_store,
         prepared_context_authority=authority,
+        integration_workflow_service=integration_workflow_service,
     ))
     assert client.get("/api/v1/session").status_code == 200
     session_id = client.cookies.get("axion_session")
@@ -735,6 +784,207 @@ def test_explanation_unexpected_error_does_not_leak_exception_text() -> None:
         "message": "Не удалось построить объяснение. Сам результат объекта остаётся доступен.",
     }
     assert "private fold model path" not in response.text
+
+
+def test_interpretation_is_not_ready_without_current_result() -> None:
+    explanation = _ExplanationService()
+    workflow = _IntegrationWorkflowService()
+    client, _store, _session_id = _client(
+        _ResultService(), explanation, integration_workflow_service=workflow
+    )
+
+    response = client.post(
+        "/api/v1/result/objects/object-opaque-123/interpretations/lawyer"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_NOT_READY"
+    assert explanation.local_calls == []
+    assert workflow.capability_calls == []
+
+
+def test_interpretation_rejects_invalid_role_before_trusted_services() -> None:
+    explanation = _ExplanationService()
+    workflow = _IntegrationWorkflowService()
+    client, store, session_id = _client(
+        _ResultService(), explanation, integration_workflow_service=workflow
+    )
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.post(
+        "/api/v1/result/objects/object-opaque-123/interpretations/administrator"
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "INVALID_INTERPRETER_ROLE"
+    assert explanation.local_calls == []
+    assert workflow.capability_calls == []
+
+
+def test_interpretation_uses_trusted_binding_role_and_safe_response_projection() -> None:
+    explanation = _ExplanationService()
+    workflow = _IntegrationWorkflowService()
+    client, store, session_id = _client(
+        _ResultService(), explanation, integration_workflow_service=workflow
+    )
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.post(
+        "/api/v1/result/objects/object-opaque-123/interpretations/sales_manager"
+    )
+
+    assert response.status_code == 200, response.text
+    assert explanation.local_calls == [("artifact-exact", "object-opaque-123")]
+    assert workflow.capability_calls == [explanation.evidence]
+    assert workflow.prepare_calls == [(explanation.evidence, "sales_manager")]
+    assert workflow.interpret_calls == [workflow.request]
+    assert response.json() == {
+        "artifact_id": "artifact-exact",
+        "object_id": "object-opaque-123",
+        "role": "sales_manager",
+        "text": "Trusted interpretation",
+        "created_at": "2026-10-02T10:00:00Z",
+        "response_hash": "response-hash",
+    }
+    for private_value in (
+        "private-request-hash", "private-prompt", "private-prompt-hash",
+        "private-interpreter", "private-model", "private-provider-payload",
+    ):
+        assert private_value not in response.text
+
+
+def test_app_uses_native_runtime_workflow_when_not_injected(monkeypatch) -> None:
+    workflow = _IntegrationWorkflowService()
+    native_runtime = replace(
+        create_native_experiment_runtime(),
+        integration_workflow_service=workflow,
+    )
+    monkeypatch.setattr(
+        "app.api.main.create_native_experiment_runtime",
+        lambda: native_runtime,
+    )
+    explanation = _ExplanationService()
+    store = NativeSessionStore()
+    session_id, _snapshot = store.get_or_create(None)
+    _completed_session(store, session_id, "artifact-exact")
+    authority = SimpleNamespace(resolve=lambda _context_id: object())
+    client = TestClient(create_app(
+        session_store=store,
+        oof_result_service=_ResultService(),
+        oof_explanation_service=explanation,
+        prepared_context_authority=authority,
+    ))
+    client.cookies.set("axion_session", session_id)
+
+    response = client.post(
+        "/api/v1/result/objects/object-opaque-123/interpretations/lawyer"
+    )
+
+    assert response.status_code == 200, response.text
+    assert workflow.capability_calls == [explanation.evidence]
+    assert workflow.prepare_calls == [(explanation.evidence, "lawyer")]
+    assert workflow.interpret_calls == [workflow.request]
+
+
+def test_interpretation_capability_blocks_prepare_and_interpret() -> None:
+    explanation = _ExplanationService()
+    workflow = _IntegrationWorkflowService(state="DISABLED", reason_code="EXTERNAL_DATA_POLICY_DISABLED")
+    client, store, session_id = _client(
+        _ResultService(), explanation, integration_workflow_service=workflow
+    )
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.post(
+        "/api/v1/result/objects/object-opaque-123/interpretations/credit_controller"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "EXTERNAL_DATA_POLICY_DISABLED"
+    assert workflow.prepare_calls == []
+    assert workflow.interpret_calls == []
+
+
+def test_interpretation_object_not_found_is_safe() -> None:
+    explanation = _ExplanationService(error=OOFExplanationError("OBJECT_NOT_FOUND"))
+    workflow = _IntegrationWorkflowService()
+    client, store, session_id = _client(
+        _ResultService(), explanation, integration_workflow_service=workflow
+    )
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.post(
+        "/api/v1/result/objects/object-missing/interpretations/lawyer"
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"]["code"] == "OBJECT_NOT_FOUND"
+    assert workflow.capability_calls == []
+
+
+@pytest.mark.parametrize("fail_at", ["prepare", "interpret"])
+def test_interpretation_failure_does_not_leak_exception_details(fail_at: str) -> None:
+    explanation = _ExplanationService()
+    workflow = _IntegrationWorkflowService(
+        fail_at=fail_at, error=RuntimeError("private provider path and API key")
+    )
+    client, store, session_id = _client(
+        _ResultService(), explanation, integration_workflow_service=workflow
+    )
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.post(
+        "/api/v1/result/objects/object-opaque-123/interpretations/information_security"
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["code"] == "RESULT_INTERPRETER_ERROR"
+    assert "private provider path" not in response.text
+    assert "API key" not in response.text
+
+
+def test_interpretation_discards_response_when_current_artifact_changes() -> None:
+    explanation = _ExplanationService()
+    store = NativeSessionStore()
+    session_id, _snapshot = store.get_or_create(None)
+    _completed_session(store, session_id, "artifact-exact")
+    workflow = _IntegrationWorkflowService(
+        on_interpret=lambda: store.set_quality_settings(session_id, seed=42, folds=5)
+    )
+    authority = SimpleNamespace(resolve=lambda _context_id: object())
+    client = TestClient(create_app(
+        session_store=store,
+        oof_result_service=_ResultService(),
+        oof_explanation_service=explanation,
+        prepared_context_authority=authority,
+        integration_workflow_service=workflow,
+    ))
+    client.cookies.set("axion_session", session_id)
+
+    response = client.post(
+        "/api/v1/result/objects/object-opaque-123/interpretations/lawyer"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_CHANGED"
+    assert "Trusted interpretation" not in response.text
+
+
+def test_interpretation_capability_unavailable_preserves_reason_code() -> None:
+    explanation = _ExplanationService()
+    workflow = _IntegrationWorkflowService(state="MISCONFIGURED", reason_code="RESULT_INTERPRETER_PROMPTS_INVALID")
+    client, store, session_id = _client(
+        _ResultService(), explanation, integration_workflow_service=workflow
+    )
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.post(
+        "/api/v1/result/objects/object-opaque-123/interpretations/information_security"
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_INTERPRETER_PROMPTS_INVALID"
+    assert workflow.prepare_calls == []
+    assert workflow.interpret_calls == []
 
 
 def test_global_explanation_is_not_ready_without_current_result() -> None:
