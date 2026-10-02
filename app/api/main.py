@@ -21,6 +21,7 @@ from komus_risk.application import (
     NativeQualityService,
 )
 from komus_risk.application.oof_result import OOFResultError
+from komus_risk.application.oof_explanation import OOFExplanationError
 from komus_risk.preparation import DatasetPreparationError
 from komus_risk.application.native_session import (
     DatasetInspectionProgress,
@@ -246,6 +247,40 @@ class ResultObjectDetailResponse(BaseModel):
     fold_number: int
 
 
+class LocalExplanationFeatureResponse(BaseModel):
+    feature_id: str
+    column_name: str
+    display_name_ru: str | None
+    description_ru: str | None
+    raw_value: float
+    shap_value: float
+    abs_rank: int
+    direction: Literal["increases_output", "decreases_output", "neutral"]
+
+
+class LocalExplanationRemainderResponse(BaseModel):
+    feature_count: int
+    shap_value: float
+    direction: Literal["increases_output", "decreases_output", "neutral"]
+
+
+class LocalExplanationResponse(BaseModel):
+    evidence_version: str
+    artifact_id: str
+    object_id: str
+    evidence_hash: str
+    prediction_probability: float
+    base_value: float
+    explained_output_value: float
+    output_space: str
+    explanation_method_id: str
+    explanation_method_version: str
+    explanation_provider_id: str
+    explanation_provider_version: str
+    features: list[LocalExplanationFeatureResponse]
+    remainder: LocalExplanationRemainderResponse | None
+
+
 class ResultThresholdPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -273,12 +308,13 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, prepared_context_authority: Any | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None) -> FastAPI:
     """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
     runtime = create_native_experiment_runtime()
     result_service = oof_result_service or runtime.oof_result_service
+    explanation_service = oof_explanation_service or runtime.oof_explanation_service
     context_authority = prepared_context_authority or runtime.prepared_context_authority
     feature_selection = FeatureSelectionService()
     planning = planning_service or runtime.planning_service
@@ -494,6 +530,100 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             predicted_positive=detail.predicted_positive,
             outcome=detail.outcome,
             fold_number=detail.fold_number,
+        )
+
+    @api.get(
+        "/api/v1/result/objects/{object_id}/explanation",
+        response_model=LocalExplanationResponse,
+    )
+    def get_current_result_object_explanation(
+        object_id: str,
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> LocalExplanationResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
+
+        try:
+            evidence = explanation_service.local(artifact_id, object_id)
+        except OOFExplanationError as exc:
+            if exc.code == "OBJECT_NOT_FOUND":
+                raise HTTPException(
+                    status_code=404,
+                    detail={"code": "OBJECT_NOT_FOUND", "message": "Объект не найден в текущем OOF-результате."},
+                ) from None
+            if exc.code == "LOCAL_OOF_EXPLANATION_UNSUPPORTED":
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": exc.code, "message": "Для этой модели локальное объяснение недоступно."},
+                ) from None
+            integrity_codes = {
+                "OOF_RESULT_EVIDENCE_INCOMPLETE",
+                "FOLD_MODEL_UNAVAILABLE",
+                "PROVENANCE_MISMATCH",
+                "OOF_PREDICTION_MISMATCH",
+            }
+            if exc.code in integrity_codes:
+                message = "Не удалось безопасно построить объяснение для сохранённой OOF-оценки. Сам результат объекта остаётся доступен."
+            else:
+                message = "Не удалось построить объяснение. Сам результат объекта остаётся доступен."
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": message},
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "LOCAL_EXPLANATION_ERROR", "message": "Не удалось построить объяснение. Сам результат объекта остаётся доступен."},
+            ) from None
+
+        features = [
+            LocalExplanationFeatureResponse(
+                feature_id=feature.feature_id,
+                column_name=feature.column_name,
+                display_name_ru=feature.display_name_ru,
+                description_ru=feature.description_ru,
+                raw_value=feature.raw_value,
+                shap_value=feature.shap_value,
+                abs_rank=feature.abs_rank,
+                direction=feature.direction,
+            )
+            for feature in evidence.features
+        ]
+        remainder_features = [feature for feature in features if feature.abs_rank > 5]
+        remainder = None
+        if len(features) > 5:
+            remainder_value = sum(feature.shap_value for feature in remainder_features)
+            remainder_direction = (
+                "increases_output" if remainder_value > 0
+                else "decreases_output" if remainder_value < 0
+                else "neutral"
+            )
+            remainder = LocalExplanationRemainderResponse(
+                feature_count=len(remainder_features),
+                shap_value=remainder_value,
+                direction=remainder_direction,
+            )
+        return LocalExplanationResponse(
+            evidence_version=evidence.evidence_version,
+            artifact_id=artifact_id,
+            object_id=evidence.object_id,
+            evidence_hash=evidence.evidence_hash,
+            prediction_probability=evidence.prediction_probability,
+            base_value=evidence.base_value,
+            explained_output_value=evidence.explained_output_value,
+            output_space=evidence.output_space,
+            explanation_method_id=evidence.explanation_method_id,
+            explanation_method_version=evidence.explanation_method_version,
+            explanation_provider_id=evidence.provider_id,
+            explanation_provider_version=evidence.provider_version,
+            features=features,
+            remainder=remainder,
         )
 
     @api.patch("/api/v1/result/threshold", response_model=ResultThresholdResponse)

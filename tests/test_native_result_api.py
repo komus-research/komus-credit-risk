@@ -6,12 +6,14 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.main import create_app
 from komus_risk.application.oof_result import OOFResultError
+from komus_risk.application.oof_explanation import OOFExplanationError
 from komus_risk.application.native_session import NativeSessionStore, QualityTrainingStatus
 
 
@@ -90,10 +92,59 @@ class _ResultService:
         )
 
 
-def _client(result_service: _ResultService):
+class _ExplanationService:
+    def __init__(self, *, feature_count: int = 7, error: Exception | None = None) -> None:
+        self.local_calls: list[tuple[str, str]] = []
+        self.error = error
+        self.features = [
+            SimpleNamespace(
+                feature_id=f"feature-{rank}",
+                column_name=f"column_{rank}",
+                display_name_ru=f"Признак {rank}",
+                description_ru=f"Описание {rank}",
+                raw_value=rank + 0.25,
+                shap_value=(-0.1 if rank == 6 else 0.5 if rank == 7 else rank / 10),
+                abs_rank=rank,
+                direction="decreases_output" if rank == 1 else "increases_output" if rank == 2 else "neutral",
+            )
+            for rank in range(1, feature_count + 1)
+        ]
+        self.evidence = SimpleNamespace(
+            evidence_version="local_explanation_v2",
+            object_id="object-opaque-123",
+            evidence_hash="hash-exact",
+            prediction_probability=0.731,
+            base_value=-0.12,
+            explained_output_value=1.002,
+            output_space="raw_margin",
+            explanation_method_id="catboost_native_shap",
+            explanation_method_version="1.2.3",
+            provider_id="trusted_provider",
+            provider_version="provider-4",
+            features=self.features,
+            dataset_id="private-dataset",
+            dataset_fingerprint="private-fingerprint",
+            model_binding_id="private-binding",
+            source_kind="private-source-kind",
+            provenance={"secret": "private-provenance"},
+        )
+
+    def local(self, artifact_id: str, object_id: str):
+        self.local_calls.append((artifact_id, object_id))
+        if self.error is not None:
+            raise self.error
+        return self.evidence
+
+
+def _client(result_service: _ResultService, explanation_service: _ExplanationService | None = None):
     store = NativeSessionStore()
     authority = SimpleNamespace(resolve=lambda _context_id: object())
-    client = TestClient(create_app(session_store=store, oof_result_service=result_service, prepared_context_authority=authority))
+    client = TestClient(create_app(
+        session_store=store,
+        oof_result_service=result_service,
+        oof_explanation_service=explanation_service,
+        prepared_context_authority=authority,
+    ))
     assert client.get("/api/v1/session").status_code == 200
     session_id = client.cookies.get("axion_session")
     assert session_id
@@ -463,3 +514,170 @@ def test_session_resume_tracks_completed_artifact_and_quality_invalidation() -> 
     assert store.current_result_artifact_id(session_id) is None
     assert store.current_result_threshold(session_id) is None
     assert store._sessions[session_id].result_threshold == 0.5
+
+
+def test_explanation_is_not_ready_without_current_result() -> None:
+    explanation = _ExplanationService()
+    client, _store, _session_id = _client(_ResultService(), explanation)
+
+    response = client.get("/api/v1/result/objects/object-opaque-123/explanation")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "RESULT_NOT_READY",
+        "message": "Результат полного обучения ещё не готов.",
+    }
+    assert explanation.local_calls == []
+
+
+def test_explanation_uses_exact_current_artifact_and_public_projection() -> None:
+    explanation = _ExplanationService()
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/objects/object-opaque-123/explanation")
+
+    assert response.status_code == 200, response.text
+    assert explanation.local_calls == [("artifact-exact", "object-opaque-123")]
+    payload = response.json()
+    assert set(payload) == {
+        "evidence_version", "artifact_id", "object_id", "evidence_hash",
+        "prediction_probability", "base_value", "explained_output_value", "output_space",
+        "explanation_method_id", "explanation_method_version", "explanation_provider_id",
+        "explanation_provider_version", "features", "remainder",
+    }
+    assert payload == {
+        "evidence_version": "local_explanation_v2",
+        "artifact_id": "artifact-exact",
+        "object_id": "object-opaque-123",
+        "evidence_hash": "hash-exact",
+        "prediction_probability": 0.731,
+        "base_value": -0.12,
+        "explained_output_value": 1.002,
+        "output_space": "raw_margin",
+        "explanation_method_id": "catboost_native_shap",
+        "explanation_method_version": "1.2.3",
+        "explanation_provider_id": "trusted_provider",
+        "explanation_provider_version": "provider-4",
+        "features": [
+            {
+                "feature_id": f"feature-{rank}",
+                "column_name": f"column_{rank}",
+                "display_name_ru": f"Признак {rank}",
+                "description_ru": f"Описание {rank}",
+                "raw_value": rank + 0.25,
+                "shap_value": -0.1 if rank == 6 else 0.5 if rank == 7 else rank / 10,
+                "abs_rank": rank,
+                "direction": "decreases_output" if rank == 1 else "increases_output" if rank == 2 else "neutral",
+            }
+            for rank in range(1, 8)
+        ],
+        "remainder": {"feature_count": 2, "shap_value": 0.4, "direction": "increases_output"},
+    }
+    for internal_name in (
+        "dataset_id", "dataset_fingerprint", "model_binding_id", "source_kind", "provenance",
+    ):
+        assert internal_name not in payload
+    assert "threshold" not in payload
+
+
+def test_explanation_remainder_is_null_for_five_or_fewer_features() -> None:
+    explanation = _ExplanationService(feature_count=5)
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/objects/object-opaque-123/explanation")
+
+    assert response.status_code == 200
+    assert response.json()["remainder"] is None
+
+
+def test_explanation_is_threshold_independent() -> None:
+    explanation = _ExplanationService()
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+
+    threshold_response = client.patch("/api/v1/result/threshold", json={"threshold": 0.8})
+    response = client.get("/api/v1/result/objects/object-opaque-123/explanation")
+
+    assert threshold_response.status_code == 200
+    assert response.status_code == 200
+    assert explanation.local_calls == [("artifact-exact", "object-opaque-123")]
+    assert "threshold" not in response.json()
+
+
+def test_explanation_is_not_ready_after_quality_invalidation() -> None:
+    explanation = _ExplanationService()
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+    store.set_quality_settings(session_id, seed=42, folds=5)
+
+    response = client.get("/api/v1/result/objects/object-opaque-123/explanation")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_NOT_READY"
+    assert explanation.local_calls == []
+
+
+def test_explanation_object_not_found_is_safe() -> None:
+    explanation = _ExplanationService(error=OOFExplanationError("OBJECT_NOT_FOUND"))
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/objects/object-missing/explanation")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == {
+        "code": "OBJECT_NOT_FOUND",
+        "message": "Объект не найден в текущем OOF-результате.",
+    }
+
+
+def test_explanation_unsupported_is_safe() -> None:
+    code = "LOCAL_OOF_EXPLANATION_UNSUPPORTED"
+    explanation = _ExplanationService(error=OOFExplanationError(code))
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/objects/object-opaque-123/explanation")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": code,
+        "message": "Для этой модели локальное объяснение недоступно.",
+    }
+
+
+@pytest.mark.parametrize("code", [
+    "OOF_RESULT_EVIDENCE_INCOMPLETE",
+    "FOLD_MODEL_UNAVAILABLE",
+    "PROVENANCE_MISMATCH",
+    "OOF_PREDICTION_MISMATCH",
+])
+def test_explanation_integrity_errors_are_safe(code: str) -> None:
+    explanation = _ExplanationService(error=OOFExplanationError(code))
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/objects/object-opaque-123/explanation")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": code,
+        "message": "Не удалось безопасно построить объяснение для сохранённой OOF-оценки. Сам результат объекта остаётся доступен.",
+    }
+
+
+def test_explanation_unexpected_error_does_not_leak_exception_text() -> None:
+    explanation = _ExplanationService(error=RuntimeError("private fold model path"))
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/objects/object-opaque-123/explanation")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "LOCAL_EXPLANATION_ERROR",
+        "message": "Не удалось построить объяснение. Сам результат объекта остаётся доступен.",
+    }
+    assert "private fold model path" not in response.text
