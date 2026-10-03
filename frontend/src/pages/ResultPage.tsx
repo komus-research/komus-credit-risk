@@ -12,7 +12,6 @@ const unavailable = 'Действие пока недоступно: соотв�
 
 function metric(value: number) { return numberFormat.format(value) }
 function percent(value: number) { return percentFormat.format(value) }
-function errorRate(numerator: number, denominator: number) { return denominator === 0 ? '—' : percentFormat.format(numerator / denominator) }
 
 export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome: () => void; onOpenThreshold: () => void; onOpenObjects: () => void }) {
   const [result, setResult] = useState<ResultOverview | null>(null)
@@ -29,7 +28,7 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
   const summary = result?.summary
   const threshold = result?.threshold
   const foldMetrics = summary?.fold_metrics.filter(fold =>
-    Number.isFinite(fold.fold) && Number.isFinite(fold.gini) && Number.isFinite(fold.pr_auc) && Number.isFinite(fold.recall_at_0_5),
+    Number.isFinite(fold.fold) && Number.isFinite(fold.roc_auc),
   ) ?? []
 
   return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace result-workspace">
@@ -68,29 +67,25 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
         <section className="result-panel panel">
           <PanelHeading title="Стабильность проверки" action="Подробнее" />
           {foldMetrics.length ? <>
-            <div className="result-quality-chart" role="img" aria-label={`Gini, PR-AUC и Recall по ${foldMetrics.length} fold`}>
-              <div className="result-quality-ylabels"><span>1,0</span><span>0,5</span><span>0,0</span></div>
-              <div className="result-quality-plot">
+            <div className="result-fold-chart result-overview-fold-chart" role="img" aria-label={`ROC-AUC по ${foldMetrics.length} частям проверки`}>
+              <div className="result-chart-ylabels"><span>1,0</span><span>0,5</span><span>0,0</span></div>
+              <div className="result-chart-plot">
                 <div className="result-fold-gridline top" /><div className="result-fold-gridline middle" /><div className="result-fold-gridline bottom" />
-                <div className="result-quality-folds">{foldMetrics.map(fold => <div className="result-quality-fold" key={fold.fold}>
-                  <div className="result-quality-bars">{[
-                    { label: 'Gini', value: fold.gini, tone: 'gini' },
-                    { label: 'PR-AUC', value: fold.pr_auc, tone: 'pr-auc' },
-                    { label: 'Recall', value: fold.recall_at_0_5, tone: 'recall' },
-                  ].map(series => <div className={`result-quality-bar ${series.tone}`} key={series.label} title={`${series.label}: ${metric(series.value)}`}><strong>{metric(series.value)}</strong><i style={{ height: `${Math.max(0, Math.min(series.value, 1)) * 100}%` }} /></div>)}
-                  </div>
+                <div className="result-fold-bars">{foldMetrics.map(fold => <div className="result-fold-bar" key={fold.fold} title={`Часть ${fold.fold}: ROC-AUC ${metric(fold.roc_auc)}`}>
+                  <strong>{metric(fold.roc_auc)}</strong>
+                  <span className="result-fold-track"><i style={{ height: `${Math.max(0, Math.min(fold.roc_auc, 1)) * 100}%` }} /></span>
                   <small>Часть {fold.fold}</small>
                 </div>)}</div>
               </div>
             </div>
-            <p className="result-quality-legend"><span className="gini">Gini</span><span className="pr-auc">PR-AUC</span><span className="recall">Recall</span></p>
+            <p className="result-chart-legend"><i />ROC-AUC по частям проверки</p>
           </> : <p className="result-muted">Данные для графика недоступны.</p>}
           <p className="result-note">Разброс по фолдам не доказывает стабильность во времени.</p>
         </section>
 
         <section className="result-panel result-capture-panel panel">
           <PanelHeading title="Сколько событий находим" action="Подробнее" />
-          <div className="result-unavailable-chart" role="img" aria-label="График охвата: данные пока не подключены"><div className="result-capture-ylabels"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div><div className="result-capture-plot"><div /><div /><div /><div /><div /><p>Данные охвата пока не подключены</p></div><div className="result-capture-ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div><span className="result-capture-xlabel">Доля объектов, %</span></div>
+          <div className="result-capture-empty"><Icon name="info" size={18} /><p>Данные охвата пока не подключены.</p></div>
         </section>
       </div>
 
@@ -103,23 +98,21 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
             <Metric label="Precision" value={percent(threshold.precision)} />
           </div>
           <div className="result-error-counts">
-            <ErrorCountRow label="Пропущено событий" count={integerFormat.format(threshold.fn)} rate={errorRate(threshold.fn, threshold.tp + threshold.fn)} tone="negative" />
-            <ErrorCountRow label="Ложных срабатываний" count={integerFormat.format(threshold.fp)} rate={errorRate(threshold.fp, threshold.tn + threshold.fp)} tone="warning" />
+            <ErrorCountRow label="Пропущено событий" count={integerFormat.format(threshold.fn)} tone="negative" />
+            <ErrorCountRow label="Ложных срабатываний" count={integerFormat.format(threshold.fp)} tone="warning" />
           </div>
           <button className="primary-action result-panel-action" onClick={onOpenThreshold}>Исследовать порог <Icon name="arrow" size={18} /></button>
         </section>
 
         <section className="result-panel result-influence-panel panel">
-          <PanelHeading title="На какие признаки модель опиралась сильнее всего" icon="info" action="Подробнее" onAction={() => navigate(routes.resultGlobalExplanation)} />
-          <div className="result-influence-content"><div className="result-influence-unavailable">Откройте полный список и ранжирование признаков.</div><aside><Icon name="info" size={20} /><p>Этот блок объясняет поведение модели, но не доказывает причинность.</p></aside></div>
+          <PanelHeading title="Глобальное влияние признаков" icon="info" />
+          <div className="result-influence-content"><p>Полное OOF-ранжирование признаков доступно на отдельном экране.</p><button className="secondary-action result-influence-action" onClick={() => navigate(routes.resultGlobalExplanation)}>Подробнее <Icon name="arrow" size={16} /></button><aside><Icon name="info" size={18} /><p>Этот блок объясняет поведение модели, но не доказывает причинность.</p></aside></div>
         </section>
       </div>
 
       <section className="result-objects-strip panel">
         <span className="result-objects-icon"><Icon name="users" size={26} /></span>
-        <div className="result-objects-copy"><h2>Объекты оценки</h2><p>Посмотрите отдельные объекты и причины конкретных прогнозов.</p></div>
-        <ObjectFact icon="alert-circle" tone="negative" label="Сложные случаи" value="—" unavailable />
-        <ObjectFact icon="warning" tone="warning" label="Пограничные" value="—" unavailable />
+        <div className="result-objects-copy"><h2>Объекты оценки</h2><p>Просмотр объектов оценки и причин конкретных прогнозов.</p></div>
         <ObjectFact icon="info" tone="info" label="Пропущенные события" value={integerFormat.format(threshold.fn)} />
         <button className="primary-action" onClick={onOpenObjects}>Посмотреть объекты <Icon name="arrow" size={18} /></button>
       </section>
@@ -147,10 +140,10 @@ function Metric({ label, value, bar, tone }: { label: string; value: string; bar
   return <div className={`result-metric${tone ? ` ${tone}` : ''}`}><small>{label}</small><strong>{value}</strong>{boundedBar !== null && <span className="result-metric-track"><i style={{ width: `${boundedBar * 100}%` }} /></span>}</div>
 }
 
-function ErrorCountRow({ label, count, rate, tone }: { label: string; count: string; rate: string; tone: 'negative' | 'warning' }) {
-  return <div className={`result-error-count-row tone-${tone}`}><div><small>{label}</small><strong>{count}</strong></div><span className="result-error-rate">{rate}</span></div>
+function ErrorCountRow({ label, count, tone }: { label: string; count: string; tone: 'negative' | 'warning' }) {
+  return <div className={`result-error-count-row tone-${tone}`}><div><small>{label}</small><strong>{count}</strong></div></div>
 }
 
-function ObjectFact({ icon, tone, label, value, unavailable: isUnavailable }: { icon: 'alert-circle' | 'warning' | 'info'; tone: 'negative' | 'warning' | 'info'; label: string; value: string; unavailable?: boolean }) {
-  return <div className={`result-object-fact tone-${tone}`} title={isUnavailable ? 'Данные пока не подключены' : undefined}><span className="result-object-fact-label"><Icon name={icon} size={15} /><small>{label}</small></span><strong>{value}</strong></div>
+function ObjectFact({ icon, tone, label, value }: { icon: 'info'; tone: 'info'; label: string; value: string }) {
+  return <div className={`result-object-fact tone-${tone}`}><span className="result-object-fact-label"><Icon name={icon} size={15} /><small>{label}</small></span><strong>{value}</strong></div>
 }

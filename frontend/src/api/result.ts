@@ -1,5 +1,6 @@
 export type ResultFoldMetric = {
   fold: number
+  roc_auc: number
   gini: number
   pr_auc: number
   recall_at_0_5: number
