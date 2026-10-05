@@ -12,11 +12,16 @@ from komus_risk.application import (
     GlobalRedactedV1OutboundPolicy,
     GlobalResultInterpreterService,
     IntegrationWorkflowService,
+    ModelLibraryService,
     ModelInferenceService,
     ResultInterpreterPromptLoader,
     ResultInterpreterService,
 )
-from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
+from komus_risk.artifacts import (
+    ExperimentArtifactStore,
+    ModelLibraryRecordStore,
+    ModelVersionStore,
+)
 from komus_risk.application.history import AnalysisHistoryService
 from komus_risk.application.oof_explanation import OOFExplanationService
 from komus_risk.application.global_oof_operation import GlobalOOFDerivedStore, GlobalOOFOperationService
@@ -37,6 +42,7 @@ class NativeExperimentRuntime:
     analysis_history_service: AnalysisHistoryService
     artifact_store: ExperimentArtifactStore
     integration_workflow_service: IntegrationWorkflowService
+    model_library_service: ModelLibraryService
     supported_protocol: SupportedProtocol
     prepared_context_authority: PreparedDatasetContextAuthority
 
@@ -84,6 +90,12 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         global_outbound_interpreter_policy=GlobalRedactedV1OutboundPolicy(),
         result_interpreter_runtime=interpreter_runtime.configuration,
     )
+    model_library_service = ModelLibraryService(
+        record_store=ModelLibraryRecordStore(store_root / "model_library"),
+        model_version_store=model_version_store,
+        integration_workflow_service=integration_workflow_service,
+        experiment_artifact_store=artifact_store,
+    )
     return NativeExperimentRuntime(
         planning_service=ExperimentPlanningService(
             model_plugin_registry=plugins,
@@ -104,6 +116,7 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         analysis_history_service=AnalysisHistoryService(artifact_store),
         artifact_store=artifact_store,
         integration_workflow_service=integration_workflow_service,
+        model_library_service=model_library_service,
         supported_protocol=SUPPORTED_PROTOCOL,
         prepared_context_authority=authority,
     )

@@ -47,10 +47,30 @@ export type ResultCapture = {
   marker: ResultCapturePoint | null
 }
 
+export type SavedModel = {
+  model_version_id: string
+  display_name: string
+  display_version: string
+  saved_at: string
+}
+
 export type ResultOverview = {
   summary: ResultSummary
   threshold: ThresholdMetrics
   capture: ResultCapture
+  saved_model: SavedModel | null
+}
+
+export type ModelVersionSaveResponse = SavedModel & {
+  save_state: 'CREATED' | 'ALREADY_SAVED'
+  artifact_id: string
+}
+
+export class ModelVersionSaveAPIError extends Error {
+  constructor(message: string, readonly code: string | null = null) {
+    super(message)
+    this.name = 'ModelVersionSaveAPIError'
+  }
 }
 
 export type GlobalOOFFeatureImportance = {
@@ -233,6 +253,25 @@ export async function getCurrentResult(): Promise<ResultOverview> {
     throw new Error(payload?.detail?.message ?? 'Не удалось загрузить результат обучения.')
   }
   return response.json() as Promise<ResultOverview>
+}
+
+export async function saveCurrentResultModel(): Promise<ModelVersionSaveResponse> {
+  const fallback = 'Не удалось сохранить модель.'
+  let response: Response
+  try {
+    response = await fetch('/api/v1/result/model-version', { method: 'POST' })
+  } catch {
+    throw new ModelVersionSaveAPIError(fallback)
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { code?: string; message?: string } } | null
+    throw new ModelVersionSaveAPIError(payload?.detail?.message ?? fallback, payload?.detail?.code ?? null)
+  }
+  try {
+    return await response.json() as ModelVersionSaveResponse
+  } catch {
+    throw new ModelVersionSaveAPIError(fallback)
+  }
 }
 
 export async function getCurrentGlobalOOFExplanation(signal?: AbortSignal): Promise<GlobalOOFExplanation> {

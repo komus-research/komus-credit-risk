@@ -5,6 +5,7 @@ import {
   getCurrentGlobalOOFStatus,
   getCurrentResult,
   GlobalOOFAPIError,
+  saveCurrentResultModel,
   type GlobalOOFOperation,
   runCurrentGlobalOOF,
   type GlobalOOFExplanation,
@@ -27,6 +28,7 @@ function percent(value: number) { return percentFormat.format(value) }
 function errorRate(numerator: number, denominator: number) { return denominator === 0 ? '—' : percent(numerator / denominator) }
 
 type GlobalPreviewStatus = 'idle' | 'loading' | 'running' | 'ready' | 'changed' | 'error'
+type ModelSaveStatus = 'NOT_SAVED' | 'SAVING' | 'SAVED' | 'ERROR'
 
 const globalInterpreterRoles: Array<{ id: ResultInterpreterRole; name: string; purpose: string }> = [
   { id: 'sales_manager', name: 'Менеджер по продажам', purpose: 'Бизнес-интерпретация качества модели и ошибок' },
@@ -204,20 +206,56 @@ function waitForGlobalOOFPoll(signal: AbortSignal) {
 export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold: () => void; onOpenObjects: () => void }) {
   const [result, setResult] = useState<ResultOverview | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [modelSaveStatus, setModelSaveStatus] = useState<ModelSaveStatus>('NOT_SAVED')
+  const [modelSaveError, setModelSaveError] = useState<string | null>(null)
   const [globalPreview, setGlobalPreview] = useState<GlobalOOFExplanation | null>(null)
   const [globalPreviewStatus, setGlobalPreviewStatus] = useState<GlobalPreviewStatus>('idle')
 
   useEffect(() => {
     let cancelled = false
     void getCurrentResult()
-      .then(value => { if (!cancelled) setResult(value) })
+      .then(value => {
+        if (cancelled) return
+        setResult(value)
+        setModelSaveStatus(value.saved_model ? 'SAVED' : 'NOT_SAVED')
+      })
       .catch(reason => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Не удалось загрузить результат обучения.') })
     return () => { cancelled = true }
   }, [])
 
+  const saveModel = async () => {
+    if (!result || result.saved_model || modelSaveStatus === 'SAVING') return
+    setModelSaveStatus('SAVING')
+    setModelSaveError(null)
+    try {
+      const savedModel = await saveCurrentResultModel()
+      setResult(current => current ? {
+        ...current,
+        saved_model: {
+          model_version_id: savedModel.model_version_id,
+          display_name: savedModel.display_name,
+          display_version: savedModel.display_version,
+          saved_at: savedModel.saved_at,
+        },
+      } : current)
+      setModelSaveStatus('SAVED')
+    } catch (reason) {
+      setModelSaveStatus('ERROR')
+      setModelSaveError(reason instanceof Error ? reason.message : 'Не удалось сохранить модель.')
+    }
+  }
+
   const summary = result?.summary
   const threshold = result?.threshold
   const capture = result?.capture
+  const savedModel = result?.saved_model
+  const modelIsSaved = Boolean(savedModel)
+  const saveButtonLabel = modelSaveStatus === 'SAVING'
+    ? 'Сохраняем модель…'
+    : modelIsSaved ? 'Модель сохранена' : 'Сохранить модель'
+  const saveButtonTitle = savedModel
+    ? `Сохранено: ${savedModel.display_name} — ${savedModel.display_version}`
+    : undefined
 
   useEffect(() => {
     const artifactId = result?.summary.artifact_id
@@ -302,7 +340,10 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
     <header className="result-header">
       <div><h1>Результат модели</h1><p>Итоги обучения, проверка качества и анализ поведения модели на всей оценочной выборке.</p></div>
       <div className="result-header-actions" aria-label="Действия с результатом">
-        <button className="secondary-action" disabled title={unavailable} aria-label={`Сохранить модель. ${unavailable}`}><Icon name="file" size={17} />Сохранить модель</button>
+        <div className="result-save-action">
+          <button className="secondary-action" disabled={!result || modelIsSaved || modelSaveStatus === 'SAVING'} onClick={saveModel} title={saveButtonTitle} aria-label={saveButtonTitle ?? saveButtonLabel}><Icon name="file" size={17} />{saveButtonLabel}</button>
+          {modelSaveError && <span className="result-save-error" role="alert">{modelSaveError}</span>}
+        </div>
         <button className="secondary-action" disabled title={unavailable} aria-label={`Экспорт отчёта. ${unavailable}`}><Icon name="download" size={17} />Экспорт отчёта</button>
         <button className="primary-action" disabled title={unavailable} aria-label={`Обзор проекта. ${unavailable}`}><Icon name="folder" size={17} />Обзор проекта</button>
       </div>

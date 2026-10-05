@@ -59,6 +59,15 @@ class LoadedModelVersion:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelVersionMetadata:
+    """Validated immutable metadata, deliberately without a native predictor."""
+
+    summary: ModelVersionSummary
+    metadata: dict[str, Any]
+    manifest: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class _MetadataFeatureRegistry:
     """Minimal immutable registry view used only for self-validating V2 metadata."""
 
@@ -119,6 +128,128 @@ class ModelVersionStore:
     @property
     def code_version(self) -> str:
         return self._code_version
+
+    def display_name_for(self, model_id: str) -> str:
+        """Return the trusted algorithm label without loading executable payloads."""
+        return self._model_specs[model_id].display_name_ru
+
+    def find_by_experiment_artifact_id(
+        self, experiment_artifact_id: str
+    ) -> tuple[ModelVersionSummary, ...]:
+        """Read only model metadata to find immutable versions for one experiment."""
+        if not isinstance(experiment_artifact_id, str) or not experiment_artifact_id.strip():
+            raise ValueError("Experiment artifact identity must be non-empty.")
+        found: list[ModelVersionSummary] = []
+        for directory in sorted(self.root.iterdir()):
+            if not directory.is_dir() or directory.name.startswith("."):
+                continue
+            try:
+                inspected = self.inspect_metadata(directory.name)
+                if inspected.summary.experiment_artifact_id != experiment_artifact_id:
+                    continue
+                found.append(inspected.summary)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                raise ValueError("Model version metadata lookup is invalid.") from error
+        return tuple(found)
+
+    def browse_metadata(self) -> tuple[ModelVersionMetadata, ...]:
+        """Browse published versions after integrity checks, without executable loads."""
+        found: list[ModelVersionMetadata] = []
+        for directory in sorted(self.root.iterdir()):
+            if not directory.is_dir() or directory.name.startswith("."):
+                continue
+            found.append(self.inspect_metadata(directory.name))
+        return tuple(found)
+
+    def inspect_metadata(self, model_version_id: str) -> ModelVersionMetadata:
+        """Inspect one persisted ModelVersion without deserializing its predictor."""
+        directory = self.root / model_version_id
+        if not directory.is_dir() or directory.name != model_version_id:
+            raise ValueError("Model version directory is missing or invalid.")
+        metadata = self._read_json(directory / "metadata.json")
+        schema_version = metadata.get("schema_version")
+        if schema_version == _SCHEMA_VERSION_V2:
+            manifest = self._inspect_metadata_v2(directory, model_version_id, metadata)
+        elif schema_version == _SCHEMA_VERSION:
+            manifest = self._inspect_metadata_v1(directory, model_version_id, metadata)
+        else:
+            raise ValueError("Model version metadata schema is invalid.")
+        return ModelVersionMetadata(
+            ModelVersionSummary(
+                model_version_id,
+                metadata["experiment_artifact_id"],
+                metadata["model_id"],
+                metadata["model_version"],
+                tuple(metadata["feature_ids"]),
+            ),
+            metadata,
+            manifest,
+        )
+
+    def _inspect_metadata_v2(
+        self, directory: Path, version_id: str, metadata: dict[str, Any]
+    ) -> dict[str, Any]:
+        manifest = self._read_json(directory / "manifest.json")
+        self._validate_manifest_v2(manifest, version_id)
+        self._validate_metadata_v2(metadata)
+        self._validate_metadata_files(directory, manifest, metadata["native_files"])
+        if (
+            manifest["metadata_hash"] != stable_hash(metadata)
+            or self._version_id(metadata) != version_id
+        ):
+            raise ValueError("Model version metadata integrity is invalid.")
+        for name, digest in metadata["native_hashes"].items():
+            if self._raw_hash(directory / "native" / name) != digest:
+                raise ValueError("Model version native payload does not match immutable metadata.")
+        return manifest
+
+    def _inspect_metadata_v1(
+        self, directory: Path, version_id: str, metadata: dict[str, Any]
+    ) -> dict[str, Any]:
+        manifest = self._read_json(directory / "manifest.json")
+        self._validate_manifest(manifest, version_id)
+        self._validate_metadata(metadata)
+        self._validate_metadata_files(directory, manifest, metadata["native_files"])
+        if (
+            manifest["metadata_hash"] != stable_hash(metadata)
+            or self._version_id(metadata) != version_id
+        ):
+            raise ValueError("Model version metadata integrity is invalid.")
+        for name, digest in metadata["native_hashes"].items():
+            if self._raw_hash(directory / "native" / name) != digest:
+                raise ValueError("Model version native payload does not match immutable metadata.")
+        return manifest
+
+    @staticmethod
+    def _validate_metadata_files(
+        directory: Path, manifest: dict[str, Any], native_files: list[str]
+    ) -> None:
+        if (
+            not isinstance(native_files, list)
+            or not native_files
+            or len(native_files) != len(set(native_files))
+            or any(
+                not isinstance(name, str)
+                or not name
+                or name in {".", ".."}
+                or "/" in name
+                or "\\" in name
+                for name in native_files
+            )
+        ):
+            raise ValueError("Model version native file declaration is invalid.")
+        expected_files = {"metadata.json", *[f"native/{name}" for name in native_files]}
+        if set(manifest["files"]) != expected_files:
+            raise ValueError("Model version manifest file list is invalid.")
+        for name, details in manifest["files"].items():
+            path = directory / name
+            if (
+                not path.is_file()
+                or not isinstance(details, dict)
+                or details.get("sha256") != ModelVersionStore._raw_hash(path)
+                or details.get("size_bytes") != path.stat().st_size
+            ):
+                raise ValueError("Model version file integrity check failed.")
 
     def save(
         self,

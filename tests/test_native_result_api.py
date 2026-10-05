@@ -16,7 +16,15 @@ from app.api.main import create_app
 from app.native_runtime import create_native_experiment_runtime
 from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.oof_explanation import OOFExplanationError
+from komus_risk.application import (
+    ModelSaveBindingConflict,
+    ModelSaveContextNotReady,
+    ModelSaveIncompatible,
+    ModelSaveSourceChanged,
+    ModelSaveSourceUnavailable,
+)
 from komus_risk.application.native_session import NativeSessionStore, QualityTrainingStatus
+from komus_risk.artifacts import ModelLibraryRecord
 
 
 def _completed_session(store: NativeSessionStore, session_id: str, artifact_id: str) -> None:
@@ -316,11 +324,55 @@ class _IntegrationWorkflowService:
         return self.outcome
 
 
+class _ModelLibraryService:
+    def __init__(self, error: Exception | None = None) -> None:
+        self.record = None
+        self.ensure_calls = []
+        self.error = error
+
+    def find_for_experiment(self, artifact_id: str):
+        return self.record if self.record is not None and self.record.experiment_artifact_id == artifact_id else None
+
+    def ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context):
+        self.ensure_calls.append((experiment_artifact_id, prepared_dataset_context))
+        if self.error is not None:
+            raise self.error
+        if self.record is None:
+            self.record = ModelLibraryRecord(
+                1, experiment_artifact_id, "model-version-exact",
+                "CatBoost — Trusted dataset — v1", "v1", "2026-10-05T10:00:00+00:00",
+            )
+            return SimpleNamespace(save_state="CREATED", record=self.record)
+        return SimpleNamespace(save_state="ALREADY_SAVED", record=self.record)
+
+    def list(self, **_query):
+        return SimpleNamespace(
+            total_count=1, filtered_count=1, offset=0, limit=50,
+            items=({
+                "model_version_id": "model-version-exact", "experiment_artifact_id": "artifact-exact",
+                "display_name": "CatBoost — Trusted dataset — v1", "display_version": "v1", "saved_at": "2026-10-05T10:00:00+00:00",
+                "model_id": "catboost", "model_display_name": "CatBoost", "algorithm_version": "1",
+                "dataset_id": "dataset-exact", "dataset_name": "Trusted dataset", "feature_count": 2,
+                "oof_gini": 0.4, "oof_roc_auc": 0.7, "oof_pr_auc": 0.6,
+            },),
+        )
+
+    def detail(self, _model_version_id: str):
+        return SimpleNamespace(value={
+            "model_version_id": "model-version-exact", "experiment_artifact_id": "artifact-exact",
+            "display_name": "CatBoost — Trusted dataset — v1", "display_version": "v1", "saved_at": "2026-10-05T10:00:00+00:00", "status": "SAVED",
+            "algorithm": {}, "dataset": {}, "population": {}, "target": "target", "positive_class": 1, "identifier": "id",
+            "features": [], "configuration": {}, "oof_quality": {"gini": 0.4, "roc_auc": 0.7, "pr_auc": 0.6, "precision_at_0_5": 0.5, "recall_at_0_5": 0.8, "f1_at_0_5": 0.61},
+            "source_result": {"experiment_artifact_id": "artifact-exact", "result_id": "result-exact", "experiment_created_at": "2026-10-05T10:00:00+00:00"}, "technical_provenance": {},
+        })
+
+
 def _client(
     result_service: _ResultService,
     explanation_service: _ExplanationService | _GlobalExplanationService | None = None,
     artifact_store: _ArtifactStore | None = None,
     integration_workflow_service: _IntegrationWorkflowService | None = None,
+    model_library_service: _ModelLibraryService | None = None,
 ):
     store = NativeSessionStore()
     authority = SimpleNamespace(resolve=lambda _context_id: object())
@@ -331,11 +383,106 @@ def _client(
         experiment_artifact_store=artifact_store,
         prepared_context_authority=authority,
         integration_workflow_service=integration_workflow_service,
+        model_library_service=model_library_service,
     ))
     assert client.get("/api/v1/session").status_code == 200
     session_id = client.cookies.get("axion_session")
     assert session_id
     return client, store, session_id
+
+
+def test_model_save_is_empty_idempotent_and_projected_on_result() -> None:
+    library = _ModelLibraryService()
+    context = SimpleNamespace(display_name="Trusted dataset")
+    store = NativeSessionStore()
+    session_id, _ = store.get_or_create(None)
+    _completed_session(store, session_id, "artifact-exact")
+    client = TestClient(create_app(
+        session_store=store,
+        oof_result_service=_ResultService(),
+        prepared_context_authority=SimpleNamespace(resolve=lambda _context_id: context),
+        model_library_service=library,
+    ))
+    client.cookies.set("axion_session", session_id)
+
+    assert client.get("/api/v1/result").json()["saved_model"] is None
+    first = client.post("/api/v1/result/model-version")
+    second = client.post("/api/v1/result/model-version")
+    invalid = client.post("/api/v1/result/model-version", json={"artifact_id": "untrusted"})
+
+    assert first.status_code == 200
+    assert first.json() == {
+        "save_state": "CREATED", "artifact_id": "artifact-exact",
+        "model_version_id": "model-version-exact",
+        "display_name": "CatBoost — Trusted dataset — v1",
+        "display_version": "v1", "saved_at": "2026-10-05T10:00:00+00:00",
+    }
+    assert second.json()["save_state"] == "ALREADY_SAVED"
+    assert invalid.status_code == 422
+    assert len(library.ensure_calls) == 2
+    assert client.get("/api/v1/result").json()["saved_model"] == {
+        "model_version_id": "model-version-exact",
+        "display_name": "CatBoost — Trusted dataset — v1",
+        "display_version": "v1", "saved_at": "2026-10-05T10:00:00+00:00",
+    }
+
+
+def test_model_versions_library_routes_expose_read_contract_and_validate_query() -> None:
+    client = TestClient(create_app(model_library_service=_ModelLibraryService()))
+
+    listing = client.get("/api/v1/model-versions")
+    detail = client.get("/api/v1/model-versions/model-version-exact")
+    invalid = client.get("/api/v1/model-versions", params={"limit": "zero"})
+
+    assert listing.status_code == 200
+    assert listing.json()["returned_count"] == 1
+    assert listing.json()["items"][0]["oof_roc_auc"] == 0.7
+    assert detail.status_code == 200
+    assert detail.json()["source_result"]["experiment_artifact_id"] == "artifact-exact"
+    assert invalid.status_code == 400
+    assert invalid.json()["detail"]["code"] == "INVALID_MODEL_LIBRARY_QUERY"
+
+
+@pytest.mark.parametrize("error", [
+    ModelSaveContextNotReady(), ModelSaveSourceUnavailable(), ModelSaveSourceChanged(),
+    ModelSaveBindingConflict(), ModelSaveIncompatible(),
+])
+def test_model_save_projects_stable_domain_errors(error) -> None:
+    library = _ModelLibraryService(error)
+    store = NativeSessionStore()
+    session_id, _ = store.get_or_create(None)
+    _completed_session(store, session_id, "artifact-exact")
+    client = TestClient(create_app(
+        session_store=store,
+        oof_result_service=_ResultService(),
+        prepared_context_authority=SimpleNamespace(resolve=lambda _context_id: object()),
+        model_library_service=library,
+    ))
+    client.cookies.set("axion_session", session_id)
+
+    response = client.post("/api/v1/result/model-version")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == error.code
+
+
+def test_model_save_projects_unexpected_failures_as_500() -> None:
+    library = _ModelLibraryService(RuntimeError("private failure"))
+    store = NativeSessionStore()
+    session_id, _ = store.get_or_create(None)
+    _completed_session(store, session_id, "artifact-exact")
+    client = TestClient(create_app(
+        session_store=store,
+        oof_result_service=_ResultService(),
+        prepared_context_authority=SimpleNamespace(resolve=lambda _context_id: object()),
+        model_library_service=library,
+    ))
+    client.cookies.set("axion_session", session_id)
+
+    response = client.post("/api/v1/result/model-version")
+
+    assert response.status_code == 500
+    assert response.json()["detail"]["code"] == "MODEL_SAVE_FAILED"
 
 
 def test_result_is_not_ready_before_current_training_completion() -> None:

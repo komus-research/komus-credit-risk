@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import Cookie, FastAPI, File, HTTPException, Query, Response, UploadFile
+from fastapi import Cookie, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -19,6 +19,14 @@ from komus_risk.application import (
     NativeSessionSnapshot,
     NativeSessionStore,
     NativeQualityService,
+    ModelSaveBindingConflict,
+    ModelSaveContextNotReady,
+    ModelSaveError,
+    InvalidModelLibraryQuery,
+    ModelLibraryError,
+    ModelSourceResultUnavailable,
+    ModelVersionIntegrityError,
+    ModelVersionNotFound,
 )
 from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.oof_explanation import OOFExplanationError
@@ -248,10 +256,69 @@ class ResultThresholdResponse(BaseModel):
     above_threshold_share: float
 
 
+class SavedModelResponse(BaseModel):
+    model_version_id: str
+    display_name: str
+    display_version: str
+    saved_at: str
+
+
+class ModelVersionSaveResponse(SavedModelResponse):
+    save_state: Literal["CREATED", "ALREADY_SAVED"]
+    artifact_id: str
+
+
+class ModelVersionListItemResponse(BaseModel):
+    model_version_id: str
+    experiment_artifact_id: str
+    display_name: str
+    display_version: str
+    saved_at: str
+    model_id: str
+    model_display_name: str
+    algorithm_version: str
+    dataset_id: str
+    dataset_name: str
+    feature_count: int
+    oof_gini: float
+    oof_roc_auc: float
+    oof_pr_auc: float
+
+
+class ModelVersionListResponse(BaseModel):
+    total_count: int
+    filtered_count: int
+    offset: int
+    limit: int
+    returned_count: int
+    items: list[ModelVersionListItemResponse]
+
+
+class ModelVersionDetailResponse(BaseModel):
+    model_version_id: str
+    experiment_artifact_id: str
+    display_name: str
+    display_version: str
+    saved_at: str
+    status: Literal["SAVED"]
+    algorithm: dict[str, Any]
+    dataset: dict[str, Any]
+    population: dict[str, Any]
+    target: str
+    positive_class: Any
+    identifier: str
+    features: list[dict[str, Any]]
+    configuration: dict[str, Any]
+    oof_quality: dict[str, float]
+    source_result: dict[str, str]
+    technical_provenance: dict[str, Any]
+
+
 class ResultOverviewResponse(BaseModel):
     summary: ResultSummaryResponse
     threshold: ResultThresholdResponse
     capture: ResultCaptureResponse
+    saved_model: SavedModelResponse | None = None
 
 
 class ResultObjectItemResponse(BaseModel):
@@ -407,7 +474,7 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None) -> FastAPI:
     """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
@@ -418,6 +485,11 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         integration_workflow_service
         if integration_workflow_service is not None
         else runtime.integration_workflow_service
+    )
+    model_library = (
+        model_library_service
+        if model_library_service is not None
+        else runtime.model_library_service
     )
     artifact_store = experiment_artifact_store or runtime.artifact_store
     context_authority = prepared_context_authority or runtime.prepared_context_authority
@@ -493,6 +565,13 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 status_code=500,
                 detail={"code": "RESULT_READ_ERROR", "message": "Не удалось прочитать сохранённый результат."},
             ) from None
+        try:
+            saved = model_library.find_for_experiment(artifact_id)
+        except ModelSaveBindingConflict:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "MODEL_SAVE_BINDING_CONFLICT", "message": "Сохранённая модель имеет конфликтующую привязку."},
+            ) from None
         return ResultOverviewResponse(
             summary=ResultSummaryResponse(
                 artifact_id=summary.artifact_id,
@@ -540,7 +619,112 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                     )
                 ),
             ),
+            saved_model=(
+                None
+                if saved is None
+                else SavedModelResponse(
+                    model_version_id=saved.model_version_id,
+                    display_name=saved.display_name,
+                    display_version=saved.display_version,
+                    saved_at=saved.saved_at,
+                )
+            ),
         )
+
+    @api.post("/api/v1/result/model-version", response_model=ModelVersionSaveResponse)
+    async def save_current_result_model(
+        request: Request,
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> ModelVersionSaveResponse:
+        if await request.body():
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_MODEL_SAVE_REQUEST", "message": "Сохранение модели не принимает параметры."},
+            )
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id = store.current_result_artifact_id(resolved_session_id)
+        context_id = store.current_result_prepared_context_id(resolved_session_id)
+        if artifact_id is None or context_id is None:
+            raise HTTPException(status_code=409, detail={
+                "code": "MODEL_SAVE_CONTEXT_NOT_READY",
+                "message": "Контекст текущего результата недоступен для сохранения модели.",
+            })
+        try:
+            try:
+                context = context_authority.resolve(context_id)
+            except Exception as error:
+                raise ModelSaveContextNotReady() from error
+            saved = await run_in_threadpool(
+                model_library.ensure_saved,
+                experiment_artifact_id=artifact_id,
+                prepared_dataset_context=context,
+            )
+        except ModelSaveError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": error.code, "message": "Невозможно безопасно сохранить модель текущего результата."},
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "MODEL_SAVE_FAILED", "message": "Не удалось сохранить модель текущего результата."},
+            ) from None
+        record = saved.record
+        return ModelVersionSaveResponse(
+            save_state=saved.save_state,
+            artifact_id=record.experiment_artifact_id,
+            model_version_id=record.model_version_id,
+            display_name=record.display_name,
+            display_version=record.display_version,
+            saved_at=record.saved_at,
+        )
+
+    def model_library_error(exc: ModelLibraryError) -> HTTPException:
+        status = (
+            400 if isinstance(exc, InvalidModelLibraryQuery)
+            else 404 if isinstance(exc, ModelVersionNotFound)
+            else 409 if isinstance(exc, (ModelVersionIntegrityError, ModelSourceResultUnavailable))
+            else 500
+        )
+        return HTTPException(status_code=status, detail={"code": exc.code, "message": "Model library request could not be completed."})
+
+    @api.get("/api/v1/model-versions", response_model=ModelVersionListResponse)
+    def list_model_versions(
+        offset: str = "0",
+        limit: str = "50",
+        search: str | None = None,
+        model_id: str | None = None,
+        dataset_id: str | None = None,
+        saved_from: str | None = None,
+        saved_to: str | None = None,
+        sort: str = "SAVED_DESC",
+    ) -> ModelVersionListResponse:
+        try:
+            if not offset.isdecimal() or not limit.isdecimal():
+                raise InvalidModelLibraryQuery()
+            page = model_library.list(
+                offset=int(offset), limit=int(limit), search=search, model_id=model_id,
+                dataset_id=dataset_id, saved_from=saved_from, saved_to=saved_to, sort=sort,
+            )
+        except ModelLibraryError as error:
+            raise model_library_error(error) from None
+        except Exception:
+            raise model_library_error(ModelLibraryError()) from None
+        return ModelVersionListResponse(
+            total_count=page.total_count, filtered_count=page.filtered_count,
+            offset=page.offset, limit=page.limit, returned_count=len(page.items),
+            items=[ModelVersionListItemResponse(**item) for item in page.items],
+        )
+
+    @api.get("/api/v1/model-versions/{model_version_id}", response_model=ModelVersionDetailResponse)
+    def get_model_version(model_version_id: str) -> ModelVersionDetailResponse:
+        try:
+            return ModelVersionDetailResponse(**model_library.detail(model_version_id).value)
+        except ModelLibraryError as error:
+            raise model_library_error(error) from None
+        except Exception:
+            raise model_library_error(ModelLibraryError()) from None
 
     @api.get("/api/v1/result/objects", response_model=ResultObjectListResponse)
     def get_current_result_objects(

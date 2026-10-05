@@ -5,6 +5,7 @@ export const routes = {
   documentation: '#/help/documentation',
   hotkeys: '#/help/hotkeys',
   about: '#/help/about',
+  models: '#/models',
   file: '#/analysis/data/file',
   roles: '#/analysis/data/roles',
   confirmation: '#/analysis/data/confirmation',
@@ -20,7 +21,8 @@ export const routes = {
 export type CanonicalRoute = typeof routes[keyof typeof routes]
 export type DataRoute = typeof routes.file | typeof routes.roles
 export type ObjectDetailRoute = `${typeof routes.resultObjects}/${string}`
-export type AppRoute = CanonicalRoute | ObjectDetailRoute
+export type ModelDetailRoute = `${typeof routes.models}/${string}`
+export type AppRoute = CanonicalRoute | ObjectDetailRoute | ModelDetailRoute
 
 type ObjectsOutcome = 'TP' | 'TN' | 'FP' | 'FN'
 type ObjectsTarget = 'ANY' | 'POSITIVE' | 'NEGATIVE'
@@ -44,6 +46,7 @@ const targets = new Set<ObjectsTarget>(['ANY', 'POSITIVE', 'NEGATIVE'])
 const sorts = new Set<ObjectsSort>(['SCORE_DESC', 'SCORE_ASC', 'DISTANCE_TO_THRESHOLD_ASC'])
 const quickViews = new Set<Exclude<ObjectsQuickView, null>>(['errors', 'high', 'boundary', 'missed', 'false-positive', 'all'])
 const objectDetailPrefix = `${routes.resultObjects}/`
+const modelDetailPrefix = `${routes.models}/`
 
 function quickViewMatchesQuery(quickView: ObjectsQuickView, outcomes: ObjectsOutcome[], sort: ObjectsSort) {
   if (quickView === null) return false
@@ -119,10 +122,31 @@ export function objectIdFromRoute(route: string): string | null {
   }
 }
 
+export function isModelDetailRoute(route: string): route is ModelDetailRoute {
+  return modelVersionIdFromRoute(route) !== null
+}
+
+export function modelVersionIdFromRoute(route: string): string | null {
+  const path = route.split('?', 1)[0]
+  if (!path.startsWith(modelDetailPrefix)) return null
+  const encodedModelVersionId = path.slice(modelDetailPrefix.length)
+  if (!encodedModelVersionId || encodedModelVersionId.includes('/')) return null
+  try {
+    const modelVersionId = decodeURIComponent(encodedModelVersionId)
+    return modelVersionId ? modelVersionId : null
+  } catch {
+    return null
+  }
+}
+
+export function buildModelDetailRoute(modelVersionId: string): ModelDetailRoute {
+  return `${modelDetailPrefix}${encodeURIComponent(modelVersionId)}` as ModelDetailRoute
+}
+
 export function currentRoute(): AppRoute | null {
   const path = hashPath()
   if (knownRoutes.has(path)) return path as CanonicalRoute
-  return isObjectDetailRoute(path) ? path : null
+  return isObjectDetailRoute(path) || isModelDetailRoute(path) ? path : null
 }
 
 export function navigate(route: AppRoute) {
@@ -197,6 +221,7 @@ export function replaceObjects(state: ObjectsQueryState) {
 }
 
 export function guardedRoute(route: AppRoute, session: NativeSession, allowResultThreshold = false, allowResultObjects = false): AppRoute {
+  if (route === routes.models || isModelDetailRoute(route)) return route
   if (isObjectDetailRoute(route)) {
     return session.resume_route === routes.result ? route : session.resume_route
   }

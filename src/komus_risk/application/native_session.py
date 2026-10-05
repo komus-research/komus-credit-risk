@@ -239,6 +239,14 @@ class NativeSessionStore:
                 return None
             return session.result_threshold
 
+    def current_result_prepared_context_id(self, session_id: str) -> str | None:
+        """Return the backend-issued context identity only for a completed Result."""
+        with self._lock:
+            session = self._session(session_id)
+            if session.resume_route() != "#/analysis/result":
+                return None
+            return session.prepared_context_id
+
     def set_current_result_threshold(
         self, session_id: str, artifact_id: str, threshold: float
     ) -> bool:

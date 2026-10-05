@@ -7,12 +7,19 @@ from hashlib import sha256
 from pathlib import Path
 from shutil import copytree
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 
-from komus_risk.application import FinalModelTrainingService
-from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
+from komus_risk.application import FinalModelTrainingService, ModelLibraryService
+from komus_risk.artifacts import (
+    ExperimentArtifactStore,
+    ModelLibraryRecord,
+    ModelLibraryRecordStore,
+    ModelVersionStore,
+)
 from komus_risk.contracts import (
     DatasetContract,
     ExperimentConfig,
@@ -230,6 +237,91 @@ class ModelVersionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exact persisted"):
             loaded.predictor.predict_positive_proba(X.loc[:, ["f_b", "f_a"]])
 
+    def test_metadata_lookup_finds_only_the_matching_experiment(self) -> None:
+        saved = self.service.train(
+            experiment_artifact_id=self.artifact.artifact_id,
+            loaded_dataset=self.loaded,
+            feature_registry=self.registry,
+            population=self.population,
+        )
+
+        assert self.versions.find_by_experiment_artifact_id(self.artifact.artifact_id) == (saved,)
+        assert self.versions.find_by_experiment_artifact_id("other-artifact") == ()
+
+    def test_metadata_lookup_rejects_corrupt_native_payload_without_predictor_load(self) -> None:
+        saved = self.service.train(
+            experiment_artifact_id=self.artifact.artifact_id,
+            loaded_dataset=self.loaded,
+            feature_registry=self.registry,
+            population=self.population,
+        )
+        native = Path(self.temp.name) / "models" / saved.model_version_id / "native" / "model.cbm"
+        native.write_bytes(native.read_bytes() + b"corrupt")
+
+        with patch(
+            "komus_risk.artifacts.model_store.load_native_predictor",
+            side_effect=AssertionError("metadata lookup must not load a predictor"),
+        ):
+            with self.assertRaisesRegex(ValueError, "metadata lookup"):
+                self.versions.find_by_experiment_artifact_id(self.artifact.artifact_id)
+
+    def test_browse_metadata_validates_versions_without_native_predictor_load(self) -> None:
+        first = self.service.train(
+            experiment_artifact_id=self.artifact.artifact_id,
+            loaded_dataset=self.loaded,
+            feature_registry=self.registry,
+            population=self.population,
+        )
+        second = self.service.train(
+            experiment_artifact_id=self.artifact.artifact_id,
+            loaded_dataset=self.loaded,
+            feature_registry=self.registry,
+            population=self.population,
+        )
+        with patch(
+            "komus_risk.artifacts.model_store.load_native_predictor",
+            side_effect=AssertionError("metadata browse must not load a predictor"),
+        ):
+            metadata = self.versions.browse_metadata()
+
+        self.assertEqual(
+            {item.summary.model_version_id for item in metadata},
+            {first.model_version_id, second.model_version_id},
+        )
+
+    def test_library_detail_projects_v1_persisted_adapter_and_omits_v2_only_provenance(self) -> None:
+        saved = self.service.train(
+            experiment_artifact_id=self.artifact.artifact_id,
+            loaded_dataset=self.loaded,
+            feature_registry=self.registry,
+            population=self.population,
+        )
+        records = ModelLibraryRecordStore(Path(self.temp.name) / "library")
+        records.save(ModelLibraryRecord(
+            1, self.artifact.artifact_id, saved.model_version_id,
+            "CatBoost — Synthetic — v1", "v1", "2026-10-05T10:00:00+00:00",
+        ))
+        source = SimpleNamespace(read_metadata=lambda artifact_id: SimpleNamespace(
+            artifact_id=artifact_id,
+            result=SimpleNamespace(
+                result_id="result-exact", created_at="2026-10-05T10:00:00+00:00",
+                metrics={"gini": 0.4, "roc_auc": 0.7, "pr_auc": 0.6, "precision_at_0_5": 0.5, "recall_at_0_5": 0.8, "f1_at_0_5": 0.61},
+            ),
+        ))
+        detail = ModelLibraryService(
+            record_store=records,
+            model_version_store=self.versions,
+            integration_workflow_service=SimpleNamespace(),
+            experiment_artifact_store=source,
+        ).detail(saved.model_version_id).value
+
+        self.assertEqual(
+            detail["algorithm"]["adapter_version"],
+            CATBOOST_MODEL_SPEC.adapter_version,
+        )
+        self.assertNotIn("plugin_contract_hash", detail["technical_provenance"])
+        self.assertNotIn("configuration_record_id", detail["technical_provenance"])
+
     def test_mismatches_and_locked_final_test_fail_closed(self) -> None:
         with self.assertRaisesRegex(ValueError, "requires the working"):
             self.service.train(
@@ -240,7 +332,7 @@ class ModelVersionTests(unittest.TestCase):
                     self.population.row_positions, "full-v1", "full-sha", "full"
                 ),
             )
-        with self.assertRaisesRegex(ValueError, "changed"):
+        with self.assertRaisesRegex(ValueError, "MODEL_SAVE_SOURCE_CHANGED"):
             self.source.write_text("changed", encoding="utf-8")
             self.service.train(
                 experiment_artifact_id=self.artifact.artifact_id,
@@ -563,6 +655,41 @@ class ModelVersionTests(unittest.TestCase):
             adapter=adapter,
             source_file_sha256=self.loaded.source_file_sha256,
             configuration_record=record,
+        )
+        with patch(
+            "komus_risk.model_platform.persistence.NativeGBDTPersistenceProvider.load",
+            side_effect=AssertionError("metadata browse must not invoke provider.load"),
+        ):
+            inspected = store.browse_metadata()
+            found = store.find_by_experiment_artifact_id("v2-experiment")
+        self.assertEqual(inspected[0].summary.model_version_id, saved.model_version_id)
+        self.assertEqual(found, (saved,))
+        records = ModelLibraryRecordStore(Path(self.temp.name) / "library-v2")
+        records.save(ModelLibraryRecord(
+            1, "v2-experiment", saved.model_version_id,
+            "CatBoost — Synthetic — v1", "v1", "2026-10-05T10:00:00+00:00",
+        ))
+        source = SimpleNamespace(read_metadata=lambda artifact_id: SimpleNamespace(
+            artifact_id=artifact_id,
+            result=SimpleNamespace(
+                result_id="result-v2", created_at="2026-10-05T10:00:00+00:00",
+                metrics={"gini": 0.4, "roc_auc": 0.7, "pr_auc": 0.6, "precision_at_0_5": 0.5, "recall_at_0_5": 0.8, "f1_at_0_5": 0.61},
+            ),
+        ))
+        detail = ModelLibraryService(
+            record_store=records,
+            model_version_store=store,
+            integration_workflow_service=SimpleNamespace(),
+            experiment_artifact_store=source,
+        ).detail(saved.model_version_id).value
+        self.assertEqual(detail["algorithm"]["adapter_version"], record.adapter_version)
+        self.assertEqual(
+            detail["technical_provenance"]["plugin_contract_hash"],
+            record.plugin_contract_hash,
+        )
+        self.assertEqual(
+            detail["technical_provenance"]["configuration_record_id"],
+            record.configuration_record_id,
         )
         loaded = store.load(saved.model_version_id)
         self.assertEqual(loaded.metadata["schema_version"], 2)

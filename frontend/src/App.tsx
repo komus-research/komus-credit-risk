@@ -11,8 +11,10 @@ import { ObjectsPage } from './pages/ObjectsPage'
 import { ObjectDetailPage } from './pages/ObjectDetailPage'
 import { ThresholdPage } from './pages/ThresholdPage'
 import { GlobalExplanationPage } from './pages/GlobalExplanationPage'
+import { ModelsPage } from './pages/ModelsPage'
+import { ModelVersionDetailPage } from './pages/ModelVersionDetailPage'
 import { UtilityPlaceholderPage } from './pages/UtilityPlaceholderPage'
-import { currentRoute, guardedRoute, isObjectDetailRoute, navigate, navigateObjects, objectIdFromRoute, parseObjectsQuery, replaceRoute, routes, type AppRoute } from './routing'
+import { currentRoute, guardedRoute, isModelDetailRoute, isObjectDetailRoute, modelVersionIdFromRoute, navigate, navigateObjects, objectIdFromRoute, parseObjectsQuery, replaceRoute, routes, type AppRoute } from './routing'
 
 const recoveryText = 'Сессия подготовки была сброшена. Загрузите файл повторно.'
 
@@ -29,6 +31,10 @@ export function App() {
 
   const sync = useCallback(async (requested: AppRoute, stale = false) => {
     requestedRoute.current = requested
+    if (requested === routes.models || isModelDetailRoute(requested)) {
+      setSessionReady(true)
+      return
+    }
     try {
       const next = await getNativeSession()
       if (requestedRoute.current !== requested || currentRoute() !== requested) return
@@ -102,6 +108,7 @@ export function App() {
   }, [sync])
 
   const openHome = useCallback(() => navigate(routes.home), [])
+  const openModels = useCallback(() => navigate(routes.models), [])
   const openDocumentation = useCallback(() => navigate(routes.documentation), [])
   const openHotkeys = useCallback(() => navigate(routes.hotkeys), [])
   const openAbout = useCallback(() => navigate(routes.about), [])
@@ -133,6 +140,10 @@ export function App() {
 
   const page = route === routes.home
     ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={() => beginNewAnalysis()} startingNewAnalysis={startingNewAnalysis} />
+    : route === routes.models
+      ? <ModelsPage />
+      : isModelDetailRoute(route)
+        ? <ModelVersionDetailPage modelVersionId={modelVersionIdFromRoute(route)!} />
     : route === routes.documentation
       ? <UtilityPlaceholderPage title="Документация" />
       : route === routes.hotkeys
@@ -158,6 +169,8 @@ export function App() {
                     : <DataPage route={route} sessionReady={sessionReady} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
   const shellClass = route === routes.home || route === routes.documentation || route === routes.hotkeys || route === routes.about
     ? 'home-shell'
+    : route === routes.models || isModelDetailRoute(route)
+      ? 'models-shell'
     : route === routes.file || route === routes.roles || route === routes.confirmation
       ? 'workflow-shell data-shell'
       : route === routes.features || route === routes.algorithm || route === routes.quality
@@ -167,9 +180,10 @@ export function App() {
   return <>
     <div className={`app-shell ${shellClass}`}>
       <Sidebar
-        active={route === routes.home ? 'home' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
+        active={route === routes.home ? 'home' : route === routes.models || isModelDetailRoute(route) ? 'models' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
         onHome={openHome}
         onNewAnalysis={() => beginNewAnalysis()}
+        onModels={openModels}
         onDocumentation={openDocumentation}
         onHotkeys={openHotkeys}
         onAbout={openAbout}

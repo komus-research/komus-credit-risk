@@ -18,6 +18,8 @@ from komus_risk.model_platform import ModelPluginRegistry
 from komus_risk.models import ModelAdapterFactory
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
+from .model_save_errors import ModelSaveSourceChanged, ModelSaveSourceUnavailable
+
 
 class FinalModelTrainingService:
     """Fits exactly the evaluated configuration on its approved population."""
@@ -218,11 +220,7 @@ class FinalModelTrainingService:
     def _validate_source(loaded_dataset: LoadedDataset) -> None:
         path = Path(loaded_dataset.source_path)
         if not path.is_file():
-            raise ValueError(
-                "Original dataset source file is unavailable; final fit is forbidden."
-            )
+            raise ModelSaveSourceUnavailable()
         digest = sha256(path.read_bytes()).hexdigest()
         if digest != loaded_dataset.source_file_sha256:
-            raise ValueError(
-                "Original dataset source file changed after evaluation; final fit is forbidden."
-            )
+            raise ModelSaveSourceChanged()

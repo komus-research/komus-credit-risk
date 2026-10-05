@@ -25,6 +25,22 @@ from .integration_workflow import (
     ResultInterpretationOutcome,
     ResultInterpreterRuntimeConfiguration,
 )
+from .model_library import ModelLibraryService, SavedModelResult
+from .model_library_errors import (
+    InvalidModelLibraryQuery,
+    ModelLibraryError,
+    ModelSourceResultUnavailable,
+    ModelVersionIntegrityError,
+    ModelVersionNotFound,
+)
+from .model_save_errors import (
+    ModelSaveBindingConflict,
+    ModelSaveContextNotReady,
+    ModelSaveError,
+    ModelSaveIncompatible,
+    ModelSaveSourceChanged,
+    ModelSaveSourceUnavailable,
+)
 from .interpreter_policy import (
     OutboundInterpreterPolicy,
     PolicyBoundResultInterpreterClient,
@@ -122,6 +138,19 @@ __all__ = [
     "GlobalOOFOperationSnapshot",
     "NativeSessionSnapshot",
     "NativeSessionStore",
+    "ModelLibraryService",
+    "ModelLibraryError",
+    "InvalidModelLibraryQuery",
+    "ModelSourceResultUnavailable",
+    "ModelVersionIntegrityError",
+    "ModelVersionNotFound",
+    "ModelSaveBindingConflict",
+    "ModelSaveContextNotReady",
+    "ModelSaveError",
+    "ModelSaveIncompatible",
+    "ModelSaveSourceChanged",
+    "ModelSaveSourceUnavailable",
+    "SavedModelResult",
     "FeatureSelectionError",
     "FeatureSelectionService",
     "FeatureSelectionView",
