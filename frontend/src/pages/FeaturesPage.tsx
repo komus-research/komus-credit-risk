@@ -103,7 +103,7 @@ export function FeaturesPage({ onSessionChange }: { onSessionChange: (session: N
           </label>)}</div>}
         </article>
       })}</section>
-      <footer className="feature-footer"><span>{error && <span className="feature-warning">{error}</span>}</span><button className="primary-action" disabled={busy || data.selected_count === 0} onClick={continueToAlgorithm}>Далее: алгоритм <Icon name="arrow" size={19} /></button></footer>
+      <footer className="feature-footer"><button className="back-action" disabled={busy} onClick={() => navigate(routes.confirmation)}>← Назад к подтверждению</button><span>{error && <span className="feature-warning">{error}</span>}</span><button className="primary-action" disabled={busy || data.selected_count === 0} onClick={continueToAlgorithm}>Далее: алгоритм <Icon name="arrow" size={19} /></button></footer>
     </>}
     {!data && !error && <p className="feature-loading">Загружаем доступные признаки…</p>}{error && !data && <p className="feature-warning">{error}</p>}
   </main>
