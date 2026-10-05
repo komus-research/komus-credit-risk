@@ -44,6 +44,15 @@ class _ResultService:
             evaluation_level="OOF", runtime_seconds=12.5, gini=0.42, roc_auc=0.71,
             pr_auc=0.38, fold_metrics=({"fold": 1, "roc_auc": 0.7},),
             limitations=("Random folds do not establish temporal stability.",),
+            capture=SimpleNamespace(
+                total_positive_events=20,
+                points=(
+                    SimpleNamespace(object_share=0.0, event_share=0.0),
+                    SimpleNamespace(object_share=0.15, event_share=0.6),
+                    SimpleNamespace(object_share=1.0, event_share=1.0),
+                ),
+                marker=SimpleNamespace(object_share=0.15, event_share=0.6),
+            ),
         )
         self.threshold_value = SimpleNamespace(
             artifact_id="artifact-exact", threshold=0.5, tp=10, tn=80, fp=20, fn=10,
@@ -152,8 +161,13 @@ class _ArtifactStore:
 
 
 class _GlobalExplanationService:
-    def __init__(self, *, error: Exception | None = None, on_call=None) -> None:
+    def __init__(self, *, error: Exception | None = None, on_call=None, state: str = "READY") -> None:
         self.calls: list[str] = []
+        self.heavy_calls: list[str] = []
+        self.start_calls: list[str] = []
+        self.worker_starts = 0
+        self.retry_calls: list[str] = []
+        self.state = state
         self.error = error
         self.on_call = on_call
         self.evidence = SimpleNamespace(
@@ -179,12 +193,52 @@ class _GlobalExplanationService:
         )
 
     def global_oof(self, artifact_id: str):
+        self.heavy_calls.append(artifact_id)
+        return self.global_oof_ready_result(artifact_id)
+
+    def global_oof_ready_result(self, artifact_id: str):
         self.calls.append(artifact_id)
         if self.on_call is not None:
             self.on_call()
         if self.error is not None:
             raise self.error
+        if self.state != "READY":
+            raise OOFExplanationError("GLOBAL_OOF_RESULT_NOT_READY")
         return self.evidence
+
+    def _snapshot(self, artifact_id: str):
+        status = self.state
+        stage = "READY" if status == "READY" else "FAILED" if status == "FAILED" else "PROCESSING_FOLD" if status == "RUNNING" else "VALIDATING"
+        return SimpleNamespace(
+            artifact_id=artifact_id, derivation_key="safe-test-key", status=status,
+            stage=stage, stage_label="Обработка части" if status == "RUNNING" else "Готово" if status == "READY" else "Не запущено",
+            current_fold=1 if status == "RUNNING" else None, total_folds=4,
+            processed_rows=25 if status == "RUNNING" else 0, total_rows=120,
+            started_at="2026-10-04T10:00:00Z" if status == "RUNNING" else None,
+            updated_at="2026-10-04T10:00:00Z", elapsed_seconds=2.0,
+            safe_error_code="GLOBAL_OOF_EXPLANATION_FAILED" if status == "FAILED" else None,
+        )
+
+    def start_global_oof(self, artifact_id: str):
+        self.start_calls.append(artifact_id)
+        if self.on_call is not None:
+            self.on_call()
+        if self.state == "NOT_STARTED":
+            self.worker_starts += 1
+            self.state = "RUNNING"
+        return self._snapshot(artifact_id)
+
+    def global_oof_status(self, artifact_id: str):
+        if self.on_call is not None:
+            self.on_call()
+        return self._snapshot(artifact_id)
+
+    def retry_global_oof(self, artifact_id: str):
+        if self.state != "FAILED":
+            raise ValueError("GLOBAL_OOF_RETRY_NOT_AVAILABLE")
+        self.retry_calls.append(artifact_id)
+        self.state = "RUNNING"
+        return self._snapshot(artifact_id)
 
 
 class _IntegrationWorkflowService:
@@ -501,6 +555,15 @@ def test_result_uses_exact_current_artifact_and_returns_service_values() -> None
     ]
     payload = response.json()
     assert payload["summary"]["artifact_id"] == "artifact-exact"
+    assert payload["capture"] == {
+        "total_positive_events": 20,
+        "points": [
+            {"object_share": 0.0, "event_share": 0.0},
+            {"object_share": 0.15, "event_share": 0.6},
+            {"object_share": 1.0, "event_share": 1.0},
+        ],
+        "marker": {"object_share": 0.15, "event_share": 0.6},
+    }
     assert payload["summary"]["result_id"] == "result-exact"
     assert payload["summary"]["gini"] == 0.42
     assert payload["summary"]["fold_metrics"] == [{"fold": 1, "roc_auc": 0.7}]
@@ -1002,6 +1065,101 @@ def test_global_explanation_is_not_ready_without_current_result() -> None:
     assert artifact_store.loads == []
 
 
+def test_global_explanation_not_ready_is_read_only_and_does_not_compute() -> None:
+    explanation = _GlobalExplanationService(state="NOT_STARTED")
+    artifact_store = _ArtifactStore()
+    client, store, session_id = _client(_ResultService(), explanation, artifact_store)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/explanation/global")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "GLOBAL_OOF_RESULT_NOT_READY",
+        "message": "Расчёт влияния признаков ещё не готов.",
+    }
+    assert explanation.heavy_calls == []
+
+
+def test_global_run_starts_once_and_status_is_read_only() -> None:
+    explanation = _GlobalExplanationService(state="NOT_STARTED")
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+
+    first = client.post("/api/v1/result/explanation/global/run")
+    joined = client.post("/api/v1/result/explanation/global/run", json={"retry": False})
+    status = client.get("/api/v1/result/explanation/global/status")
+
+    assert first.status_code == joined.status_code == status.status_code == 200
+    assert first.json()["status"] == joined.json()["status"] == status.json()["status"] == "RUNNING"
+    assert explanation.worker_starts == 1
+    assert explanation.heavy_calls == []
+    assert explanation.calls == []
+
+
+def test_global_operation_failure_message_is_safe_and_retry_starts_one_attempt() -> None:
+    explanation = _GlobalExplanationService(state="FAILED")
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+
+    failed = client.post("/api/v1/result/explanation/global/run", json={"retry": False})
+    retried = client.post("/api/v1/result/explanation/global/run", json={"retry": True})
+
+    assert failed.status_code == retried.status_code == 200
+    assert failed.json()["status"] == "FAILED"
+    assert failed.json()["message"] == "Не удалось рассчитать влияние признаков. Сам результат модели остаётся доступен."
+    assert retried.json()["status"] == "RUNNING"
+    assert explanation.retry_calls == ["artifact-exact"]
+    assert "private" not in failed.text
+
+
+def test_global_run_rejects_browser_artifact_authority() -> None:
+    explanation = _GlobalExplanationService(state="NOT_STARTED")
+    client, store, session_id = _client(_ResultService(), explanation)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.post("/api/v1/result/explanation/global/run", json={"retry": False, "artifact_id": "other"})
+
+    assert response.status_code == 422
+    assert explanation.start_calls == []
+
+
+def test_global_run_fails_if_current_artifact_changes_during_request() -> None:
+    store = NativeSessionStore()
+    explanation = _GlobalExplanationService(state="NOT_STARTED", on_call=lambda: store.set_quality_settings(session_id, seed=42, folds=5))
+    client = TestClient(create_app(
+        session_store=store, oof_result_service=_ResultService(), oof_explanation_service=explanation,
+        prepared_context_authority=SimpleNamespace(resolve=lambda _context_id: object()),
+    ))
+    client.get("/api/v1/session")
+    session_id = client.cookies.get("axion_session")
+    assert session_id
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.post("/api/v1/result/explanation/global/run")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_CHANGED"
+
+
+def test_global_status_fails_if_current_artifact_changes_during_request() -> None:
+    store = NativeSessionStore()
+    explanation = _GlobalExplanationService(state="RUNNING", on_call=lambda: store.set_quality_settings(session_id, seed=42, folds=5))
+    client = TestClient(create_app(
+        session_store=store, oof_result_service=_ResultService(), oof_explanation_service=explanation,
+        prepared_context_authority=SimpleNamespace(resolve=lambda _context_id: object()),
+    ))
+    client.get("/api/v1/session")
+    session_id = client.cookies.get("axion_session")
+    assert session_id
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/explanation/global/status")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_CHANGED"
+
+
 def test_global_explanation_projects_complete_safe_ranked_dto_from_trusted_artifact() -> None:
     explanation = _GlobalExplanationService()
     artifact_store = _ArtifactStore()
@@ -1073,10 +1231,8 @@ def test_global_explanation_unexpected_error_does_not_leak_details() -> None:
     response = client.get("/api/v1/result/explanation/global")
 
     assert response.status_code == 500
-    assert response.json()["detail"] == {
-        "code": "GLOBAL_OOF_EXPLANATION_ERROR",
-        "message": "Не удалось построить глобальное объяснение. Сам результат остаётся доступен.",
-    }
+    assert response.json()["detail"]["code"] == "GLOBAL_OOF_EXPLANATION_FAILED"
+    assert response.json()["detail"]["message"]
     assert "private provider path" not in response.text
 
 

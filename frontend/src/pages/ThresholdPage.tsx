@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { getCurrentResult, updateCurrentThreshold, type ResultOverview, type ThresholdMetrics } from '../api/result'
-import { Sidebar } from '../components/Sidebar'
 import { navigate, routes } from '../routing'
 
 const metricFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 })
@@ -11,7 +10,7 @@ const thresholdFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 
 function metric(value: number) { return metricFormat.format(value) }
 function percentage(value: number) { return `${percentFormat.format(value * 100)}%` }
 
-export function ThresholdPage({ onHome }: { onHome: () => void }) {
+export function ThresholdPage() {
   const [result, setResult] = useState<ResultOverview | null>(null)
   const [metrics, setMetrics] = useState<ThresholdMetrics | null>(null)
   const [selected, setSelected] = useState<number | null>(null)
@@ -84,12 +83,10 @@ export function ThresholdPage({ onHome }: { onHome: () => void }) {
     setSelected(value)
   }
 
-  return <div className="app-shell features-shell">
-    <Sidebar active="analysis" onHome={onHome} />
-    <main className="workspace result-workspace threshold-workspace">
+  return <main className="workspace result-workspace threshold-workspace">
       <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
-      <header className="result-header"><button className="threshold-back-link" onClick={() => navigate(routes.result)}>← Назад к результату</button><p className="eyebrow">Шаг 5 из 5 · Результат</p><h1>Исследование порога</h1><p>Посмотрите, как диагностический порог влияет на метрики классификации.</p></header>
-      {error && <section className="result-error" role="alert"><strong>Не удалось обновить результат</strong><p>{error}</p><button className="secondary-action" onClick={() => navigate(routes.result)}>Вернуться к результату</button></section>}
+      <header className="result-header"><button className="back-action threshold-back-link" onClick={() => navigate(routes.result)}>← Назад к результату</button><p className="eyebrow">Шаг 5 из 5 · Результат</p><h1>Исследование порога</h1><p>Посмотрите, как диагностический порог влияет на метрики классификации.</p></header>
+      {error && <section className="result-error" role="alert"><strong>Не удалось обновить результат</strong><p>{error}</p><button className="back-action" onClick={() => navigate(routes.result)}>Вернуться к результату</button></section>}
       {loading && <p className="feature-loading">Загружаем сохранённый результат…</p>}
       {!loading && result && metrics && selected !== null && summary && <>
         <section className="threshold-notice panel"><b>i</b><p>Изменение порога не переобучает модель и не меняет оценки объектов. Порог является диагностическим и не выбирается AXION автоматически как оптимальный или бизнес-порог.</p></section>
@@ -119,8 +116,7 @@ export function ThresholdPage({ onHome }: { onHome: () => void }) {
         </div></section>
 
         <section className="threshold-curves panel"><h2>Зависимость метрик от порога</h2><p>График зависимости метрик от порога появится только при наличии отдельного backend-контракта для sweep.</p></section>
-        <button className="secondary-action threshold-back-button" onClick={() => navigate(routes.result)}>← Назад к результату</button>
+        <button className="back-action threshold-back-button" onClick={() => navigate(routes.result)}>← Назад к результату</button>
       </>}
     </main>
-  </div>
 }

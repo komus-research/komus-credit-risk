@@ -10,17 +10,33 @@
 | `brand/brandbook/02_rules-and-parameters.png` | Пропорции, охранное поле, минимальные размеры, палитра, типографика, запрещённые изменения | PRIMARY BRAND RULES |
 | `brand/brandbook/03_application-in-product.png` | Применение AXION в интерфейсе, шапке, splash/login, отчёте, презентации, уведомлениях | PRIMARY PRODUCT BRAND REFERENCE |
 
+## Общие компоненты
+
+| Компонент | Файл | Роль |
+| --- | --- | --- |
+| Button System V2 | `components/buttons/02_button_system_v2.png` | VISUAL LOCK / PRIMARY SHARED COMPONENT REFERENCE для `Primary`, `Secondary`, `Tertiary / Ghost`, `Back`, `Destructive`, `Disabled` и состояний Default / Hover / Pressed / Focus / Disabled на native React экранах и modal dialogs |
+| Button System V1 | `components/buttons/01_button_system_v1.png` | PREVIOUS SHARED COMPONENT REFERENCE; superseded по visual treatment системой V2 |
+| Data Warnings V2 | `components/data-warnings/01_data_warnings_v2.png` | VISUAL LOCK; collapsed warning summary, `ACTION_REQUIRED / RESOLVED / INFO`, tooltip и secondary accordions |
+| Sidebar Final V1 | `components/sidebar/01_sidebar_final_v1.png` | VISUAL LOCK с явным исключением fake profile/auth footer; canonical pattern/motif, плотность и active navigation treatment |
+| Long Operations V1 | `components/long-operations/01_long_operations_v1.png` | VISUAL LOCK; общий presentation contract для `LOADING`, `RUNNING_LONG_OPERATION`, training, after-folds, error и ready states |
+
+Button System V2 задаёт внешний вид кнопки, но не семантику действия. Роль `Primary / Secondary / Tertiary / Back / Destructive` определяется UX конкретного состояния экрана. Рекомендуемое направление Primary — `Graphite + Emerald Border`; яркая сплошная emerald-заливка больше не является canonical default.
+
+V2 применяется ко всем runtime-кнопкам, включая header/footer actions, cards и confirmation/native modal. `screens/home/02_home_button_system_v2.png` фиксирует применение системы на Главной. До полной runtime-конвергенции расхождения существующих React-кнопок с V2 считаются известным visual debt.
+
 ## Экраны
 
 | Экран | Файл | Роль |
 | --- | --- | --- |
 | Главная | `screens/home/01_home_axion_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Главная V2 | `screens/home/01_home_axion_v2_candidate.png` | VISUAL LOCK; основной reference общего AXION shell / Home V2 |
+| Главная — Button System V2 application | `screens/home/02_home_button_system_v2.png` | VISUAL LOCK APPLICATION REFERENCE; показывает canonical применение Button System V2 на текущей Главной без изменения layout |
 | История анализов V1 | `screens/history/01_analysis_history_v1.png` | VISUAL LOCK; read-only каталог завершённых ExperimentArtifact, без Project entity |
 | Настройки V1 | `screens/settings/01_settings_v1.png` | VISUAL LOCK; основной collapsed state глобальных настроек AXION |
 | Настройки V1 — privacy expanded | `screens/settings/02_settings_privacy_expanded_v1.png` | VISUAL LOCK; тот же Settings screen с раскрытым `Как защищаются данные?` |
 | Новый анализ — данные / роли колонок | `screens/new-analysis/01_data_roles_v1.png` | Рабочий референс шага подготовки данных |
-| Новый анализ — подтверждение | `screens/new-analysis/02_data_confirmation_v1.png` | Рабочий референс шага подтверждения |
+| Новый анализ — подтверждение V1 | `screens/new-analysis/02_data_confirmation_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
+| Новый анализ — подтверждение V2 | `screens/new-analysis/02_data_confirmation_v2.png` | VISUAL LOCK; компактный desktop-state подтверждения подготовки данных |
 | Новый анализ — признаки | `screens/new-analysis/03_features_v1.png` | Рабочий референс выбора признаков |
 | Новый анализ — алгоритм | `screens/new-analysis/04_algorithm_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Новый анализ — алгоритм V2 | `screens/new-analysis/04_algorithm_v2.png` | VISUAL LOCK; основной reference для native Algorithm V2 |
@@ -31,7 +47,8 @@
 | Модели — сохранённая модель V1 | `screens/models/03_model_version_detail_v1.png` | VISUAL LOCK; detail одной сохранённой ModelVersion, её OOF quality, данные, признаки и действия |
 | Модели — анализ новых данных V1 | `screens/models/04_saved_model_inference_v1.png` | VISUAL LOCK; применение сохранённой ModelVersion к новому совместимому dataset без переобучения |
 | Модели — результат анализа новых данных V1 | `screens/models/05_saved_model_inference_result_v1.png` | VISUAL LOCK; `Сохранить конфигурацию`, saved view восстанавливается на том же Result, `Сбросить настройки` доступен условно в `⋯`; default threshold без config = 0.50 |
-| Новый анализ — проверка качества V1 | `screens/new-analysis/05_quality_v1.png` | VISUAL LOCK; основной reference для native Quality V1 |
+| Новый анализ — проверка качества V1 | `screens/new-analysis/05_quality_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
+| Новый анализ — проверка качества V2 | `screens/new-analysis/05_quality_v2.png` | VISUAL LOCK; основной pre-run reference, compact secondary controls и separation после `Готово к запуску` |
 | Результат V1 | `screens/result/01_result_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Результат модели V2 | `screens/result/02_result_model_overview_v2.png` | VISUAL LOCK; основной обзор завершённого experiment result |
 | Исследование порога V1 | `screens/result/03_threshold_explorer_v1.png` | VISUAL LOCK; threshold exploration по OOF scores без переобучения |
@@ -49,6 +66,24 @@
 ## Правила для V2 references
 
 Статус каждого V2-файла указан в таблице выше. Functional/backend contracts имеют приоритет над демонстрационными данными внутри PNG.
+
+### Sidebar Final V1
+
+- `components/sidebar/01_sidebar_final_v1.png` — canonical shared visual lock sidebar поверх принятого Home V2 shell;
+- принимаются фирменный волновой/точечный motif, плотность, отступы, иконки и emerald active-state;
+- navigation IA не меняется: `Главная`, `Новый анализ`, `Модели`, `История`, `Настройки`; демонстрационное `Проекты / История` не является новым route/доменом;
+- карточка пользователя `Андреев П. С. / Аналитик` в нижней зоне PNG **не является принятой функциональностью** и не должна попадать в runtime до отдельного auth/users contract;
+- нижняя зона должна оставаться неинтерактивной и брендовой, без выдуманных имени, роли, avatar, profile menu, login/logout;
+- logo/wordmark берутся из Brandbook/Home V2; мелкая подпись `Аналитическая платформа` на демонстрационном sheet не supersede ранее принятые logo rules.
+
+### Data Confirmation V2
+
+- `screens/new-analysis/02_data_confirmation_v2.png` — основной VISUAL LOCK подтверждения подготовки;
+- V2 сохраняет semantics V1, но делает экран примерно на 12–15% плотнее за счёт реальных размеров/gaps/paddings, без `transform: scale()`;
+- сохраняются File, Key roles, preparation summary, population policy, acknowledgement и footer navigation;
+- policy OOF/final-test не меняется визуальным обновлением;
+- demo filename/counts/format внутри PNG не являются runtime truth;
+- кнопки берутся из Button System V2.
 
 ### Home V2
 
@@ -109,9 +144,9 @@
 - runtime implementation ждёт `SET-BE1 / SET-BE2 / SET-UI1`;
 - product/architecture semantics: `docs/workstreams/generic_dataset_onboarding_v1/SETTINGS_UX_V1.md`.
 
-### Quality V1
+### Quality V2
 
-- `screens/new-analysis/05_quality_v1.png` — принятый VISUAL LOCK pre-run состояния native Quality;
+- `screens/new-analysis/05_quality_v2.png` — основной VISUAL LOCK pre-run состояния native Quality; `05_quality_v1.png` остаётся previous accepted reference;
 - sidebar и wizard shell берутся из общего AXION shell, а не перерисовываются отдельно;
 - stepper сохраняет название **«Проверка качества»**, заголовок страницы — **«Проверка перед запуском»**;
 - верхняя сводка показывает только реальные runtime данные: dataset, число выбранных признаков, выбранный алгоритм, режим его настроек;
@@ -121,8 +156,21 @@
 - основная CTA — **«Начать обучение»**;
 - `Дополнительные настройки` и `Технические сведения` по умолчанию collapsed;
 - demo `dataset_2026.xlsx`, `30`, `CatBoost` и другие значения PNG не являются runtime truth и не хардкодятся;
+- после `Готово к запуску` secondary controls визуально отделены дополнительным вертикальным пространством;
+- `Дополнительные настройки` и `Технические сведения` остаются collapsed и показываются компактными, выровненными secondary controls вместо full-width тяжёлых полос;
 - после старта этот же шаг превращается в progress state и показывает только реальные backend events; fake percentages/ETA запрещены;
+- training/long-operation presentation берётся из `components/long-operations/01_long_operations_v1.png`;
 - функциональный контракт: `docs/workstreams/generic_dataset_onboarding_v1/QUALITY_UX_V1.md`.
+
+### Long Operations V1
+
+- `components/long-operations/01_long_operations_v1.png` — canonical shared visual lock долгих и обычных загрузок;
+- обычный `LOADING` показывает только title/message + indeterminate AXION indicator: без elapsed, backend stages, percentage и ETA;
+- `RUNNING_LONG_OPERATION` может показывать только реально известные backend stage, elapsed и discrete units;
+- training использует реальные folds/stages (`Часть X из N`, completed folds, aggregate metrics, persistence), но не превращает folds в fake overall percentage;
+- `ERROR` и `READY/COMPLETED` являются устойчивыми состояниями, а не вечным loading text;
+- точный percent допустим только если backend реально публикует determinate units для конкретной операции; ETA не придумывается;
+- визуальный lock не заменяет performance/reliability fix: тяжёлая операция должна быть исправлена технически, а не замаскирована spinner.
 
 ### Result V2
 
@@ -150,11 +198,14 @@ Demo values в PNG не являются runtime truth. Developer не доду�
 
 ## Приоритет источников для UI
 
-1. Для конкретного экрана использовать последний принятый `VISUAL LOCK` из таблицы выше.
-2. Общий shell/sidebar брать из принятого Home V2 reference `screens/home/01_home_axion_v2_candidate.png` (историческое имя файла сохраняется, статус — accepted VISUAL LOCK).
-3. Previous accepted reference используется только как fallback, если для экрана ещё нет более нового Visual Lock.
-4. Brandbook AXION из `brand/brandbook/` задаёт обязательные правила бренда.
-5. Accepted UX/backend docs задают поведение и реальные данные, но не являются основанием самостоятельно изобретать новый визуальный стиль.
+1. Accepted backend/UX contracts определяют данные, доступность действий, state transitions и scientific semantics.
+2. Для shared component использовать последний принятый component `VISUAL LOCK`; для кнопок это `components/buttons/02_button_system_v2.png`.
+3. Для композиции конкретного экрана использовать последний принятый screen `VISUAL LOCK` из таблицы выше.
+4. Общий shell брать из принятого Home V2 reference `screens/home/01_home_axion_v2_candidate.png`; для sidebar поверх него действует более новый component lock `components/sidebar/01_sidebar_final_v1.png` с исключением fake profile/auth footer.
+5. Previous accepted reference используется только как fallback, если для экрана или компонента ещё нет более нового Visual Lock.
+6. Brandbook AXION из `brand/brandbook/` задаёт обязательные правила бренда.
+
+Если старый screen PNG показывает кнопку иначе, чем более новый Button System V2, сохраняется композиция экрана и семантика действия, а внешний вид кнопки берётся из Button System V2.
 
 Если референс конфликтует с фактическим backend-контрактом, не подделывать данные под картинку: сохранить визуальную композицию и поднять точное расхождение на согласование.
 

@@ -10,7 +10,6 @@ import {
   type ResultInterpreterRole,
   type ResultObjectDetail,
 } from '../api/result'
-import { Sidebar } from '../components/Sidebar'
 
 const scoreFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 
@@ -105,7 +104,7 @@ function remainderLabel(direction: LocalExplanationDirection) {
   return <span className={`local-explanation-direction direction-text-${direction}`}>{directionCopy[direction]}</span>
 }
 
-export function ObjectDetailPage({ objectId, onBack, onHome }: { objectId: string; onBack: () => void; onHome: () => void }) {
+export function ObjectDetailPage({ objectId, onBack }: { objectId: string; onBack: () => void }) {
   const [detail, setDetail] = useState<ResultObjectDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -255,13 +254,13 @@ export function ObjectDetailPage({ objectId, onBack, onHome }: { objectId: strin
       .catch(() => undefined)
   }
 
-  return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace result-workspace object-detail-workspace">
+  return <main className="workspace result-workspace object-detail-workspace">
     <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
-    <button className="objects-back-link" onClick={onBack}>← Назад к объектам</button>
+    <button className="back-action objects-back-link" onClick={onBack}>← Назад к объектам</button>
     <header className="result-header"><p className="eyebrow">Шаг 5 из 5 · Результат</p><h1>{currentDetail ? `Объект ${currentDetail.identifier_display}` : 'Объект оценки'}</h1><p>Факты по OOF-оценке выбранного объекта.</p></header>
 
     {showLoading && <section className="object-detail-loading panel" aria-busy="true" aria-live="polite"><span className="object-detail-loading-mark" aria-hidden="true" /><p>Загружаем данные объекта…</p></section>}
-    {!showLoading && error && <section className="object-detail-error panel" role="alert"><strong>Не удалось загрузить объект</strong><p>{error}</p><div><button className="secondary-action" onClick={() => setRetryToken(value => value + 1)}>Повторить</button><button className="secondary-action" onClick={onBack}>← Назад к объектам</button></div></section>}
+    {!showLoading && error && <section className="object-detail-error panel" role="alert"><strong>Не удалось загрузить объект</strong><p>{error}</p><div><button className="secondary-action" onClick={() => setRetryToken(value => value + 1)}>Повторить</button><button className="back-action" onClick={onBack}>← Назад к объектам</button></div></section>}
     {!showLoading && !error && currentDetail && <>
       <section className="object-detail-facts panel" aria-label="Факты по объекту">
         <article className="object-detail-fact"><small>Оценка модели</small><strong>{scoreFormat.format(currentDetail.score)}</strong></article>
@@ -328,7 +327,7 @@ export function ObjectDetailPage({ objectId, onBack, onHome }: { objectId: strin
         </div>
       </section>}
     </>}
-  </main></div>
+  </main>
 }
 
 function ExplanationReady({ explanation, mode }: { explanation: LocalExplanation; mode: 'BRIEF' | 'DETAILED' }) {

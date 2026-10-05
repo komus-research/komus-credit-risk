@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -20,6 +21,10 @@ from komus_risk.data import TabularSnapshot
 from komus_risk.experiments import EvaluationPopulation
 from komus_risk.hashing import canonical_json
 from komus_risk.model_platform import ModelConfigurationMode, ModelConfigurationRecord, ModelConfigurationService, build_builtin_model_plugin_registry
+from komus_risk.application.local_explanation import NATIVE_SHAP_NUMERICAL_PROFILES, validate_native_shap_numerics
+from komus_risk.application.model_inference import PredictionBatch, PredictionRow
+from komus_risk.model_platform.contracts import ProviderDescriptor
+from komus_risk.model_platform.explainability import BuiltinNativeExplanationProvider, TrustedExplanationContext
 from komus_risk.registries import FeatureRegistry
 
 
@@ -140,6 +145,107 @@ class MultiModelExplainabilityPathTests(unittest.TestCase):
         mean = SimpleNamespace(summary=SimpleNamespace(model_id="gbdt_mean"))
         capability = self.workflow.capabilities(loaded_model_version=mean, prediction_batch=object(), selected_row_id="row-1")["local_explanation"]
         self.assertEqual(("AVAILABLE", "LOCAL_EXPLAINER_READY"), (capability.state, capability.reason_code))
+        descriptor = self.plugins.get("gbdt_mean").local_explanation_provider
+        mean_provider = self.plugins.explanation_providers.get(descriptor.provider_id)
+        self.assertFalse(hasattr(mean_provider, "aggregate_oof_chunk"))
+
+    def test_xgboost_v2_and_existing_catboost_lightgbm_profiles(self) -> None:
+        profile = validate_native_shap_numerics("xgboost", np.array([[1e-5]]), np.array([0.0]), np.array([0.0]), np.array([0.5]))
+        self.assertEqual(("native_treeshap_xgboost", "2", 1e-6, 2e-5, 1e-7, 1e-8), (
+            profile.profile_id, profile.version, profile.additivity_rtol, profile.additivity_atol,
+            profile.probability_rtol, profile.probability_atol,
+        ))
+        self.assertEqual((1e-7, 1e-8, 1e-7, 1e-9), (
+            NATIVE_SHAP_NUMERICAL_PROFILES["catboost"].additivity_rtol,
+            NATIVE_SHAP_NUMERICAL_PROFILES["catboost"].additivity_atol,
+            NATIVE_SHAP_NUMERICAL_PROFILES["catboost"].probability_rtol,
+            NATIVE_SHAP_NUMERICAL_PROFILES["catboost"].probability_atol,
+        ))
+        self.assertEqual((1e-7, 1e-8, 1e-7, 1e-9), (
+            NATIVE_SHAP_NUMERICAL_PROFILES["lightgbm"].additivity_rtol,
+            NATIVE_SHAP_NUMERICAL_PROFILES["lightgbm"].additivity_atol,
+            NATIVE_SHAP_NUMERICAL_PROFILES["lightgbm"].probability_rtol,
+            NATIVE_SHAP_NUMERICAL_PROFILES["lightgbm"].probability_atol,
+        ))
+
+    def test_native_oof_chunk_aggregate_matches_scalar_reference_without_explain(self) -> None:
+        columns = ("f_a", "f_b")
+        frame = pd.DataFrame({"f_a": [0.2, -0.4], "f_b": [0.3, 0.7]}, columns=columns)
+        shap_values = np.array([[0.2, -0.1], [0.4, 0.3]])
+        margins = np.array([0.1, 0.7])
+        probabilities = 1 / (1 + np.exp(-margins))
+
+        class Predictor:
+            model_id = "xgboost"
+            feature_columns = columns
+
+            def predict_positive_proba(self, X):
+                return 1 / (1 + np.exp(-np.array([0.1, 0.7])))
+
+            def native_shap_batch(self, X):
+                indices = np.asarray(X.index, dtype=int)
+                return aggregate_shap_values[indices].copy(), np.zeros(len(indices)), margins[indices].copy()
+
+            def local_shap(self, X):
+                local_values, local_bases, local_margins = self.native_shap_batch(X)
+                return local_values[0], float(local_bases[0]), float(local_margins[0])
+
+        aggregate_shap_values = shap_values.copy()
+
+        artifact_id, binding_id = "artifact-oof", "fold-model-1"
+        context = TrustedExplanationContext(
+            "oof_fold", artifact_id, binding_id, columns, ((0.0, 0.0),), (10,),
+            "outer_train_hash_top128_v1", validation_row_positions=(20, 21), fold_id="1",
+        )
+        batch = PredictionBatch(
+            binding_id, artifact_id, "company_id", columns,
+            (PredictionRow("row-20", 20, "c20", float(probabilities[0])), PredictionRow("row-21", 21, "c21", float(probabilities[1]))),
+            (), tuple(map(tuple, frame.to_numpy())),
+        )
+        metadata = {
+            "model_id": "xgboost", "model_version": "accepted_stage1_v2", "experiment_artifact_id": artifact_id,
+            "feature_set_hash": "feature-hash", "feature_columns": list(columns),
+            "feature_specs": [{"feature_id": column, "column_name": column} for column in columns],
+            "fold_model_binding_id": binding_id, "fold_id": "1",
+        }
+        loaded = SimpleNamespace(
+            metadata=metadata, summary=SimpleNamespace(model_id="xgboost", model_version="accepted_stage1_v2", experiment_artifact_id=artifact_id, model_version_id=binding_id),
+            predictor=Predictor(),
+        )
+        descriptor = ProviderDescriptor("xgboost_native_local_shap", "1", "local_explanation", {})
+        provider = BuiltinNativeExplanationProvider(descriptor, "xgboost", "accepted_stage1_v2", "1")
+        with patch.object(BuiltinNativeExplanationProvider, "explain", side_effect=AssertionError("per-row explain called")):
+            aggregate = provider.aggregate_oof_chunk(
+                loaded_model_version=loaded, prediction_batch=batch, feature_matrix=frame,
+                persisted_oof_probabilities=probabilities, row_positions=(20, 21), explanation_context=context,
+            )
+        scalar_reference = np.sum(
+            np.abs(np.vstack([loaded.predictor.local_shap(frame.iloc[[index]])[0] for index in range(len(frame))])),
+            axis=0, dtype=np.float64,
+        )
+        np.testing.assert_allclose(aggregate.sum_abs_shap, scalar_reference, rtol=0, atol=1e-15)
+        self.assertEqual(2, aggregate.row_count)
+        self.assertEqual(("xgboost_native_local_shap", "1", "native_treeshap_xgboost", "2", "raw_margin"), (
+            aggregate.provider_id, aggregate.provider_version, aggregate.numerical_validation_profile_id,
+            aggregate.numerical_validation_profile_version, aggregate.output_space,
+        ))
+
+        for changed_frame, changed_positions, changed_probs in (
+            (frame.loc[:, ["f_b", "f_a"]], (20, 21), probabilities),
+            (frame, (20, 22), probabilities),
+            (frame, (20, 21), probabilities + 0.01),
+        ):
+            with self.assertRaises(ValueError):
+                provider.aggregate_oof_chunk(
+                    loaded_model_version=loaded, prediction_batch=batch, feature_matrix=changed_frame,
+                    persisted_oof_probabilities=changed_probs, row_positions=changed_positions, explanation_context=context,
+                )
+        for aggregate_shap_values in (np.zeros((2, 1)), np.array([[0.2, -0.1], [np.inf, 0.3]])):
+            with self.assertRaises(ValueError):
+                provider.aggregate_oof_chunk(
+                    loaded_model_version=loaded, prediction_batch=batch, feature_matrix=frame,
+                    persisted_oof_probabilities=probabilities, row_positions=(20, 21), explanation_context=context,
+                )
 
     def _snapshot(self, model_id: str) -> TabularSnapshot:
         dataframe = pd.DataFrame({"company_id": ["secret-company", "second-company"], "f_a": [-0.35, 0.65], "f_b": [1.0, 0.0], "ignored_note": [10, 20]})

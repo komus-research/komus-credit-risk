@@ -22,6 +22,10 @@ from komus_risk.application import (
 )
 from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.oof_explanation import OOFExplanationError
+from komus_risk.application.dataset_onboarding import (
+    preparation_warning_counts,
+    project_preparation_warnings,
+)
 from komus_risk.preparation import DatasetPreparationError
 from komus_risk.application.native_session import (
     DatasetInspectionProgress,
@@ -84,9 +88,32 @@ class PreparationOptionsResponse(BaseModel):
     positive_classes: list[Any]
 
 
+class PreparationWarningResponse(BaseModel):
+    code: str
+    severity: Literal["WARNING", "INFO"]
+    scope: Literal["COLUMN", "DATASET"]
+    column_name: str | None
+    detected_reasons: list[str]
+    detected_requires_confirmation: bool
+    resolution_state: Literal["ACTION_REQUIRED", "RESOLVED", "INFO"]
+    resolution_code: str
+    subject_ru: str
+    title_ru: str
+    detail_ru: str
+    check_ru: str | None
+    resolution_note_ru: str | None
+    action: Literal[
+        "REVIEW_COLUMN",
+        "REVIEW_TARGET",
+        "REVIEW_IDENTIFIER",
+        "REVIEW_DATASET",
+    ] | None
+
+
 class PreparationSummaryResponse(BaseModel):
     permission_counts: dict[str, int]
-    warnings: list[str]
+    warnings: list[PreparationWarningResponse]
+    warning_counts: dict[Literal["action_required", "resolved", "info"], int]
     actions: list[str]
     population_policy: str
     population_policy_acknowledged: bool
@@ -197,6 +224,17 @@ class ResultSummaryResponse(BaseModel):
     limitations: list[str]
 
 
+class ResultCapturePointResponse(BaseModel):
+    object_share: float
+    event_share: float
+
+
+class ResultCaptureResponse(BaseModel):
+    total_positive_events: int
+    points: list[ResultCapturePointResponse]
+    marker: ResultCapturePointResponse | None
+
+
 class ResultThresholdResponse(BaseModel):
     threshold: float
     tp: int
@@ -213,6 +251,7 @@ class ResultThresholdResponse(BaseModel):
 class ResultOverviewResponse(BaseModel):
     summary: ResultSummaryResponse
     threshold: ResultThresholdResponse
+    capture: ResultCaptureResponse
 
 
 class ResultObjectItemResponse(BaseModel):
@@ -299,6 +338,29 @@ class GlobalOOFExplanationResponse(BaseModel):
     output_space: str
     evidence_hash: str
     features: list[GlobalOOFFeatureImportanceResponse]
+
+
+class GlobalOOFRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    retry: bool = False
+
+
+class GlobalOOFOperationResponse(BaseModel):
+    artifact_id: str
+    derivation_key: str
+    status: Literal["NOT_STARTED", "RUNNING", "READY", "FAILED"]
+    stage: Literal["VALIDATING", "PROCESSING_FOLD", "AGGREGATING", "PERSISTING", "READY", "FAILED"]
+    stage_label: str
+    current_fold: int | None
+    total_folds: int
+    processed_rows: int
+    total_rows: int
+    started_at: str | None
+    updated_at: str
+    elapsed_seconds: float
+    safe_error_code: str | None
+    message: str | None
 
 
 class ResultInterpretationResponse(BaseModel):
@@ -451,6 +513,24 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 f1=threshold.f1,
                 above_threshold_count=threshold.above_threshold_count,
                 above_threshold_share=threshold.above_threshold_share,
+            ),
+            capture=ResultCaptureResponse(
+                total_positive_events=summary.capture.total_positive_events,
+                points=[
+                    ResultCapturePointResponse(
+                        object_share=point.object_share,
+                        event_share=point.event_share,
+                    )
+                    for point in summary.capture.points
+                ],
+                marker=(
+                    None
+                    if summary.capture.marker is None
+                    else ResultCapturePointResponse(
+                        object_share=summary.capture.marker.object_share,
+                        event_share=summary.capture.marker.event_share,
+                    )
+                ),
             ),
         )
 
@@ -790,6 +870,110 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             response_hash=result.response_hash,
         )
 
+    def global_oof_safe_message(code: str | None) -> str:
+        if code == "GLOBAL_OOF_RESULT_NOT_READY":
+            return "Расчёт влияния признаков ещё не готов."
+        if code == "GLOBAL_OOF_EXPLANATION_UNSUPPORTED":
+            return "Для этой модели глобальное OOF-объяснение недоступно."
+        if code in {
+            "OOF_RESULT_EVIDENCE_INCOMPLETE", "FOLD_MODEL_UNAVAILABLE",
+            "PROVENANCE_MISMATCH", "OOF_PREDICTION_MISMATCH",
+            "GLOBAL_OOF_EXPLANATION_INCOMPATIBLE",
+        }:
+            return "Не удалось безопасно построить глобальное объяснение сохранённого OOF-результата. Сам результат остаётся доступен."
+        return "Не удалось рассчитать влияние признаков. Сам результат модели остаётся доступен."
+
+    def operation_response(snapshot: Any) -> GlobalOOFOperationResponse:
+        code = snapshot.safe_error_code
+        return GlobalOOFOperationResponse(
+            artifact_id=snapshot.artifact_id, derivation_key=snapshot.derivation_key,
+            status=snapshot.status, stage=snapshot.stage, stage_label=snapshot.stage_label,
+            current_fold=snapshot.current_fold, total_folds=snapshot.total_folds,
+            processed_rows=snapshot.processed_rows, total_rows=snapshot.total_rows,
+            started_at=snapshot.started_at, updated_at=snapshot.updated_at,
+            elapsed_seconds=snapshot.elapsed_seconds, safe_error_code=code,
+            message=global_oof_safe_message(code) if code else None,
+        )
+
+    def result_changed() -> HTTPException:
+        return HTTPException(status_code=409, detail={
+            "code": "RESULT_CHANGED",
+            "message": "Текущий результат изменился. Откройте влияние признаков заново.",
+        })
+
+    @api.post("/api/v1/result/explanation/global/run", response_model=GlobalOOFOperationResponse)
+    async def run_current_global_oof_explanation(
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+        payload: GlobalOOFRunRequest = GlobalOOFRunRequest(),
+    ) -> GlobalOOFOperationResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id_at_start = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id_at_start is None:
+            if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+                raise result_changed()
+            raise HTTPException(status_code=409, detail={
+                "code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."
+            })
+        try:
+            if payload.retry:
+                try:
+                    snapshot = await run_in_threadpool(explanation_service.retry_global_oof, artifact_id_at_start)
+                except ValueError as exc:
+                    if str(exc) != "GLOBAL_OOF_RETRY_NOT_AVAILABLE":
+                        raise
+                    snapshot = await run_in_threadpool(explanation_service.start_global_oof, artifact_id_at_start)
+            else:
+                snapshot = await run_in_threadpool(explanation_service.start_global_oof, artifact_id_at_start)
+        except OOFExplanationError as exc:
+            if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+                raise result_changed() from None
+            raise HTTPException(status_code=409, detail={
+                "code": exc.code, "message": global_oof_safe_message(exc.code)
+            }) from None
+        except Exception:
+            if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+                raise result_changed() from None
+            raise HTTPException(status_code=500, detail={
+                "code": "GLOBAL_OOF_EXPLANATION_FAILED",
+                "message": global_oof_safe_message("GLOBAL_OOF_EXPLANATION_FAILED")
+            }) from None
+        if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+            raise result_changed()
+        return operation_response(snapshot)
+
+    @api.get("/api/v1/result/explanation/global/status", response_model=GlobalOOFOperationResponse)
+    async def get_current_global_oof_status(
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> GlobalOOFOperationResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id_at_start = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id_at_start is None:
+            if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+                raise result_changed()
+            raise HTTPException(status_code=409, detail={
+                "code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."
+            })
+        try:
+            snapshot = await run_in_threadpool(explanation_service.global_oof_status, artifact_id_at_start)
+        except OOFExplanationError as exc:
+            if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+                raise result_changed() from None
+            raise HTTPException(status_code=409, detail={
+                "code": exc.code, "message": global_oof_safe_message(exc.code)
+            }) from None
+        except Exception:
+            if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+                raise result_changed() from None
+            raise HTTPException(status_code=500, detail={
+                "code": "GLOBAL_OOF_EXPLANATION_FAILED",
+                "message": global_oof_safe_message("GLOBAL_OOF_EXPLANATION_FAILED")
+            }) from None
+        if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+            raise result_changed()
+        return operation_response(snapshot)
+
     @api.get(
         "/api/v1/result/explanation/global",
         response_model=GlobalOOFExplanationResponse,
@@ -801,6 +985,8 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         resolved_session_id, _ = resolve_session(response, session_id)
         artifact_id_at_start = store.current_result_artifact_id(resolved_session_id)
         if artifact_id_at_start is None:
+            if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+                raise result_changed()
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -812,82 +998,40 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         try:
             artifact = artifact_store.load(artifact_id_at_start)
             evidence = await run_in_threadpool(
-                explanation_service.global_oof, artifact_id_at_start
+                explanation_service.global_oof_ready_result, artifact_id_at_start
             )
         except OOFExplanationError as exc:
-            if exc.code == "GLOBAL_OOF_EXPLANATION_UNSUPPORTED":
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": exc.code,
-                        "message": "Для этой модели глобальное OOF-объяснение недоступно.",
-                    },
-                ) from None
-            integrity_codes = {
-                "OOF_RESULT_EVIDENCE_INCOMPLETE",
-                "FOLD_MODEL_UNAVAILABLE",
-                "PROVENANCE_MISMATCH",
-                "OOF_PREDICTION_MISMATCH",
+            if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+                raise result_changed() from None
+            safe_codes = {
+                "GLOBAL_OOF_RESULT_NOT_READY", "GLOBAL_OOF_EXPLANATION_UNSUPPORTED",
+                "OOF_RESULT_EVIDENCE_INCOMPLETE", "FOLD_MODEL_UNAVAILABLE",
+                "PROVENANCE_MISMATCH", "OOF_PREDICTION_MISMATCH",
                 "GLOBAL_OOF_EXPLANATION_INCOMPATIBLE",
             }
-            if exc.code in integrity_codes:
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": exc.code,
-                        "message": (
-                            "Не удалось безопасно построить глобальное объяснение "
-                            "сохранённого OOF-результата. Сам результат остаётся доступен."
-                        ),
-                    },
-                ) from None
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "code": "GLOBAL_OOF_EXPLANATION_ERROR",
-                    "message": (
-                        "Не удалось построить глобальное объяснение. "
-                        "Сам результат остаётся доступен."
-                    ),
-                },
-            ) from None
+            code = exc.code if exc.code in safe_codes else "GLOBAL_OOF_EXPLANATION_FAILED"
+            status_code = 409 if code in safe_codes else 500
+            raise HTTPException(status_code=status_code, detail={
+                "code": code, "message": global_oof_safe_message(code),
+            }) from None
         except Exception:
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "code": "GLOBAL_OOF_EXPLANATION_ERROR",
-                    "message": (
-                        "Не удалось построить глобальное объяснение. "
-                        "Сам результат остаётся доступен."
-                    ),
-                },
-            ) from None
+            if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+                raise result_changed() from None
+            raise HTTPException(status_code=500, detail={
+                "code": "GLOBAL_OOF_EXPLANATION_FAILED",
+                "message": global_oof_safe_message("GLOBAL_OOF_EXPLANATION_FAILED"),
+            }) from None
 
-        artifact_id_at_end = store.current_result_artifact_id(resolved_session_id)
-        if artifact_id_at_end != artifact_id_at_start:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "RESULT_CHANGED",
-                    "message": (
-                        "Текущий результат изменился. Откройте влияние признаков заново."
-                    ),
-                },
-            )
+        if store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start:
+            raise result_changed()
 
         features = list(evidence.features)
         ranks = [feature.rank for feature in features]
         if ranks != list(range(1, evidence.feature_count + 1)) or len(features) != evidence.feature_count:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "GLOBAL_OOF_EXPLANATION_INCOMPATIBLE",
-                    "message": (
-                        "Не удалось безопасно построить глобальное объяснение "
-                        "сохранённого OOF-результата. Сам результат остаётся доступен."
-                    ),
-                },
-            )
+            raise HTTPException(status_code=409, detail={
+                "code": "GLOBAL_OOF_EXPLANATION_INCOMPATIBLE",
+                "message": global_oof_safe_message("GLOBAL_OOF_EXPLANATION_INCOMPATIBLE"),
+            })
 
         return GlobalOOFExplanationResponse(
             artifact_id=artifact_id_at_start,
@@ -1165,6 +1309,8 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 status_code=404,
                 detail={"code": "DATASET_NOT_UPLOADED", "message": "Сначала загрузите файл датасета."},
             ) from exc
+        warning_views = project_preparation_warnings(dataset.proposal.warnings, draft)
+        warning_counts = preparation_warning_counts(warning_views)
         return DatasetPreparationResponse(
             source=DatasetSourceResponse(
                 handle=handle,
@@ -1186,10 +1332,29 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             summary=PreparationSummaryResponse(
                 permission_counts=onboarding.permission_counts(dataset, draft),
                 warnings=[
-                    reason
-                    for warning in dataset.proposal.warnings
-                    for reason in warning.reasons_ru
+                    PreparationWarningResponse(
+                        code=warning.code,
+                        severity=warning.severity,
+                        scope=warning.scope,
+                        column_name=warning.column_name,
+                        detected_reasons=list(warning.detected_reasons),
+                        detected_requires_confirmation=warning.detected_requires_confirmation,
+                        resolution_state=warning.resolution_state,
+                        resolution_code=warning.resolution_code,
+                        subject_ru=warning.subject_ru,
+                        title_ru=warning.title_ru,
+                        detail_ru=warning.detail_ru,
+                        check_ru=warning.check_ru,
+                        resolution_note_ru=warning.resolution_note_ru,
+                        action=warning.action,
+                    )
+                    for warning in warning_views
                 ],
+                warning_counts={
+                    "action_required": warning_counts.action_required,
+                    "resolved": warning_counts.resolved,
+                    "info": warning_counts.info,
+                },
                 actions=["Проверьте автоматически заполненные роли колонок перед подтверждением."],
                 population_policy=draft.population_policy,
                 population_policy_acknowledged=draft.population_policy_acknowledged,

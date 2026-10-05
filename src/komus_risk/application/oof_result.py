@@ -47,6 +47,24 @@ class OOFResultSummary:
     pr_auc: float
     fold_metrics: tuple[Mapping[str, object], ...]
     limitations: tuple[str, ...]
+    capture: "OOFResultCapture"
+
+
+@dataclass(frozen=True, slots=True)
+class OOFResultCapturePoint:
+    """One compact, trusted point of the cumulative OOF capture curve."""
+
+    object_share: float
+    event_share: float
+
+
+@dataclass(frozen=True, slots=True)
+class OOFResultCapture:
+    """Read-only cumulative capture facts derived from validated OOF evidence."""
+
+    total_positive_events: int
+    points: tuple[OOFResultCapturePoint, ...]
+    marker: OOFResultCapturePoint | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +163,7 @@ class OOFResultService:
                 MappingProxyType(dict(item)) for item in result.fold_metrics
             ),
             limitations=tuple(result.limitations),
+            capture=self._capture(context),
         )
 
     def threshold(self, artifact_id: str, threshold: float) -> OOFThresholdMetrics:
@@ -425,6 +444,48 @@ class OOFResultService:
             f1=f1,
             above_threshold_count=above,
             above_threshold_share=above / len(context.scores),
+        )
+
+    @staticmethod
+    def _capture(context: _OOFContext) -> OOFResultCapture:
+        """Build a bounded cumulative-capture payload from immutable OOF facts.
+
+        Scores are ordered exactly as Result object lists: descending score and,
+        for ties, ascending original row position.  The API intentionally returns
+        101 percentage checkpoints instead of exposing row-level OOF evidence.
+        """
+
+        total_positive_events = int(np.count_nonzero(context.y_true == 1))
+        if total_positive_events == 0:
+            return OOFResultCapture(
+                total_positive_events=0,
+                points=(),
+                marker=None,
+            )
+
+        ordered = np.lexsort((context.row_positions, -context.scores))
+        cumulative_positive = np.cumsum(context.y_true[ordered], dtype=np.int64)
+        row_count = len(ordered)
+
+        def point_at(requested_share: float) -> OOFResultCapturePoint:
+            if requested_share == 0:
+                return OOFResultCapturePoint(object_share=0.0, event_share=0.0)
+            selected_count = min(
+                row_count,
+                int(np.ceil(row_count * requested_share)),
+            )
+            actual_object_share = selected_count / row_count
+            event_share = float(cumulative_positive[selected_count - 1]) / total_positive_events
+            return OOFResultCapturePoint(
+                object_share=actual_object_share,
+                event_share=event_share,
+            )
+
+        points = tuple(point_at(percentage / 100) for percentage in range(101))
+        return OOFResultCapture(
+            total_positive_events=total_positive_events,
+            points=points,
+            marker=point_at(0.15),
         )
 
     @staticmethod

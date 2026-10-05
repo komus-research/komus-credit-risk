@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
@@ -29,6 +30,7 @@ from komus_risk.models.gbdt import (
     XGBoostAdapter,
     XGBoostFactory,
 )
+from komus_risk.models.gbdt.native import load_native_predictor, save_native_model
 from komus_risk.registries import FeatureRegistry, ModelRegistry
 
 
@@ -167,6 +169,42 @@ class GBDTAdapterTests(unittest.TestCase):
                 np.testing.assert_allclose(
                     first.predict_positive_proba(self.X), second.predict_positive_proba(self.X)
                 )
+
+    def test_xgboost_native_shap_batch_matches_scalar_and_fails_closed(self) -> None:
+        adapter = XGBoostFactory().create(deepcopy(XGBOOST_PROFILE), seed=17)
+        adapter.fit(self.X, self.y)
+        with TemporaryDirectory() as directory:
+            save_native_model("xgboost", adapter, directory)
+            predictor = load_native_predictor("xgboost", directory, tuple(self.X.columns))
+            sample = self.X.iloc[[2, 9, 17]].copy()
+            batch_values, batch_bases, batch_margins = predictor.native_shap_batch(sample)
+            scalar_values, scalar_base, scalar_margin = predictor.local_shap(sample.iloc[[0]])
+            np.testing.assert_allclose(batch_values[0], scalar_values, rtol=0, atol=1e-12)
+            self.assertAlmostEqual(float(batch_bases[0]), scalar_base, places=12)
+            self.assertAlmostEqual(float(batch_margins[0]), scalar_margin, places=12)
+            self.assertEqual((3, 2), batch_values.shape)
+            self.assertEqual((3,), batch_bases.shape)
+            self.assertEqual((3,), batch_margins.shape)
+            with self.assertRaises(ValueError):
+                predictor.local_shap(sample)
+            with self.assertRaises(ValueError):
+                predictor.native_shap_batch(sample.loc[:, ["flag", "score"]])
+            with self.assertRaises(ValueError):
+                predictor.native_shap_batch(sample.assign(score=np.nan))
+
+        from komus_risk.models.gbdt.native import NativePredictor
+        mean_predictor = NativePredictor("gbdt_mean", tuple(self.X.columns), lambda frame: np.full(len(frame), 0.5))
+        with self.assertRaises(ValueError):
+            mean_predictor.native_shap_batch(self.X.iloc[:1])
+
+        for shap_result in (np.zeros((1, 2)), np.array([[np.inf, 0.0, 0.0]])):
+            invalid = NativePredictor(
+                "xgboost", tuple(self.X.columns), lambda frame: np.full(len(frame), 0.5),
+                local_shap=lambda frame, result=shap_result: result,
+                raw_predict=lambda frame: np.zeros(len(frame)),
+            )
+            with self.assertRaises(ValueError):
+                invalid.native_shap_batch(self.X.iloc[:1])
 
     def test_tiny_oof_integration_for_each_factory(self) -> None:
         allowed_spec = FeatureSpec(

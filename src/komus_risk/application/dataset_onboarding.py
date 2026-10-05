@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Iterable, Literal
 
 import numpy as np
 
 from komus_risk.data import DatasetInspector, TabularReader, TabularSnapshot
-from komus_risk.preparation import DatasetPreparationAnalyzer
+from komus_risk.preparation import DatasetPreparationAnalyzer, ProposalWarning
 from komus_risk.preparation import (
     ConfirmedColumnDecision,
     ConfirmedColumnStatus,
@@ -24,6 +24,208 @@ from komus_risk.preparation.materializer import inspection_report_hash, proposal
 from komus_risk.preparation.predictor_compatibility import predictor_compatibility_error
 
 DRAFT_FIELD_UNSET = object()
+
+
+@dataclass(frozen=True, slots=True)
+class PreparationWarningView:
+    """Public warning meaning and resolution for the current editable draft."""
+
+    code: str
+    severity: Literal["WARNING", "INFO"]
+    scope: Literal["COLUMN", "DATASET"]
+    column_name: str | None
+    detected_reasons: tuple[str, ...]
+    detected_requires_confirmation: bool
+    resolution_state: Literal["ACTION_REQUIRED", "RESOLVED", "INFO"]
+    resolution_code: str
+    subject_ru: str
+    title_ru: str
+    detail_ru: str
+    check_ru: str | None
+    resolution_note_ru: str | None
+    action: Literal[
+        "REVIEW_COLUMN",
+        "REVIEW_TARGET",
+        "REVIEW_IDENTIFIER",
+        "REVIEW_DATASET",
+    ] | None
+
+
+_TARGET_WARNING_CODES = frozenset({
+    "no_target_candidate",
+    "multiple_target_candidates",
+    "target_candidate_has_missing_values",
+})
+_IDENTIFIER_WARNING_CODES = frozenset({
+    "no_identifier_candidate",
+    "multiple_identifier_candidates",
+})
+
+
+def project_preparation_warnings(
+    warnings: Iterable[ProposalWarning], draft: PreparationDraft,
+) -> tuple[PreparationWarningView, ...]:
+    """Resolve immutable detector warnings against the supplied live draft."""
+    return tuple(_project_preparation_warning(warning, draft) for warning in warnings)
+
+
+@dataclass(frozen=True, slots=True)
+class PreparationWarningCounts:
+    action_required: int
+    resolved: int
+    info: int
+
+
+def preparation_warning_counts(warnings: Iterable[PreparationWarningView]) -> PreparationWarningCounts:
+    counts = {"ACTION_REQUIRED": 0, "RESOLVED": 0, "INFO": 0}
+    for warning in warnings:
+        counts[warning.resolution_state] += 1
+    return PreparationWarningCounts(counts["ACTION_REQUIRED"], counts["RESOLVED"], counts["INFO"])
+
+
+_ROLE_WARNING_CODES = frozenset({"near_unique_column", "high_cardinality_non_numeric"})
+_STRUCTURAL_WARNING_CODES = frozenset({
+    "all_missing_column", "constant_column", "missing_values_present", "high_missingness",
+    "almost_empty_column", "mixed_value_types", "unknown_logical_type", "datetime_semantics_unconfirmed",
+})
+_PROXY_WARNING_CODES = frozenset({"potential_target_proxy", "potential_deterministic_target_proxy"})
+
+
+def _effective_role(column: str | None, draft: PreparationDraft) -> str | None:
+    if column is None:
+        return None
+    if column == draft.target_column:
+        return "TARGET"
+    if column == draft.identifier_column:
+        return "IDENTIFIER"
+    return draft.column_statuses.get(column)
+
+
+def _warning_resolution(warning: ProposalWarning, draft: PreparationDraft) -> tuple[str, str]:
+    code, column = warning.code, warning.column_name
+    role = _effective_role(column, draft)
+    blocked_valid = role == "BLOCKED" and bool(draft.blocked_reasons.get(column or "", "").strip())
+    if code in {"no_target_candidate", "multiple_target_candidates"}:
+        return (("ACTION_REQUIRED", "TARGET_NOT_SELECTED") if draft.target_column is None else ("RESOLVED", "TARGET_SELECTED"))
+    if code in {"no_identifier_candidate", "multiple_identifier_candidates"}:
+        return (("ACTION_REQUIRED", "IDENTIFIER_NOT_SELECTED") if draft.identifier_column is None else ("RESOLVED", "IDENTIFIER_SELECTED"))
+    if code == "target_candidate_has_missing_values":
+        same_target = column is not None and column == draft.target_column
+        return (("ACTION_REQUIRED", "CURRENT_TARGET_HAS_MISSING_VALUES") if same_target else ("RESOLVED", "WARNING_ABOUT_OTHER_TARGET"))
+    if code in _ROLE_WARNING_CODES:
+        if role in {"IDENTIFIER", "DIAGNOSTIC_ONLY"} or blocked_valid:
+            return "RESOLVED", f"COLUMN_ROLE_{role if not blocked_valid else 'BLOCKED'}"
+        if role in {"TARGET", "MODEL_ALLOWED"}:
+            return "ACTION_REQUIRED", f"COLUMN_ROLE_{role}"
+        return "ACTION_REQUIRED", "COLUMN_ROLE_REQUIRES_REVIEW"
+    if code in _STRUCTURAL_WARNING_CODES:
+        if role == "DIAGNOSTIC_ONLY":
+            return "INFO", "DIAGNOSTIC_ONLY"
+        if blocked_valid:
+            return "RESOLVED", "VALID_BLOCKED"
+        return "ACTION_REQUIRED", "COLUMN_ROLE_REQUIRES_REVIEW"
+    if code == "insufficient_evidence":
+        return "ACTION_REQUIRED", "INSUFFICIENT_EVIDENCE"
+    if code in _PROXY_WARNING_CODES:
+        related_target = warning.evidence.get("related_target_candidate")
+        if draft.target_column is None:
+            return "INFO", "TARGET_NOT_SELECTED"
+        if related_target != draft.target_column:
+            return "RESOLVED", "PROXY_FOR_OTHER_TARGET"
+        if role == "MODEL_ALLOWED":
+            return "ACTION_REQUIRED", "CURRENT_TARGET_PROXY_MODEL_ALLOWED"
+        if role in {"IDENTIFIER", "DIAGNOSTIC_ONLY"} or blocked_valid:
+            return "RESOLVED", f"CURRENT_TARGET_PROXY_ROLE_{role if not blocked_valid else 'BLOCKED'}"
+        return "ACTION_REQUIRED", "CURRENT_TARGET_PROXY_ROLE_REQUIRES_REVIEW"
+    if warning.severity.value == "INFO":
+        return "INFO", "UNCLASSIFIED_INFORMATION"
+    return "ACTION_REQUIRED", "UNCLASSIFIED_WARNING"
+
+
+_WARNING_TEXT: dict[str, tuple[str, str, str | None]] = {
+    "no_target_candidate": ("Целевая колонка не выбрана", "Автоматически определить целевую колонку не удалось.", "Выберите колонку с целевым событием."),
+    "multiple_target_candidates": ("Найдено несколько вариантов цели", "Среди колонок есть несколько возможных целевых переменных.", "Проверьте выбранную целевую колонку."),
+    "no_identifier_candidate": ("Идентификатор не выбран", "Автоматически определить колонку идентификатора не удалось.", "Выберите идентификатор или подтвердите подходящую колонку."),
+    "multiple_identifier_candidates": ("Найдено несколько вариантов идентификатора", "Есть несколько колонок, которые могут быть идентификаторами.", "Проверьте выбранный идентификатор."),
+    "target_candidate_has_missing_values": ("В целевой колонке есть пропуски", "Обнаруженные пропуски относятся к кандидату на целевую колонку.", "Проверьте пропуски в выбранной целевой колонке."),
+    "near_unique_column": ("Почти уникальные значения", "В колонке почти каждое значение встречается один раз.", "Проверьте назначение этой колонки."),
+    "high_cardinality_non_numeric": ("Высокая кардинальность", "Нечисловая колонка содержит много различных значений.", "Проверьте назначение этой колонки."),
+    "all_missing_column": ("Колонка полностью пустая", "В колонке обнаружены только пропущенные значения.", "Проверьте, нужна ли эта колонка."),
+    "constant_column": ("Постоянное значение", "Колонка содержит одно непустое значение.", "Проверьте, нужна ли эта колонка."),
+    "missing_values_present": ("В колонке есть пропуски", "В колонке обнаружены пропущенные значения.", "Проверьте пропуски в этой колонке."),
+    "high_missingness": ("Много пропусков", "В колонке обнаружена высокая доля пропущенных значений.", "Проверьте пропуски в этой колонке."),
+    "almost_empty_column": ("Колонка почти пустая", "В колонке найдено мало непустых значений.", "Проверьте, нужна ли эта колонка."),
+    "mixed_value_types": ("Смешанные типы значений", "В колонке обнаружены значения разных типов.", "Проверьте содержимое этой колонки."),
+    "unknown_logical_type": ("Тип колонки не определён", "Не удалось определить логический тип значений колонки.", "Проверьте содержимое этой колонки."),
+    "datetime_semantics_unconfirmed": ("Семантика даты не подтверждена", "Колонка содержит значения даты или времени.", "Проверьте смысл и доступность этих значений."),
+    "insufficient_evidence": ("Недостаточно данных для анализа", "В файле недостаточно непустых значений для формирования предложений.", "Проверьте данные и выбранный файл."),
+    "potential_target_proxy": ("Возможная утечка цели", "Колонка почти полностью соответствует текущей целевой переменной. Это может означать, что модель получает информацию, которая появилась после целевого события или была рассчитана на его основе.", "Проверьте, было ли значение этой колонки известно на момент принятия решения."),
+    "potential_deterministic_target_proxy": ("Возможная утечка цели", "Колонка почти полностью соответствует текущей целевой переменной. Это может означать, что модель получает информацию, которая появилась после целевого события или была рассчитана на его основе.", "Проверьте, было ли значение этой колонки известно на момент принятия решения."),
+}
+
+
+def _project_preparation_warning(warning: ProposalWarning, draft: PreparationDraft) -> PreparationWarningView:
+    if warning.code in _TARGET_WARNING_CODES:
+        action = "REVIEW_TARGET"
+    elif warning.code in _IDENTIFIER_WARNING_CODES:
+        action = "REVIEW_IDENTIFIER"
+    elif warning.code == "insufficient_evidence":
+        action = "REVIEW_DATASET"
+    elif warning.column_name is not None:
+        action = "REVIEW_COLUMN"
+    else:
+        action = None
+    resolution_state, resolution_code = _warning_resolution(warning, draft)
+    title, detail, check = _WARNING_TEXT.get(
+        warning.code,
+        ("Замечание по данным", "Для этого замечания требуется проверить данные набора.", None),
+    )
+    if warning.column_name is not None:
+        subject = warning.column_name
+    elif warning.code in _TARGET_WARNING_CODES:
+        subject = "Целевая колонка"
+    elif warning.code in _IDENTIFIER_WARNING_CODES:
+        subject = "Идентификатор"
+    else:
+        subject = "Набор данных"
+    resolution_note = _warning_resolution_note(warning, draft, resolution_code)
+    return PreparationWarningView(
+        code=warning.code,
+        severity=warning.severity.value,
+        scope="COLUMN" if warning.column_name is not None else "DATASET",
+        column_name=warning.column_name,
+        detected_reasons=tuple(warning.reasons_ru),
+        detected_requires_confirmation=warning.requires_confirmation,
+        resolution_state=resolution_state,
+        resolution_code=resolution_code,
+        subject_ru=subject,
+        title_ru=title,
+        detail_ru=detail,
+        check_ru=check,
+        resolution_note_ru=resolution_note,
+        action=action,
+    )
+
+
+def _warning_resolution_note(warning: ProposalWarning, draft: PreparationDraft, resolution_code: str) -> str | None:
+    if resolution_code == "TARGET_SELECTED":
+        selected = draft.target_column or ""
+        if warning.code == "no_target_candidate":
+            return f"Целевая колонка выбрана вручную: {selected}."
+        return f"Выбрана целевая колонка {selected}."
+    if resolution_code == "IDENTIFIER_SELECTED":
+        return f"Выбран идентификатор {draft.identifier_column}."
+    if resolution_code == "WARNING_ABOUT_OTHER_TARGET":
+        return "Выбрана другая целевая колонка."
+    if resolution_code == "PROXY_FOR_OTHER_TARGET":
+        return "Предупреждение относится к другой кандидатной цели."
+    if resolution_code == "DIAGNOSTIC_ONLY" or resolution_code.startswith(("COLUMN_ROLE_DIAGNOSTIC_ONLY", "CURRENT_TARGET_PROXY_ROLE_DIAGNOSTIC_ONLY")):
+        return "Колонка не используется как признак модели."
+    if resolution_code in {"VALID_BLOCKED", "COLUMN_ROLE_BLOCKED"} or resolution_code.endswith("_BLOCKED"):
+        return "Колонка исключена из признаков модели."
+    if resolution_code == "COLUMN_ROLE_IDENTIFIER":
+        return "Выбрана в качестве идентификатора."
+    return None
 
 
 class DatasetDraftError(ValueError):

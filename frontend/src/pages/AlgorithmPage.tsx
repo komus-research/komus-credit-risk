@@ -4,7 +4,6 @@ import {
   restoreAlgorithmModel, selectAlgorithmModel, type AlgorithmState, type CatalogModel,
   type CatalogParameter,
 } from '../api/session'
-import { Sidebar } from '../components/Sidebar'
 import { navigate, routes } from '../routing'
 
 const capabilityLabels: Record<string, string> = {
@@ -27,7 +26,7 @@ function compactValue(value: unknown): string {
     .map(([key, item]) => `${key}: ${compactValue(item)}`).join(' · ')
 }
 
-export function AlgorithmPage({ onHome }: { onHome: () => void }) {
+export function AlgorithmPage() {
   const [data, setData] = useState<AlgorithmState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -120,9 +119,7 @@ export function AlgorithmPage({ onHome }: { onHome: () => void }) {
     ['configuration mode', data?.configuration_mode], ['sparse overrides', data?.user_overrides],
   ] : []
 
-  return <div className="app-shell features-shell">
-    <Sidebar active="analysis" onHome={onHome} />
-    <main className="workspace algorithm-workspace">
+  return <main className="workspace algorithm-workspace">
       <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{stepNames.map((name, index) => <li key={name} className={index < 2 ? 'completed' : index === 2 ? 'active' : ''}><span>{index < 2 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
       <header className="features-header"><div><p className="eyebrow">Шаг 3 из 5</p><h1>Выбор алгоритма</h1><p>Выберите алгоритм и настройки для текущего эксперимента.</p></div></header>
       {error && <p className="feature-warning">{error}</p>}
@@ -184,17 +181,16 @@ export function AlgorithmPage({ onHome }: { onHome: () => void }) {
           <details><summary>Технические сведения</summary><dl>{technicalRows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{compactValue(value)}</dd></div>)}</dl></details>
         </section>}
 
-        <footer className="feature-footer"><button className="secondary-action" onClick={() => navigate(routes.features)}>← Назад к признакам</button>
+        <footer className="feature-footer"><button className="back-action" onClick={() => navigate(routes.features)}>← Назад к признакам</button>
           <button className="primary-action" disabled={!selectedIsAvailable || busy} onClick={() => { setBusy(true); void continueAlgorithm().then(() => navigate(routes.quality)).catch(reason => setError(reason instanceof Error ? reason.message : 'Не удалось продолжить.')).finally(() => setBusy(false)) }}>Далее: проверка качества →</button>
         </footer>
       </>}
 
       {confirmReset && <div className="native-modal-backdrop"><section className="native-modal"><h2>Сбросить ручные настройки?</h2><p>Ручные изменения будут сброшены.</p><div>
-        <button className="secondary-action" onClick={() => setConfirmReset(false)}>Отмена</button><button className="primary-action" onClick={() => { setConfirmReset(false); update(patchAlgorithmConfiguration('RECOMMENDED', {})) }}>Сбросить</button>
+        <button className="secondary-action" onClick={() => setConfirmReset(false)}>Отмена</button><button className="destructive-action" onClick={() => { setConfirmReset(false); update(patchAlgorithmConfiguration('RECOMMENDED', {})) }}>Сбросить</button>
       </div></section></div>}
       {hideTarget && <div className="native-modal-backdrop"><section className="native-modal"><h2>Скрыть «{hideTarget.display_name_ru}» из списка?</h2><p>Эта модель сейчас выбрана для эксперимента. После скрытия потребуется выбрать другую модель.</p><div>
-        <button className="secondary-action" onClick={() => setHideTarget(null)}>Отмена</button><button className="primary-action" onClick={() => { update(hideAlgorithmModel(hideTarget.model_id)); setHideTarget(null) }}>Скрыть из списка</button>
+        <button className="secondary-action" onClick={() => setHideTarget(null)}>Отмена</button><button className="destructive-action" onClick={() => { update(hideAlgorithmModel(hideTarget.model_id)); setHideTarget(null) }}>Скрыть из списка</button>
       </div></section></div>}
     </main>
-  </div>
 }

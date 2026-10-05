@@ -946,3 +946,152 @@ Native Algorithm V2 получил финальный Reviewer `ACCEPT` посл
 - `#/analysis/quality` в этом stage остаётся только boundary: training, smoke и Quality logic не входят в Algorithm V2.
 
 После ACCEPT следующий implementation stage — Native Quality V1 по `QUALITY_UX_V1.md` и `05_quality_v1.png`.
+
+## D-089 — Button System V1 принят как общий visual lock AXION
+
+Дата: 2026-10-03.
+
+Owner принял единый shared-component visual lock кнопок:
+
+`docs/design/components/buttons/01_button_system_v1.png`
+
+Решение:
+
+- Button System V1 — **VISUAL LOCK / PRIMARY SHARED COMPONENT REFERENCE** для native React интерфейса;
+- четыре уровня: `Primary CTA`, `Secondary`, `Tertiary / Back`, `Disabled`;
+- состояния: Default / Hover / Pressed / Disabled;
+- базовая геометрия: высота `42 px`, horizontal padding `24 px`, radius `10 px`, icon `18 px`, gap `10 px`, typography `14–15 px Semibold`;
+- primary state palette зафиксирована component sheet (`#10B981` default, `#34D399` hover, `#059669` pressed, `#334155` disabled fill);
+- component lock имеет приоритет над более старым видом той же кнопки внутри screen PNG, но не меняет композицию экрана;
+- тип кнопки определяется ролью действия в конкретном состоянии, а не примером текста в sheet; `Открыть результат` после successful training остаётся Primary CTA, если это единственное главное следующее действие;
+- visual lock не меняет backend contract, routing, state transitions, gates или scientific semantics;
+- текущий runtime не объявляется автоматически соответствующим lock: до отдельной реализации расхождение считается известным visual debt;
+- отдельная implementation-задача сейчас не запускается по решению owner.
+
+## D-090 — Data Warnings V2: draft-aware resolution + compact visual lock
+
+Дата: 2026-10-04.
+
+Owner принял DATA-WARN-R1 и DATA WARNINGS VISUAL LOCK V2.
+
+Решение:
+
+- `ProposalWarning` остаётся detector evidence; current `PreparationDraft` определяет `ACTION_REQUIRED / RESOLVED / INFO`;
+- target/identifier, уже явно выбранные пользователем, могут разрешать соответствующие role-inference warnings, но не скрывают независимые data-quality проблемы;
+- canonical visual lock: `docs/design/components/data-warnings/01_data_warnings_v2.png`;
+- основной warning-block свёрнут по умолчанию; `ACTION_REQUIRED` имеет первый визуальный приоритет, `RESOLVED` и `INFO` — вторичные группы;
+- detail/check explanation открывается через accessible info-tooltip; React не восстанавливает warning semantics из текста;
+- accepted semantics не меняют detector thresholds, materialization или scientific pipeline.
+
+## D-091 — Data Confirmation V2 принят как основной visual lock
+
+Дата: 2026-10-04.
+
+Canonical reference:
+
+`docs/design/screens/new-analysis/02_data_confirmation_v2.png`
+
+Решение:
+
+- semantics шага подтверждения не меняются;
+- экран становится примерно на 12–15% компактнее реальными typography/gap/padding/card-height значениями, без `transform: scale()`;
+- File, Key roles, preparation summary, evaluation population policy, acknowledgement и footer navigation сохраняются;
+- текущая full-OOF/no-protected-final-test policy не меняется визуальным обновлением;
+- demo filename/counts/format в PNG не являются runtime truth;
+- кнопки используют Button System V1.
+
+## D-092 — Sidebar Final V1 принят с явным исключением fake auth/profile
+
+Дата: 2026-10-04.
+
+Canonical component reference:
+
+`docs/design/components/sidebar/01_sidebar_final_v1.png`
+
+Решение:
+
+- принимаются фирменный волновой/точечный motif, плотность, отступы, иконки и emerald active-state;
+- canonical navigation IA остаётся `Главная / Новый анализ / Модели / История / Настройки`;
+- демонстрационное `Проекты / История` не создаёт новую domain-сущность или route;
+- profile-card `Андреев П. С. / Аналитик` в PNG не входит в accepted functional contract;
+- до отдельного auth/users workstream нельзя показывать fake avatar/name/role/profile/login/logout;
+- нижняя зона sidebar остаётся неинтерактивной брендовой областью;
+- Brandbook/Home V2 остаются source of truth для logo/wordmark; мелкая подпись в демонстрационном sheet не supersede принятые logo rules.
+
+## D-093 — Quality V2 принят как основной pre-run visual lock
+
+Дата: 2026-10-04.
+
+Canonical reference:
+
+`docs/design/screens/new-analysis/05_quality_v2.png`
+
+Решение:
+
+- Quality V1 functional semantics сохраняются;
+- `Готово к запуску` означает только technical readiness;
+- после ready-block добавляется больше вертикального воздуха;
+- `Дополнительные настройки` и `Технические сведения` остаются collapsed, compact, выровненными secondary controls, а не тяжёлыми full-width полосами;
+- основная CTA остаётся `Начать обучение`;
+- demo dataset/model/counts из PNG не являются runtime truth.
+
+## D-094 — Long Operations V1 принят как shared visual lock
+
+Дата: 2026-10-04.
+
+Canonical component reference:
+
+`docs/design/components/long-operations/01_long_operations_v1.png`
+
+Решение:
+
+- обычный `LOADING` показывает только title/message и indeterminate AXION indicator;
+- `RUNNING_LONG_OPERATION` может показывать только реально известные backend stage, elapsed и discrete units;
+- training показывает реальные folds/stages и elapsed; `Часть 2 из 3` не превращается автоматически в `67%`;
+- fake percentage, fake ETA и timer-based pseudo-progress запрещены;
+- after-folds стадии metrics/persistence показываются отдельно, если backend их публикует;
+- `ERROR` завершает loading и даёт stable retry/error state; `READY/COMPLETED` не маскируется вечной анимацией;
+- visual loading не заменяет техническое исправление performance/reliability проблемы.
+
+## D-095 — Global OOF Explanation: tolerance не является причиной live failure
+
+Дата: 2026-10-04.
+
+На real XGBoost artifact `362018 × 49`, 3 OOF folds endpoint `GET /api/v1/result/explanation/global` после долгого расчёта возвращает `409`, при этом основной Result остаётся доступен.
+
+Read-only диагностика повторно загрузила persisted fold models и сравнила replay probabilities с сохранёнными OOF scores по всем строкам folds:
+
+- fold 1: max absolute difference `0.0`;
+- fold 2: max absolute difference `0.0`;
+- fold 3: max absolute difference `0.0`.
+
+Следствие: текущий `rtol=1e-12 / atol=1e-12` не ослабляется без нового evidence.
+
+Отдельно подтверждён scalability bottleneck generic native XGBoost explanation path: `BuiltinNativeExplanationProvider.explain_batch()` итерирует `row_id` и вызывает one-row `LocalExplanationService.explain()` / one-row native SHAP для каждой OOF-строки. Scientific invariant Global OOF остаётся exact row-weighted `mean(abs(local OOF SHAP))` по всей OOF population; sampling, built-in gain importance и final-model fallback не допускаются без отдельного research decision.
+
+Immediate next: Architect готовит `GLOBAL OOF EXPLANATION RELIABILITY / PERFORMANCE V1`; после ACCEPT — узкая Codex implementation-задача и Reviewer.
+
+## D-096 — Button System V2 supersedes Button System V1
+
+Дата: 2026-10-04.
+
+Владелец продукта принял новый Button System V2 как единый visual standard кнопок AXION.
+
+Canonical component lock:
+
+`docs/design/components/buttons/02_button_system_v2.png`
+
+Application reference на Главной:
+
+`docs/design/screens/home/02_home_button_system_v2.png`
+
+Решение:
+
+- V2 supersedes V1 только по visual treatment; `01_button_system_v1.png` остаётся previous reference;
+- canonical Primary — `Graphite + Emerald Border`, без яркой сплошной emerald-заливки;
+- роли: Primary / Secondary / Tertiary-Ghost / Back / Destructive / Disabled;
+- states: Default / Hover / Pressed / Focus / Disabled;
+- базовая геометрия: 44 px height/min-height, 18 px horizontal padding, 12 px radius, 16 px icon, 10 px icon-text gap, 15 px Semibold, 1 px border;
+- система обязательна для всех native React экранов, footer/header actions, card actions и confirmation/native modal;
+- по умолчанию ширина кнопки content-based; full-width допустим только при явной layout-потребности;
+- action semantics, availability, routing, state transitions и backend/scientific contracts не меняются этим visual decision.

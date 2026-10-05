@@ -54,6 +54,58 @@ def test_upload_returns_only_public_dataset_dto_and_auto_draft() -> None:
     assert "upload-" not in str(payload)
 
 
+def test_upload_returns_structured_preparation_warnings_without_internal_evidence() -> None:
+    payload = _upload(TestClient(create_app()))
+    warnings = payload["summary"]["warnings"]
+
+    assert warnings
+    assert all(isinstance(warning, dict) for warning in warnings)
+    for warning in warnings:
+        assert set(warning) == {
+            "code", "severity", "scope", "column_name", "detected_reasons",
+            "detected_requires_confirmation", "resolution_state", "resolution_code",
+            "subject_ru", "title_ru", "detail_ru", "check_ru", "resolution_note_ru", "action",
+        }
+        assert warning["severity"] in {"WARNING", "INFO"}
+        assert warning["scope"] in {"COLUMN", "DATASET"}
+        assert isinstance(warning["detected_reasons"], list) and warning["detected_reasons"]
+        assert warning["resolution_state"] in {"ACTION_REQUIRED", "RESOLVED", "INFO"}
+        assert warning["subject_ru"]
+        assert warning["title_ru"] and warning["detail_ru"]
+        assert "evidence" not in warning
+        assert "column_position" not in warning
+    counts = payload["summary"]["warning_counts"]
+    assert counts == {
+        "action_required": sum(warning["resolution_state"] == "ACTION_REQUIRED" for warning in warnings),
+        "resolved": sum(warning["resolution_state"] == "RESOLVED" for warning in warnings),
+        "info": sum(warning["resolution_state"] == "INFO" for warning in warnings),
+    }
+
+
+def test_warning_resolution_and_counts_refresh_when_draft_changes() -> None:
+    client = TestClient(create_app())
+    uploaded = _upload(client)
+    multiple = next((item for item in uploaded["summary"]["warnings"] if item["code"] == "multiple_target_candidates"), None)
+    assert multiple is not None
+    assert multiple["resolution_state"] == "RESOLVED"
+    assert multiple["subject_ru"] == "Целевая колонка"
+    assert multiple["resolution_note_ru"] == f"Выбрана целевая колонка {uploaded['draft']['target']}."
+
+    changed = client.patch(
+        "/api/v1/dataset/preparation/draft",
+        json={"target": None},
+    )
+    assert changed.status_code == 200, changed.text
+    new_warnings = changed.json()["summary"]["warnings"]
+    changed_multiple = next(item for item in new_warnings if item["code"] == "multiple_target_candidates")
+    assert changed_multiple["resolution_state"] == "ACTION_REQUIRED"
+    assert changed_multiple["subject_ru"] == "Целевая колонка"
+    assert changed_multiple["resolution_note_ru"] is None
+    assert changed.json()["summary"]["warning_counts"]["action_required"] == sum(
+        item["resolution_state"] == "ACTION_REQUIRED" for item in new_warnings
+    )
+
+
 def test_upload_finishes_with_ready_progress() -> None:
     client = TestClient(create_app())
 

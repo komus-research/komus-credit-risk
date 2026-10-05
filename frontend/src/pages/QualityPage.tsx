@@ -1,9 +1,22 @@
 import { useEffect, useState } from 'react'
 import { getQuality, NativeApiError, patchQualitySettings, runQualityPreflight, runQualityTraining, type QualityState } from '../api/session'
-import { Sidebar } from '../components/Sidebar'
 import { navigate, routes } from '../routing'
 
-export function QualityPage({ onHome }: { onHome: () => void }) {
+function completedFolds(stage: string | null, foldNumber: number | null, foldsTotal: number | null) {
+  if (!foldsTotal || foldsTotal < 1) return 0
+  if (stage === 'fold_started') return Math.max(0, Math.min(foldsTotal, (foldNumber ?? 1) - 1))
+  if (stage === 'fold_completed') return Math.max(0, Math.min(foldsTotal, foldNumber ?? 0))
+  if (stage === 'aggregate_metrics_started' || stage === 'persistence_started' || stage === 'completed') return foldsTotal
+  return 0
+}
+
+function formatElapsed(seconds: number | null) {
+  if (seconds === null || !Number.isFinite(seconds)) return null
+  const total = Math.max(0, Math.floor(seconds))
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
+
+export function QualityPage() {
   const [data, setData] = useState<QualityState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -70,7 +83,7 @@ export function QualityPage({ onHome }: { onHome: () => void }) {
   const startTraining = () => {
     if (!data?.can_start_training || operationBusy) return
     setError(null)
-    setData(current => current ? { ...current, training: { ...current.training, status: 'RUNNING', stage: null, stage_label: null, fold_number: null, folds_total: null, artifact_id: null, failure_code: null, message: 'Отправляем запрос на запуск обучения.' }, can_start_training: false } : current)
+    setData(current => current ? { ...current, training: { ...current.training, status: 'RUNNING', stage: null, stage_label: null, fold_number: null, folds_total: null, artifact_id: null, failure_code: null, elapsed_seconds: null, message: 'Отправляем запрос на запуск обучения.' }, can_start_training: false } : current)
     void runQualityTraining().then(setData).catch(reason => {
       setError(reason instanceof NativeApiError ? reason.message : reason instanceof Error ? reason.message : 'Не удалось запустить обучение.')
       void getQuality().then(setData).catch(() => undefined)
@@ -81,7 +94,10 @@ export function QualityPage({ onHome }: { onHome: () => void }) {
     ['Данные готовы', 'Подтверждённый набор данных доступен для запуска.'], ['Выбранные признаки корректны', 'Выбранный набор признаков доступен алгоритму.'], ['Алгоритм доступен', 'Алгоритм и необходимые компоненты доступны.'], ['Настройки совместимы', 'Конфигурация успешно проверена.'], ['Пробное обучение выполнено', 'Модель успешно обучилась на небольшой контрольной выборке.'], ['Пробный прогноз получен', 'Прогнозы получены в корректном формате.'],
   ]
   const passed = data?.preflight.status === 'PASS'
-  return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace quality-workspace">
+  const completed = data ? completedFolds(data.training.stage, data.training.fold_number, data.training.folds_total) : 0
+  const elapsed = data ? formatElapsed(data.training.elapsed_seconds) : null
+  const showFoldProgress = data?.training.stage === 'fold_started' || data?.training.stage === 'fold_completed'
+  return <main className="workspace quality-workspace">
     <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{steps.map((name, index) => <li key={name} className={index < 3 ? 'completed' : index === 3 ? 'active' : ''}><span>{index < 3 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
     <header className="quality-header"><p className="eyebrow">Шаг 4 из 5</p><h1>Проверка перед запуском</h1><p>Проверьте выбранную конфигурацию. AXION автоматически убедится, что всё готово к обучению.</p></header>
     {error && <p className="feature-warning">{error}</p>}
@@ -96,14 +112,21 @@ export function QualityPage({ onHome }: { onHome: () => void }) {
       <section className={`quality-preflight panel ${passed ? 'passed' : ''}`}><div className="quality-title"><div><h2>Проверка перед запуском</h2><p>AXION автоматически проверяет совместимость данных, признаков и алгоритма и выполняет небольшой пробный запуск.</p></div><span className={passed ? 'quality-pass-label' : 'quality-pending-label'}>{passed ? '✓ Предварительная проверка завершена' : data.preflight.status === 'RUNNING' || busy ? '◌ Выполняем предварительную проверку…' : data.preflight.message ?? data.plan.safe_validation_state}</span></div>
         {passed && <div className="quality-checks">{checks.map(([name, description]) => <div key={name}><b>✓</b><strong>{name}</strong><span>{description}</span></div>)}</div>}
         {!passed && <div className="quality-waiting">{data.preflight.status === 'FAIL' ? <>{data.preflight.message}<button className="secondary-action" disabled={operationBusy} onClick={() => preflight()}>Повторить проверку</button></> : 'Выполняем предварительную проверку…'}</div>}
-        {passed && <div className="quality-success"><b>✓</b><div><h2>Готово к запуску</h2><p>Предварительная проверка подтверждает техническую готовность конфигурации.</p><p>Качество модели будет рассчитано во время полноценной проверки.</p><p>После обучения AXION автоматически рассчитает метрики качества.</p></div></div>}
+        {passed && <div className="quality-status-strip"><b>✓</b><div><h2>Готово к запуску</h2><p>Техническая готовность конфигурации подтверждена. Качество будет рассчитано при полном обучении: после него AXION автоматически рассчитает метрики.</p></div></div>}
       </section>
-      {trainingRunning && <section className="quality-success panel" aria-live="polite"><b>◌</b><div><h2>{data.training.stage_label ?? 'Выполняется обучение'}</h2><p>{data.training.message}</p>{data.training.fold_number !== null && data.training.folds_total !== null && <p>Часть {data.training.fold_number} из {data.training.folds_total}</p>}</div></section>}
+      {trainingRunning && <section className="quality-training-progress panel" aria-live="polite"><span className="quality-spinner" aria-label="Выполняется" /><div className="quality-training-copy"><h2>{data.training.stage_label ?? 'Выполняется обучение'}</h2>
+        {showFoldProgress && data.training.fold_number !== null && data.training.folds_total !== null && <p>Часть {data.training.fold_number} из {data.training.folds_total}</p>}
+        {data.training.folds_total !== null && <div className="quality-fold-progress"><div className="quality-fold-markers" aria-label={`Завершено частей: ${completed} из ${data.training.folds_total}`}>{Array.from({ length: data.training.folds_total }, (_, index) => <span key={index} className={index < completed ? 'completed' : data.training.stage === 'fold_started' && index === data.training.fold_number! - 1 ? 'current' : ''} />)}</div>
+          {showFoldProgress && <p>Прогресс по частям: {completed} из {data.training.folds_total} · {Math.round((completed / data.training.folds_total) * 100)}%</p>}</div>}
+        {elapsed && <p className="quality-elapsed">Прошло {elapsed}</p>}
+      </div></section>}
       {data.training.status === 'FAIL' && <p className="feature-warning" role="alert">{data.training.message}</p>}
-      {data.training.status === 'COMPLETED' && <section className="quality-success panel"><b>✓</b><div><h2>Обучение завершено</h2><p>Обучение и проверка качества завершены. Результат сохранён.</p></div></section>}
-      <details className="quality-details panel"><summary><span>⚙</span><div><strong>Дополнительные настройки</strong><small>Рекомендуемые параметры уже выбраны автоматически.</small></div></summary><div className="quality-settings"><label>Количество частей проверки<input type="text" inputMode="numeric" value={foldsDraft} disabled={operationBusy} onChange={e => setFoldsDraft(e.target.value)} /></label><label>Seed<input type="text" inputMode="numeric" value={seedDraft} disabled={operationBusy} onChange={e => setSeedDraft(e.target.value)} /></label><button className="secondary-action" disabled={operationBusy || !draftChanged || !draftValid} onClick={applySettings}>Применить настройки</button><p>Протокол: {data.supported_protocol.protocol_id} v{data.supported_protocol.protocol_version}</p></div>{draftChanged && !draftValid && <p className="quality-validation">Введите целые числа; число частей проверки должно быть не меньше {data.supported_protocol.minimum_folds}.</p>}</details>
-      <details className="quality-details panel"><summary><span>▧</span><div><strong>Технические сведения</strong><small>Информация о протоколе проверки, используемых данных и других технических деталях.</small></div></summary><dl><div><dt>Protocol</dt><dd>{data.supported_protocol.protocol_id} v{data.supported_protocol.protocol_version}</dd></div><div><dt>Folds / seed</dt><dd>{data.settings.folds} / {data.settings.seed}</dd></div><div><dt>Model</dt><dd>{data.summary.selected_model_id}</dd></div><div><dt>Plan / smoke</dt><dd>{data.plan.status} / {data.preflight.status}</dd></div>{data.preflight.identity && <div><dt>Smoke identity</dt><dd>{data.preflight.identity}</dd></div>}{data.training.artifact_id && <div><dt>Artifact ID</dt><dd>{data.training.artifact_id}</dd></div>}</dl></details>
-      <footer className="quality-footer"><button className="secondary-action" disabled={operationBusy} onClick={() => navigate(routes.algorithm)}>← Назад к алгоритму</button><div>{data.training.status === 'COMPLETED' && <button className="primary-action" onClick={() => navigate(routes.result)}>Открыть результат →</button>}<button className="primary-action" disabled={!data.can_start_training || operationBusy} onClick={startTraining}>{trainingRunning ? 'Обучение выполняется…' : data.training.status === 'COMPLETED' ? 'Обучение завершено' : 'Начать обучение →'}</button></div></footer>
+      {data.training.status === 'COMPLETED' && <section className="quality-status-strip panel"><b>✓</b><div><h2>Обучение завершено</h2><p>Обучение и проверка качества завершены. Результат сохранён.</p></div></section>}
+      <div className="quality-details-grid">
+        <details className="quality-details panel"><summary><span>⚙</span><div><strong>Дополнительные настройки</strong><small>Рекомендуемые параметры уже выбраны автоматически.</small></div></summary><div className="quality-settings"><label>Количество частей проверки<input type="text" inputMode="numeric" value={foldsDraft} disabled={operationBusy} onChange={e => setFoldsDraft(e.target.value)} /></label><label>Seed<input type="text" inputMode="numeric" value={seedDraft} disabled={operationBusy} onChange={e => setSeedDraft(e.target.value)} /></label><button className="secondary-action" disabled={operationBusy || !draftChanged || !draftValid} onClick={applySettings}>Применить настройки</button><p>Протокол: {data.supported_protocol.protocol_id} v{data.supported_protocol.protocol_version}</p></div>{draftChanged && !draftValid && <p className="quality-validation">Введите целые числа; число частей проверки должно быть не меньше {data.supported_protocol.minimum_folds}.</p>}</details>
+        <details className="quality-details panel"><summary><span>▧</span><div><strong>Технические сведения</strong><small>Информация о протоколе проверки, используемых данных и других технических деталях.</small></div></summary><dl><div><dt>Protocol</dt><dd>{data.supported_protocol.protocol_id} v{data.supported_protocol.protocol_version}</dd></div><div><dt>Folds / seed</dt><dd>{data.settings.folds} / {data.settings.seed}</dd></div><div><dt>Model</dt><dd>{data.summary.selected_model_id}</dd></div><div><dt>Plan / smoke</dt><dd>{data.plan.status} / {data.preflight.status}</dd></div>{data.preflight.identity && <div><dt>Smoke identity</dt><dd>{data.preflight.identity}</dd></div>}{data.training.artifact_id && <div><dt>Artifact ID</dt><dd>{data.training.artifact_id}</dd></div>}</dl></details>
+      </div>
+      <footer className="quality-footer"><button className="back-action" disabled={operationBusy} onClick={() => navigate(routes.algorithm)}>← Назад к алгоритму</button><div>{data.training.status === 'COMPLETED' ? <button className="primary-action" onClick={() => navigate(routes.result)}>Открыть результат →</button> : <button className="primary-action" disabled={!data.can_start_training || operationBusy} onClick={startTraining}>{trainingRunning ? 'Обучение выполняется…' : 'Начать обучение →'}</button>}</div></footer>
     </>}
-  </main></div>
+  </main>
 }

@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react'
-import { getCurrentResult, type ResultOverview } from '../api/result'
+import {
+  getCurrentGlobalOOFExplanation,
+  getCurrentGlobalOOFStatus,
+  getCurrentResult,
+  GlobalOOFAPIError,
+  type GlobalOOFOperation,
+  runCurrentGlobalOOF,
+  type GlobalOOFExplanation,
+  type ResultCapture,
+  type ResultOverview,
+} from '../api/result'
 import { Icon } from '../components/Icon'
-import { Sidebar } from '../components/Sidebar'
 import { navigate, routes } from '../routing'
 
 const numberFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 })
@@ -12,10 +21,27 @@ const unavailable = 'Действие пока недоступно: соотв�
 
 function metric(value: number) { return numberFormat.format(value) }
 function percent(value: number) { return percentFormat.format(value) }
+function errorRate(numerator: number, denominator: number) { return denominator === 0 ? '—' : percent(numerator / denominator) }
 
-export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome: () => void; onOpenThreshold: () => void; onOpenObjects: () => void }) {
+type GlobalPreviewStatus = 'idle' | 'loading' | 'running' | 'ready' | 'changed' | 'error'
+
+function waitForGlobalOOFPoll(signal: AbortSignal) {
+  return new Promise<void>(resolve => {
+    const finish = () => {
+      window.clearTimeout(timer)
+      signal.removeEventListener('abort', finish)
+      resolve()
+    }
+    const timer = window.setTimeout(finish, 1000)
+    signal.addEventListener('abort', finish, { once: true })
+  })
+}
+
+export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold: () => void; onOpenObjects: () => void }) {
   const [result, setResult] = useState<ResultOverview | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [globalPreview, setGlobalPreview] = useState<GlobalOOFExplanation | null>(null)
+  const [globalPreviewStatus, setGlobalPreviewStatus] = useState<GlobalPreviewStatus>('idle')
 
   useEffect(() => {
     let cancelled = false
@@ -27,11 +53,87 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
 
   const summary = result?.summary
   const threshold = result?.threshold
+  const capture = result?.capture
+
+  useEffect(() => {
+    const artifactId = result?.summary.artifact_id
+    if (!artifactId) return
+    const controller = new AbortController()
+    const { signal } = controller
+    let lifecycleComplete = false
+    setGlobalPreview(null)
+    setGlobalPreviewStatus('loading')
+
+    const loadExplanation = async () => {
+      const explanation = await getCurrentGlobalOOFExplanation(signal)
+      if (signal.aborted) return
+      if (explanation.artifact_id !== artifactId) {
+        lifecycleComplete = true
+        setGlobalPreviewStatus('changed')
+        return
+      }
+      lifecycleComplete = true
+      setGlobalPreview(explanation)
+      setGlobalPreviewStatus('ready')
+    }
+
+    const runLifecycle = async () => {
+      try {
+        await loadExplanation()
+        if (signal.aborted || lifecycleComplete) return
+      } catch (reason) {
+        if (signal.aborted) return
+        if (reason instanceof GlobalOOFAPIError && reason.code === 'RESULT_CHANGED') {
+          setGlobalPreviewStatus('changed')
+          return
+        }
+        if (!(reason instanceof GlobalOOFAPIError) || reason.code !== 'GLOBAL_OOF_RESULT_NOT_READY') {
+          setGlobalPreviewStatus('error')
+          return
+        }
+      }
+
+      let operation: GlobalOOFOperation
+      try {
+        operation = await runCurrentGlobalOOF(false, signal)
+        if (signal.aborted) return
+        if (operation.artifact_id !== artifactId) {
+          setGlobalPreviewStatus('changed')
+          return
+        }
+        setGlobalPreviewStatus(operation.status === 'FAILED' ? 'error' : operation.status === 'READY' ? 'loading' : 'running')
+        while (operation.status === 'NOT_STARTED' || operation.status === 'RUNNING') {
+          await waitForGlobalOOFPoll(signal)
+          if (signal.aborted) return
+          operation = await getCurrentGlobalOOFStatus(signal)
+          if (signal.aborted) return
+          if (operation.artifact_id !== artifactId) {
+            setGlobalPreviewStatus('changed')
+            return
+          }
+          if (operation.status === 'RUNNING' || operation.status === 'NOT_STARTED') setGlobalPreviewStatus('running')
+        }
+        if (operation.status === 'FAILED') {
+          setGlobalPreviewStatus('error')
+          return
+        }
+        await loadExplanation()
+      } catch (reason) {
+        if (signal.aborted) return
+        if (reason instanceof GlobalOOFAPIError && reason.code === 'RESULT_CHANGED') setGlobalPreviewStatus('changed')
+        else setGlobalPreviewStatus('error')
+      }
+    }
+
+    void runLifecycle()
+    return () => controller.abort()
+  }, [result?.summary.artifact_id])
+
   const foldMetrics = summary?.fold_metrics.filter(fold =>
     Number.isFinite(fold.fold) && Number.isFinite(fold.roc_auc),
   ) ?? []
 
-  return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace result-workspace">
+  return <main className="workspace result-workspace">
     <div className="analysis-nav"><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
     <header className="result-header">
       <div><h1>Результат модели</h1><p>Итоги обучения, проверка качества и анализ поведения модели на всей оценочной выборке.</p></div>
@@ -84,8 +186,8 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
         </section>
 
         <section className="result-panel result-capture-panel panel">
-          <PanelHeading title="Сколько событий находим" action="Подробнее" />
-          <div className="result-capture-empty"><Icon name="info" size={18} /><p>Данные охвата пока не подключены.</p></div>
+          <CapturePanelHeading />
+          <CaptureChart capture={capture} />
         </section>
       </div>
 
@@ -98,21 +200,23 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
             <Metric label="Precision" value={percent(threshold.precision)} />
           </div>
           <div className="result-error-counts">
-            <ErrorCountRow label="Пропущено событий" count={integerFormat.format(threshold.fn)} tone="negative" />
-            <ErrorCountRow label="Ложных срабатываний" count={integerFormat.format(threshold.fp)} tone="warning" />
+            <ErrorCountRow label="Пропущено событий" count={integerFormat.format(threshold.fn)} rate={errorRate(threshold.fn, threshold.tp + threshold.fn)} tone="negative" />
+            <ErrorCountRow label="Ложных срабатываний" count={integerFormat.format(threshold.fp)} rate={errorRate(threshold.fp, threshold.tn + threshold.fp)} tone="warning" />
           </div>
           <button className="primary-action result-panel-action" onClick={onOpenThreshold}>Исследовать порог <Icon name="arrow" size={18} /></button>
         </section>
 
         <section className="result-panel result-influence-panel panel">
-          <PanelHeading title="Глобальное влияние признаков" icon="info" />
-          <div className="result-influence-content"><p>Полное OOF-ранжирование признаков доступно на отдельном экране.</p><button className="secondary-action result-influence-action" onClick={() => navigate(routes.resultGlobalExplanation)}>Подробнее <Icon name="arrow" size={16} /></button><aside><Icon name="info" size={18} /><p>Этот блок объясняет поведение модели, но не доказывает причинность.</p></aside></div>
+          <PanelHeading title="На какие признаки модель опиралась сильнее всего" icon="info" action="Подробнее" onAction={() => navigate(routes.resultGlobalExplanation)} />
+          <FeatureInfluencePreview explanation={globalPreview} status={globalPreviewStatus} />
         </section>
       </div>
 
       <section className="result-objects-strip panel">
         <span className="result-objects-icon"><Icon name="users" size={26} /></span>
-        <div className="result-objects-copy"><h2>Объекты оценки</h2><p>Просмотр объектов оценки и причин конкретных прогнозов.</p></div>
+        <div className="result-objects-copy"><h2>Объекты оценки</h2><p>Посмотрите отдельные объекты, сложные случаи и причины конкретных прогнозов.</p></div>
+        <ObjectFact icon="alert-circle" tone="negative" label="Сложные случаи" value="—" unavailable />
+        <ObjectFact icon="warning" tone="warning" label="Пограничные" value="—" unavailable />
         <ObjectFact icon="info" tone="info" label="Пропущенные события" value={integerFormat.format(threshold.fn)} />
         <button className="primary-action" onClick={onOpenObjects}>Посмотреть объекты <Icon name="arrow" size={18} /></button>
       </section>
@@ -124,7 +228,7 @@ export function ResultPage({ onHome, onOpenThreshold, onOpenObjects }: { onHome:
         <dl><div><dt>Artifact ID</dt><dd>{summary.artifact_id}</dd></div><div><dt>Result ID</dt><dd>{summary.result_id}</dd></div><div><dt>Уровень оценки</dt><dd>{summary.evaluation_level}</dd></div><div><dt>Время выполнения</dt><dd>{summary.runtime_seconds === null ? '—' : `${numberFormat.format(summary.runtime_seconds)} с`}</dd></div></dl>
       </details>
     </div>}
-  </main></div>
+  </main>
 }
 
 function SummaryFact({ icon, label, value, detail }: { icon: 'algorithm' | 'table' | 'chart' | 'layers' | 'clock'; label: string; value: string; detail?: string }) {
@@ -132,7 +236,13 @@ function SummaryFact({ icon, label, value, detail }: { icon: 'algorithm' | 'tabl
 }
 
 function PanelHeading({ title, icon, action, badge, onAction }: { title: string; icon?: 'info'; action?: string; badge?: string; onAction?: () => void }) {
-  return <div className="result-panel-heading"><h2>{title}{icon && <span className="result-heading-info" title={title}><Icon name={icon} size={17} /></span>}</h2>{badge && <span className="result-heading-badge">{badge}</span>}{action && <button className="result-heading-action" disabled={!onAction} onClick={onAction} title={onAction ? undefined : unavailable} aria-label={onAction ? `${action}: ${title}` : `${action} о разделе «${title}». ${unavailable}`}>{action} <Icon name="arrow" size={15} /></button>}</div>
+  return <div className="result-panel-heading"><h2>{title}{icon && <span className="result-heading-info" title={title}><Icon name={icon} size={17} /></span>}</h2>{badge && <span className="result-heading-badge">{badge}</span>}{action && <button className="tertiary-action result-heading-action" disabled={!onAction} onClick={onAction} title={onAction ? undefined : unavailable} aria-label={onAction ? `${action}: ${title}` : `${action} о разделе «${title}». ${unavailable}`}>{action} <Icon name="arrow" size={15} /></button>}</div>
+}
+
+function CapturePanelHeading() {
+  const [tooltipVisible, setTooltipVisible] = useState(false)
+  const tooltipId = 'capture-chart-tooltip'
+  return <div className="result-panel-heading capture-panel-heading"><h2>Сколько событий находим<button type="button" className="capture-info-trigger" aria-label="Как читать график охвата событий" aria-describedby={tooltipId} onMouseEnter={() => setTooltipVisible(true)} onMouseLeave={() => setTooltipVisible(false)} onFocus={() => setTooltipVisible(true)} onBlur={() => setTooltipVisible(false)} onKeyDown={event => { if (event.key === 'Escape') { setTooltipVisible(false); event.currentTarget.blur() } }}><Icon name="info" size={15} /></button></h2><div id={tooltipId} className="capture-info-tooltip" role="tooltip" hidden={!tooltipVisible}><strong>Как читать график</strong><p>По оси X — доля объектов с наибольшими оценками модели в OOF-проверке, включённых в выборку. По оси Y — накопленная доля фактических целевых событий, найденных среди этих объектов.</p><p>График помогает понять, насколько целевые события концентрируются в верхней части ранжирования модели. На небольших выборках линия может быть ступенчатой: доля найденных событий меняется только при добавлении очередного объекта с целевым событием.</p><p>Отмеченная точка показывает конкретное сочетание доли объектов и доли найденных событий. Она не является автоматически лучшим порогом или бизнес-решением.</p></div></div>
 }
 
 function Metric({ label, value, bar, tone }: { label: string; value: string; bar?: number; tone?: 'negative' | 'warning' }) {
@@ -140,10 +250,62 @@ function Metric({ label, value, bar, tone }: { label: string; value: string; bar
   return <div className={`result-metric${tone ? ` ${tone}` : ''}`}><small>{label}</small><strong>{value}</strong>{boundedBar !== null && <span className="result-metric-track"><i style={{ width: `${boundedBar * 100}%` }} /></span>}</div>
 }
 
-function ErrorCountRow({ label, count, tone }: { label: string; count: string; tone: 'negative' | 'warning' }) {
-  return <div className={`result-error-count-row tone-${tone}`}><div><small>{label}</small><strong>{count}</strong></div></div>
+function CaptureChart({ capture }: { capture: ResultCapture | undefined }) {
+  if (!capture || capture.total_positive_events === 0 || !capture.points.length) {
+    return <div className="result-capture-empty"><Icon name="info" size={18} /><p>В выборке нет целевых событий для построения кривой охвата.</p></div>
+  }
+  const line = capture.points
+    .map((point, index) => {
+      const x = point.object_share * 100
+      const y = 100 - point.event_share * 100
+      return index === 0 ? `M ${x} ${y}` : `H ${x} V ${y}`
+    })
+    .join(' ')
+  const marker = capture.marker
+
+  return <div className="result-capture-chart">
+    <div className="result-capture-graphic" role="img" aria-label="Накопительная ступенчатая кривая найденных целевых событий по OOF-прогнозам">
+      <span className="result-capture-ytitle">Найдено событий, %</span>
+      <div className="result-capture-ylabels"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
+      <div className="result-capture-plot">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+          {[0, 25, 50, 75, 100].map(value => <line className="result-capture-grid" key={`h-${value}`} x1="0" x2="100" y1={value} y2={value} />)}
+          {[0, 25, 50, 75, 100].map(value => <line className="result-capture-grid" key={`v-${value}`} y1="0" y2="100" x1={value} x2={value} />)}
+          <path className="result-capture-line" d={line} />
+          {marker && <><line className="result-capture-marker-line" x1={marker.object_share * 100} x2={marker.object_share * 100} y1={100 - marker.event_share * 100} y2="100" /><circle className="result-capture-marker-dot" cx={marker.object_share * 100} cy={100 - marker.event_share * 100} r="2.7" /></>}
+        </svg>
+      </div>
+      <div className="result-capture-ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></div>
+      <span className="result-capture-xtitle">Доля объектов, %</span>
+    </div>
+    {marker && <p className="result-capture-readout"><strong>{percent(marker.object_share)} объектов</strong><span>→</span><strong>{percent(marker.event_share)} событий</strong></p>}
+  </div>
 }
 
-function ObjectFact({ icon, tone, label, value }: { icon: 'info'; tone: 'info'; label: string; value: string }) {
-  return <div className={`result-object-fact tone-${tone}`}><span className="result-object-fact-label"><Icon name={icon} size={15} /><small>{label}</small></span><strong>{value}</strong></div>
+function FeatureInfluencePreview({ explanation, status }: { explanation: GlobalOOFExplanation | null; status: GlobalPreviewStatus }) {
+  const features = explanation?.features.slice(0, 7) ?? []
+  const maxValue = Math.max(0, ...features.map(feature => Number.isFinite(feature.mean_abs_shap) ? feature.mean_abs_shap : 0))
+  return <div className="result-influence-content">
+    <div className="result-feature-preview">
+      {status === 'loading' || status === 'idle' || status === 'running' ? <div className="result-influence-loading" role="status" aria-live="polite"><span className="global-spinner result-influence-spinner" aria-hidden="true" /><span><strong>Отчет готовится...</strong><small>Расчёт влияния признаков может занять несколько минут.</small></span></div>
+        : status === 'changed' ? <p className="result-influence-state">Результат изменился. Обновите экран.</p>
+          : status === 'error' ? <p className="result-influence-state">Влияние признаков пока недоступно.</p>
+            : features.length ? features.map(feature => {
+              const value = Number.isFinite(feature.mean_abs_shap) ? feature.mean_abs_shap : 0
+              const width = maxValue > 0 ? Math.max(0, value) / maxValue * 100 : 0
+              return <div className="result-feature-row" key={feature.feature_id} title={`Ранг ${feature.rank}: ${feature.column_name}`}>
+                <span>{feature.column_name}</span><i><b style={{ width: `${width}%` }} /></i><strong>{metric(value)}</strong>
+              </div>
+            }) : <p className="result-influence-state">Нет признаков для отображения.</p>}
+    </div>
+    <aside><Icon name="info" size={18} /><p>Показывает, какие признаки в среднем сильнее влияли на оценки модели. Это описание поведения модели, а не доказательство причинного влияния.</p></aside>
+  </div>
+}
+
+function ErrorCountRow({ label, count, rate, tone }: { label: string; count: string; rate: string; tone: 'negative' | 'warning' }) {
+  return <div className={`result-error-count-row tone-${tone}`}><div><small>{label}</small><strong>{count}</strong></div><span className="result-error-rate">{rate}</span></div>
+}
+
+function ObjectFact({ icon, tone, label, value, unavailable: isUnavailable }: { icon: 'alert-circle' | 'warning' | 'info'; tone: 'negative' | 'warning' | 'info'; label: string; value: string; unavailable?: boolean }) {
+  return <div className={`result-object-fact tone-${tone}`} title={isUnavailable ? 'Данные пока не подключены.' : undefined}><span className="result-object-fact-label"><Icon name={icon} size={15} /><small>{label}</small></span><strong>{value}</strong></div>
 }

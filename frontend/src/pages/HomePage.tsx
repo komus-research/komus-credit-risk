@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react'
-import { startNewAnalysis, type NativeSession } from '../api/session'
+import { useEffect } from 'react'
+import type { NativeSession } from '../api/session'
 import { Icon } from '../components/Icon'
-import { Sidebar } from '../components/Sidebar'
 
 const asset = (path: string) => `/native-assets/${path}`
 
@@ -12,26 +11,13 @@ const summary = [
   ['check', 'Завершённых проектов'],
 ] as const
 
-export function HomePage({ session, onContinue }: { session: NativeSession | null; onContinue: () => void }) {
-  const [confirming, setConfirming] = useState(false)
-  const [starting, setStarting] = useState(false)
+export function HomePage({ session, onContinue, onStartNewAnalysis, startingNewAnalysis }: { session: NativeSession | null; onContinue: () => void; onStartNewAnalysis: () => void; startingNewAnalysis: boolean }) {
   useEffect(() => {
     document.body.classList.add('home-v2-route')
     return () => document.body.classList.remove('home-v2-route')
   }, [])
 
-  const beginNewAnalysis = (confirmReset = false) => {
-    setStarting(true)
-    void startNewAnalysis(confirmReset).then(result => {
-      if (result.status === 'CONFIRMATION_REQUIRED') setConfirming(true)
-      else window.location.hash = result.resume_route
-    }).finally(() => setStarting(false))
-  }
-
   return (
-    <div className="app-shell home-shell">
-      <Sidebar active="home" onHome={() => undefined} onNewAnalysis={() => beginNewAnalysis()} />
-
       <main className="workspace">
         <header className="topbar">
           <div className="page-heading"><h1>Главная</h1><p>Проекты, модели и последние действия</p></div>
@@ -40,7 +26,7 @@ export function HomePage({ session, onContinue }: { session: NativeSession | nul
               <Icon name="search" size={23} />
               <input disabled placeholder="Поиск проектов и моделей..." aria-label="Поиск проектов и моделей — пока недоступен" title="Поиск станет доступен после подключения истории и каталога моделей" />
             </label>
-            <button className="primary-action" disabled={starting} onClick={() => beginNewAnalysis()}><Icon name="plus" size={27} />Новый анализ</button>
+            <button className="primary-action" disabled={startingNewAnalysis} onClick={onStartNewAnalysis}><Icon name="plus" size={27} />Новый анализ</button>
           </div>
         </header>
 
@@ -51,7 +37,7 @@ export function HomePage({ session, onContinue }: { session: NativeSession | nul
         </section>
 
         <section className="panel quick-start"><h2>Быстрый старт</h2><div className="quick-grid">
-          <FutureAction icon="plus" title="Новый анализ" description="Загрузить данные и начать новый анализ" accent onClick={() => beginNewAnalysis()} disabled={starting} />
+          <FutureAction icon="plus" title="Новый анализ" description="Загрузить данные и начать новый анализ" accent onClick={onStartNewAnalysis} disabled={startingNewAnalysis} />
           <FutureAction icon="box" title="Открыть модель" description="Использовать сохранённую модель без повторного обучения" />
           {session?.analysis_active
             ? <FutureAction icon="menu" title="Продолжить текущий анализ" description="Вернуться к активному анализу" accent onClick={onContinue} disabled={false} />
@@ -67,8 +53,6 @@ export function HomePage({ session, onContinue }: { session: NativeSession | nul
 
         <section className="panel projects-panel models-panel"><PanelTitle title="Сохранённые модели" actionLabel="Все модели" /><DataTable columns={['Название модели', 'Алгоритм', 'Версия', 'Дата обучения', 'Датасет', 'Признаков', 'Gini', 'ROC-AUC', 'PR-AUC', 'Статус']} empty="Каталог сохранённых моделей пока не подключён" className="models-table" /></section>
       </main>
-      {confirming && <div className="native-modal-backdrop" role="presentation"><section className="native-modal" role="dialog" aria-modal="true" aria-labelledby="new-analysis-title"><h2 id="new-analysis-title">Начать новый анализ?</h2><p>Текущие неподтверждённые данные будут сброшены.</p><div><button className="secondary-action" onClick={() => setConfirming(false)}>Отмена</button><button className="primary-action" disabled={starting} onClick={() => { setConfirming(false); beginNewAnalysis(true) }}>Начать новый</button></div></section></div>}
-    </div>
   )
 }
 

@@ -30,11 +30,28 @@ export async function startNewAnalysis(confirmReset = false): Promise<NewAnalysi
   return response.json() as Promise<NewAnalysisResponse>
 }
 
+export type PreparationWarning = {
+  code: string
+  severity: 'WARNING' | 'INFO'
+  scope: 'COLUMN' | 'DATASET'
+  column_name: string | null
+  detected_reasons: string[]
+  detected_requires_confirmation: boolean
+  resolution_state: 'ACTION_REQUIRED' | 'RESOLVED' | 'INFO'
+  resolution_code: string
+  subject_ru: string
+  title_ru: string
+  detail_ru: string
+  check_ru: string | null
+  resolution_note_ru: string | null
+  action: 'REVIEW_COLUMN' | 'REVIEW_TARGET' | 'REVIEW_IDENTIFIER' | 'REVIEW_DATASET' | null
+}
+
 export type DatasetPreparation = {
   source: { handle: string; display_name: string; format: string; size: number; rows: number; columns: number }
   draft: { target: string | null; positive_class: string | number | boolean | null; identifier: string | null }
   options: { columns: string[]; positive_classes: Array<string | number | boolean> }
-  summary: { permission_counts: Record<string, number>; warnings: string[]; actions: string[]; population_policy: string; population_policy_acknowledged: boolean }
+  summary: { permission_counts: Record<string, number>; warnings: PreparationWarning[]; warning_counts: { action_required: number; resolved: number; info: number }; actions: string[]; population_policy: string; population_policy_acknowledged: boolean }
 }
 
 export type DatasetInspectionProgress = {
@@ -154,7 +171,7 @@ export type QualityState = {
   settings: { folds: number; seed: number }
   plan: { status: 'IDLE' | 'VALID' | 'INVALID'; safe_validation_state: string }
   preflight: { status: 'IDLE' | 'RUNNING' | 'PASS' | 'FAIL'; identity: string | null; failure_code: string | null; message: string | null }
-  training: { status: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAIL'; stage: string | null; stage_label: string | null; fold_number: number | null; folds_total: number | null; artifact_id: string | null; failure_code: string | null; message: string | null }
+  training: { status: 'IDLE' | 'RUNNING' | 'COMPLETED' | 'FAIL'; stage: string | null; stage_label: string | null; fold_number: number | null; folds_total: number | null; artifact_id: string | null; failure_code: string | null; elapsed_seconds: number | null; message: string | null }
   can_start_training: boolean
 }
 async function qualityResponse(response: Response): Promise<QualityState> {

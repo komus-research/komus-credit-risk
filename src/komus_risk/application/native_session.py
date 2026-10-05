@@ -13,6 +13,7 @@ from math import isfinite
 from numbers import Real
 from secrets import token_urlsafe
 from threading import RLock
+from time import monotonic
 from typing import Any, Callable
 
 from .dataset_onboarding import InspectedDataset, PreparationDraft
@@ -155,6 +156,8 @@ class _NativeAnalysisSession:
     quality_training_folds_total: int | None = None
     quality_training_artifact_id: str | None = None
     quality_training_failure_code: str | None = None
+    quality_training_started_monotonic: float | None = None
+    quality_training_elapsed_seconds: float | None = None
     result_threshold: float = 0.5
 
     def snapshot(self) -> NativeSessionSnapshot:
@@ -654,6 +657,12 @@ class NativeSessionStore:
 
     @staticmethod
     def _quality_training_read_model(session: _NativeAnalysisSession) -> dict[str, Any]:
+        elapsed_seconds = session.quality_training_elapsed_seconds
+        if (
+            session.quality_training_status is QualityTrainingStatus.RUNNING
+            and session.quality_training_started_monotonic is not None
+        ):
+            elapsed_seconds = max(0.0, monotonic() - session.quality_training_started_monotonic)
         return {
             "status": session.quality_training_status.value,
             "stage": session.quality_training_stage,
@@ -661,6 +670,7 @@ class NativeSessionStore:
             "folds_total": session.quality_training_folds_total,
             "artifact_id": session.quality_training_artifact_id,
             "failure_code": session.quality_training_failure_code,
+            "elapsed_seconds": elapsed_seconds,
         }
 
     def begin_quality_training(self, session_id: str, *, default_seed: int, default_folds: int) -> tuple[str, tuple[str, tuple[str, ...], str, str, dict[str, Any], int, int, str]]:
@@ -685,6 +695,8 @@ class NativeSessionStore:
             session.quality_training_folds_total = session.quality_folds
             session.quality_training_artifact_id = None
             session.quality_training_failure_code = None
+            session.quality_training_started_monotonic = monotonic()
+            session.quality_training_elapsed_seconds = None
             captured = (
                 session.prepared_context_id,
                 session.selected_feature_ids,
@@ -724,6 +736,7 @@ class NativeSessionStore:
             session.quality_training_stage = "completed"
             session.quality_training_artifact_id = artifact_id
             session.quality_training_failure_code = None
+            self._freeze_quality_training_elapsed(session)
             session.quality_training_operation_token = None
             session.quality_completed = True
             return True
@@ -740,8 +753,17 @@ class NativeSessionStore:
             session.quality_training_status = QualityTrainingStatus.FAIL
             session.quality_training_artifact_id = None
             session.quality_training_failure_code = failure_code
+            self._freeze_quality_training_elapsed(session)
             session.quality_training_operation_token = None
             return True
+
+    @staticmethod
+    def _freeze_quality_training_elapsed(session: _NativeAnalysisSession) -> None:
+        if session.quality_training_started_monotonic is None:
+            return
+        session.quality_training_elapsed_seconds = max(
+            0.0, monotonic() - session.quality_training_started_monotonic
+        )
 
     def set_quality_settings(self, session_id: str, *, seed: int, folds: int) -> NativeSessionSnapshot:
         with self._lock:
@@ -895,6 +917,8 @@ class NativeSessionStore:
         session.quality_training_folds_total = None
         session.quality_training_artifact_id = None
         session.quality_training_failure_code = None
+        session.quality_training_started_monotonic = None
+        session.quality_training_elapsed_seconds = None
         session.result_threshold = 0.5
 
     def _require_quality(self, session_id: str) -> _NativeAnalysisSession:

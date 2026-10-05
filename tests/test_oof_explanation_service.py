@@ -5,7 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+import json
 import unittest
+from unittest.mock import patch
+import threading
 
 import numpy as np
 
@@ -17,6 +20,7 @@ from komus_risk.application import (
 from komus_risk.application.local_explanation import (
     LocalExplanationEvidence,
     LocalFeatureContribution,
+    NATIVE_SHAP_NUMERICAL_PROFILES,
 )
 from komus_risk.artifacts import ExperimentArtifactStore
 from komus_risk.contracts import DatasetContract, ExperimentConfig, ExperimentResult
@@ -34,6 +38,7 @@ from komus_risk.model_platform import (
     SmokePolicy,
     SmokeStatus,
 )
+from komus_risk.model_platform.explainability import OOFShapChunkAggregate, OOFPredictionReplayMismatch
 from komus_risk.models.gbdt.native import NativePredictor
 
 
@@ -93,6 +98,8 @@ class _ExplanationProvider:
         self.missing_feature = missing_feature
         self.shap_by_row = shap_by_row or {}
         self.calls: list[tuple[str, ...]] = []
+        self.aggregate_calls: list[tuple[int, tuple[int, ...]]] = []
+        self.aggregate_background_hashes: list[tuple[int, str]] = []
         self.feature_orders: list[tuple[str, ...]] = []
 
     def explain(self, **kwargs):  # pragma: no cover - service must use batch path
@@ -182,6 +189,41 @@ class _ExplanationProvider:
                 evidence_hash=stable_hash(row_payload),
             ))
         return tuple(returned)
+
+    def aggregate_oof_chunk(self, *, loaded_model_version, prediction_batch, feature_matrix,
+                            persisted_oof_probabilities, row_positions, explanation_context):
+        positions = tuple(int(value) for value in row_positions)
+        self.aggregate_calls.append((len(positions), positions))
+        self.aggregate_background_hashes.append((int(explanation_context.fold_id), explanation_context.background_hash))
+        hook = getattr(self, "aggregate_hook", None)
+        if hook is not None:
+            hook(int(explanation_context.fold_id), positions)
+        matrix = np.asarray(feature_matrix, dtype=float)
+        batch = np.asarray(prediction_batch.validated_feature_values, dtype=float)
+        if not np.array_equal(matrix, batch) or positions != tuple(row.source_row_position for row in prediction_batch.rows):
+            raise ValueError("chunk binding mismatch")
+        replayed = loaded_model_version.predictor.predict_positive_proba(feature_matrix)
+        if not np.isclose(replayed, persisted_oof_probabilities, rtol=1e-12, atol=1e-12).all():
+            raise OOFPredictionReplayMismatch("persisted replay mismatch")
+        feature_ids = tuple(loaded_model_version.metadata["feature_ids"])
+        sums = np.zeros(len(feature_ids), dtype=float)
+        for row in prediction_batch.rows:
+            shap = self.shap_by_row.get(row.source_row_position)
+            if shap is None:
+                shap = {feature_ids[0]: float(row.probability)} if len(feature_ids) == 1 else {feature_id: 0.0 for feature_id in feature_ids}
+            sums += np.asarray([abs(float(shap[feature_id])) for feature_id in feature_ids])
+        profile = NATIVE_SHAP_NUMERICAL_PROFILES[self.model_id]
+        return OOFShapChunkAggregate(
+            row_count=len(positions), sum_abs_shap=tuple(sums),
+            provider_id=self.descriptor.provider_id, provider_version=self.descriptor.provider_version,
+            explanation_method_id=self.descriptor.provider_id, explanation_method_version=self.descriptor.provider_version,
+            aggregation_method_id="sum_absolute_shap", aggregation_method_version="1",
+            numerical_validation_profile_id=profile.profile_id, numerical_validation_profile_version=profile.version,
+            output_space="raw_margin", model_binding_id=explanation_context.model_binding_id,
+            feature_binding_hash=loaded_model_version.metadata["feature_set_hash"],
+            background_policy_id=explanation_context.background_policy_id,
+            background_hash=explanation_context.background_hash,
+        )
 
     @staticmethod
     def assert_bound(row_ids, batch, context, summary):
@@ -312,10 +354,22 @@ class OOFExplanationServiceTests(unittest.TestCase):
         )
         self.assertEqual(result.fold_model_binding_ids, repeated.fold_model_binding_ids)
         self.assertEqual(result.evidence_hash, repeated.evidence_hash)
-        # Artifact publication reloads all three folds once; each aggregate
-        # invocation then reloads all three exact persisted fold models.
-        self.assertEqual(9, self.persistence_provider.load_calls)
-        self.assertEqual((4, 2, 1, 4, 2, 1), tuple(len(call) for call in self.explanation_provider.calls))
+        # The first derivation visits each fold once; the second reads persisted evidence.
+        self.assertEqual(6, self.persistence_provider.load_calls)
+        self.assertEqual((4, 2, 1), tuple(size for size, _ in self.explanation_provider.aggregate_calls))
+        self.assertEqual([], self.explanation_provider.calls)
+        self.assertEqual(tuple(range(7)), tuple(sorted(
+            position for _, positions in self.explanation_provider.aggregate_calls for position in positions
+        )))
+        derived_root = Path(self.temp.name) / "derived" / "global-oof-v1"
+        self.assertEqual(1, len(tuple(derived_root.glob("*/manifest.json"))))
+        self.assertEqual(1, len(tuple(derived_root.glob("*/result.json"))))
+        manifest = json.loads(next(derived_root.glob("*/manifest.json")).read_text(encoding="utf-8"))
+        actual_backgrounds = manifest["identity"]["fold_background_hashes"]
+        self.assertEqual(
+            actual_backgrounds,
+            [[fold, digest] for fold, digest in self.explanation_provider.aggregate_background_hashes[:3]],
+        )
 
     def test_global_oof_replay_feature_and_provider_fail_closed(self) -> None:
         mismatch_service = OOFExplanationService(
@@ -324,10 +378,12 @@ class OOFExplanationServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(OOFExplanationError, "OOF_PREDICTION_MISMATCH"):
             mismatch_service.global_oof(self.artifact.artifact_id)
 
+        no_aggregate_provider = _ExplanationProvider()
+        no_aggregate_provider.aggregate_oof_chunk = None
         bad_feature_service = OOFExplanationService(
-            self.store, _Registry(self.persistence_provider, _ExplanationProvider(wrong_feature=True))
+            self.store, _Registry(self.persistence_provider, no_aggregate_provider)
         )
-        with self.assertRaisesRegex(OOFExplanationError, "GLOBAL_OOF_EXPLANATION_INCOMPATIBLE"):
+        with self.assertRaisesRegex(OOFExplanationError, "GLOBAL_OOF_EXPLANATION_UNSUPPORTED"):
             bad_feature_service.global_oof(self.artifact.artifact_id)
 
         unsupported_registry = _Registry(self.persistence_provider, self.explanation_provider)
@@ -335,6 +391,45 @@ class OOFExplanationServiceTests(unittest.TestCase):
         unsupported_service = OOFExplanationService(self.store, unsupported_registry)
         with self.assertRaisesRegex(OOFExplanationError, "GLOBAL_OOF_EXPLANATION_UNSUPPORTED"):
             unsupported_service.global_oof(self.artifact.artifact_id)
+
+    def test_repeated_status_reads_reuse_resolved_artifact_identity(self) -> None:
+        self.service.global_oof(self.artifact.artifact_id)
+        service = OOFExplanationService(self.store, self.registry)
+        with patch.object(service, "_global_operation_spec", wraps=service._global_operation_spec) as build_spec:
+            first = service.global_oof_status(self.artifact.artifact_id)
+            second = service.global_oof_status(self.artifact.artifact_id)
+        self.assertEqual("READY", first.status)
+        self.assertEqual("READY", second.status)
+        self.assertEqual(1, build_spec.call_count)
+
+    def test_fold_transition_is_reported_before_first_chunk_finishes(self) -> None:
+        entered = threading.Event()
+        release = threading.Event()
+        provider = _ExplanationProvider()
+        def hold_fold_two(fold_number, positions):
+            if fold_number == 2:
+                entered.set()
+                release.wait(5)
+        provider.aggregate_hook = hold_fold_two
+        service = OOFExplanationService(self.store, _Registry(self.persistence_provider, provider))
+        errors = []
+        worker = threading.Thread(target=lambda: self._capture_global_error(service, errors))
+        worker.start()
+        self.assertTrue(entered.wait(5))
+        status = service.global_oof_status(self.artifact.artifact_id)
+        self.assertEqual("PROCESSING_FOLD", status.stage)
+        self.assertEqual(2, status.current_fold)
+        self.assertEqual(4, status.processed_rows)
+        release.set()
+        worker.join(10)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual([], errors)
+
+    def _capture_global_error(self, service, errors):
+        try:
+            service.global_oof(self.artifact.artifact_id)
+        except Exception as error:
+            errors.append(error)
 
     def test_global_oof_accepts_shap_ranked_multifeature_order(self) -> None:
         feature_ids = ("feature-0", "feature-1", "feature-2")
@@ -362,12 +457,8 @@ class OOFExplanationServiceTests(unittest.TestCase):
 
         self.assertEqual(feature_ids, output.oof_evidence.feature_ids)
         self.assertEqual(feature_ids, output.oof_evidence.feature_columns)
-        # The provider returns SHAP-ranked order feature-2, feature-0,
-        # feature-1 for the first row. Aggregate order follows mean magnitude.
-        self.assertEqual(
-            ("feature-2", "feature-0", "feature-1"),
-            explanation_provider.feature_orders[0],
-        )
+        # Aggregate order follows row-weighted mean magnitude.
+        self.assertEqual(3, len(explanation_provider.aggregate_calls))
         self.assertEqual(
             (("feature-1", "feature-1"), ("feature-0", "feature-0"), ("feature-2", "feature-2")),
             tuple((item.feature_id, item.column_name) for item in result.features),
@@ -375,20 +466,6 @@ class OOFExplanationServiceTests(unittest.TestCase):
         self.assertAlmostEqual(5.0 / 7, result.features[0].mean_abs_shap)
         self.assertAlmostEqual(1.8 / 7, result.features[1].mean_abs_shap)
         self.assertAlmostEqual(1.5 / 7, result.features[2].mean_abs_shap)
-
-        for invalid_provider in (
-            _ExplanationProvider(shap_by_row=shap_by_row, wrong_column=True),
-            _ExplanationProvider(shap_by_row=shap_by_row, duplicate_feature=True),
-            _ExplanationProvider(shap_by_row=shap_by_row, missing_feature=True),
-        ):
-            with self.subTest(provider=(invalid_provider.wrong_column, invalid_provider.duplicate_feature, invalid_provider.missing_feature)):
-                invalid_service = OOFExplanationService(
-                    store, _Registry(provider, invalid_provider)
-                )
-                with self.assertRaisesRegex(
-                    OOFExplanationError, "GLOBAL_OOF_EXPLANATION_INCOMPATIBLE"
-                ):
-                    invalid_service.global_oof(artifact.artifact_id)
 
     @staticmethod
     def _artifact_parts(feature_ids=("score",)):

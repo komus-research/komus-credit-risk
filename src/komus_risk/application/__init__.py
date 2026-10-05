@@ -34,6 +34,11 @@ from .oof_explanation import (
     OOFExplanationError,
     OOFExplanationService,
 )
+from .global_oof_operation import (
+    GlobalOOFDerivedStore,
+    GlobalOOFOperationService,
+    GlobalOOFOperationSnapshot,
+)
 from .model_training import FinalModelTrainingService
 from .native_session import (
     NativeSessionSnapshot,
@@ -94,6 +99,9 @@ __all__ = [
     "OOFExplanationService",
     "GlobalOOFExplanation",
     "GlobalOOFFeatureImportance",
+    "GlobalOOFDerivedStore",
+    "GlobalOOFOperationService",
+    "GlobalOOFOperationSnapshot",
     "NativeSessionSnapshot",
     "NativeSessionStore",
     "FeatureSelectionError",

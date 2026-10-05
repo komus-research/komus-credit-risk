@@ -76,14 +76,23 @@ Canonical downstream flow:
 
 - Данные / Файл — UX/VISUAL LOCK;
 - Данные / Роли колонок — UX/VISUAL LOCK;
-- Данные / Подтверждение — UX/VISUAL LOCK;
+- Данные / Подтверждение — UX/VISUAL LOCK V2 (`docs/design/screens/new-analysis/02_data_confirmation_v2.png`);
 - Native Features V1 — CLOSED / ACCEPTED;
 - Native Algorithm V2 — CLOSED / ACCEPTED, source commit `e85994017fd08c1dadede0694700f1847cf72f2b`;
 - Connect Algorithm V1 — PRODUCT / VISUAL LOCK ACCEPTED, backend implementation pending; один flow из `Новый анализ → Алгоритм` и `Модели`;
 - Models UX V1 — PRODUCT / VISUAL LOCK ACCEPTED, backend implementation pending; Models Hub + Algorithm Detail + optional Metric Highlight + ModelVersion Detail + Saved Model Inference;
-- Quality V1 — UX/VISUAL LOCK ACCEPTED, next implementation stage.
+- Quality V1 semantics — UX ACCEPTED; primary visual lock обновлён до Quality V2 (`docs/design/screens/new-analysis/05_quality_v2.png`).
 
 Quality V1 использует автоматический backend preflight и одну primary CTA **«Начать обучение»**; technical smoke не является quality verdict.
+
+Cross-cutting native UI visual authority:
+
+- Buttons — `docs/design/components/buttons/02_button_system_v2.png`;
+- Data Warnings — `docs/design/components/data-warnings/01_data_warnings_v2.png`;
+- Sidebar — `docs/design/components/sidebar/01_sidebar_final_v1.png` с явным исключением fake profile/auth footer;
+- Long Operations — `docs/design/components/long-operations/01_long_operations_v1.png`.
+
+Эти locks применяются при реализации, не меняя action/backend/scientific semantics. Runtime ещё не объявлен полностью приведённым к новым visual locks.
 
 ## Active backend workstreams
 
@@ -127,8 +136,8 @@ Gap закрыт: Materializer V2 переносит trusted Analyzer technical 
 2. Feature Grouping Propagation V1 — **CLOSED / ACCEPTED**.
 3. Native Features V1 — **CLOSED / ACCEPTED**.
 4. Native Algorithm V2 — **CLOSED / ACCEPTED**.
-5. Native Quality V1 — **NEXT**, UX/VISUAL LOCK ACCEPTED.
-6. Затем `Результат` и финальный native product E2E.
+5. Native Quality semantics / full training — **CLOSED / ACCEPTED**; visual polish идёт по `05_quality_v2.png` и Long Operations V1.
+6. Immediate corrective priority — Global OOF Explanation reliability/performance на реальном большом XGBoost artifact; затем продолжается оставшийся Result/native product work.
 
 ## Later
 

@@ -16,6 +16,7 @@ from komus_risk.application import (
 from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
 from komus_risk.application.history import AnalysisHistoryService
 from komus_risk.application.oof_explanation import OOFExplanationService
+from komus_risk.application.global_oof_operation import GlobalOOFDerivedStore, GlobalOOFOperationService
 from komus_risk.application.oof_result import OOFResultService
 from komus_risk.comparison import ExperimentComparisonService
 from komus_risk.model_platform import builtin_model_presentation_registry
@@ -29,6 +30,7 @@ class NativeExperimentRuntime:
     application_service: ExperimentApplicationService
     oof_result_service: OOFResultService
     oof_explanation_service: OOFExplanationService
+    global_oof_operation_service: GlobalOOFOperationService
     analysis_history_service: AnalysisHistoryService
     artifact_store: ExperimentArtifactStore
     integration_workflow_service: IntegrationWorkflowService
@@ -44,6 +46,7 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
     store_root = _repository_root() / ".axion-artifacts"
     code_version = "native-quality-v1a"
     artifact_store = ExperimentArtifactStore(store_root)
+    global_oof_operation_service = GlobalOOFOperationService(GlobalOOFDerivedStore(store_root))
     persistence_provider_registry = plugins.persistence_providers
     if persistence_provider_registry is None:  # pragma: no cover - builtin invariant
         raise RuntimeError("Builtin model plugins require persistence providers.")
@@ -88,7 +91,8 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
             prepared_context_authority=authority,
         ),
         oof_result_service=OOFResultService(artifact_store),
-        oof_explanation_service=OOFExplanationService(artifact_store, plugins),
+        oof_explanation_service=OOFExplanationService(artifact_store, plugins, global_oof_operation_service),
+        global_oof_operation_service=global_oof_operation_service,
         analysis_history_service=AnalysisHistoryService(artifact_store),
         artifact_store=artifact_store,
         integration_workflow_service=integration_workflow_service,

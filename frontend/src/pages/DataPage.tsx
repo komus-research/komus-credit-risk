@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState, type ReactElement } from 'react'
-import { confirmDatasetPreparation, getDatasetPreparation, getDatasetProgress, getNativeSession, isDatasetNotUploaded, patchDatasetDraft, returnToDatasetRoles, reviewDatasetPreparation, type DatasetInspectionProgress, type DatasetPreparation, uploadDataset } from '../api/session'
+import { useEffect, useId, useRef, useState, type ReactElement } from 'react'
+import { confirmDatasetPreparation, getDatasetPreparation, getDatasetProgress, getNativeSession, isDatasetNotUploaded, patchDatasetDraft, returnToDatasetRoles, reviewDatasetPreparation, type DatasetInspectionProgress, type DatasetPreparation, type PreparationWarning, uploadDataset } from '../api/session'
 import { Icon } from '../components/Icon'
-import { Sidebar } from '../components/Sidebar'
 import { navigate, routes, type CanonicalRoute } from '../routing'
 
 const permissionLabels: Record<string, string> = {
@@ -14,7 +13,7 @@ const roleCards = [
 ] as const
 const inspectionStages = ['RECEIVING_FILE', 'STAGING_FILE', 'READING_SOURCE', 'INSPECTING_DATASET', 'ANALYZING_PREPARATION']
 
-export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onStaleSession, recoveryMessage }: { route: CanonicalRoute; sessionReady: boolean; onHome: () => void; onDatasetUploaded: () => void; onStaleSession: () => void; recoveryMessage: string | null }) {
+export function DataPage({ route, sessionReady, onDatasetUploaded, onStaleSession, recoveryMessage }: { route: CanonicalRoute; sessionReady: boolean; onDatasetUploaded: () => void; onStaleSession: () => void; recoveryMessage: string | null }) {
   const [preparation, setPreparation] = useState<DatasetPreparation | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -96,13 +95,10 @@ export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onSta
     })()
   }
 
-  if (route === routes.features) return <FeaturesBoundary onHome={onHome} />
-  if (route === routes.confirmation) return <ConfirmationShell preparation={preparation} busy={busy} setBusy={setBusy} setError={setError} onBack={backToRoles} onHome={onHome} />
+  if (route === routes.features) return <FeaturesBoundary />
+  if (route === routes.confirmation) return <ConfirmationShell preparation={preparation} busy={busy} setBusy={setBusy} setError={setError} onBack={backToRoles} />
 
-  return <div className="app-shell data-shell">
-    <Sidebar active="analysis" onHome={onHome} />
-
-    <main className="workspace data-workspace">
+  return <main className="workspace data-workspace">
       <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index === 0 ? 'active' : ''}><span>{index + 1}</span>{name}</li>)}</ol></div>
       <header className="data-header"><h1>Подготовка данных</h1><p>Загрузите набор данных и проверьте, как система определила роли его колонок.</p></header>
       <ol className="data-stepper" aria-label="Этапы подготовки данных">{['Файл', 'Роли колонок', 'Подтверждение'].map((name, index) => {
@@ -119,11 +115,9 @@ export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onSta
         </section>
 
         <section className="key-roles panel"><div className="section-heading"><h2>Ключевые роли</h2><p>Укажите, какие колонки являются целевой, идентификатором и какое значение считается целевым событием.</p></div><div className="role-grid">{roleCards.map(role => <RoleControl key={role.key} role={role} preparation={preparation} busy={busy} update={update} />)}</div></section>
-        <section className="attention-section panel"><div className="section-heading attention-heading"><span className="attention-icon">!</span><div><h2>Требуют внимания{preparation.summary.warnings.length ? ` — ${preparation.summary.warnings.length}` : ''}</h2><p>{preparation.summary.warnings.length ? 'Проверьте замечания перед подтверждением ролей колонок.' : 'Нет замечаний, требующих решения'}</p></div></div>{preparation.summary.warnings.length > 0 && <div className="warning-list">{preparation.summary.warnings.map((warning, index) => <p key={`${warning}-${index}`}>{warning}</p>)}</div>}</section>
-        <section className="permission-summary panel"><div className="section-heading"><h2>Колонки без замечаний</h2><p>Сводка рассчитана по текущему черновику ролей.</p></div><div className="permission-counts">{Object.entries(preparation.summary.permission_counts).map(([key, value]) => <div key={key}><span>{permissionLabels[key]}</span><strong>{value}</strong></div>)}</div></section>
-        <section className="inert-section panel"><div><Icon name="menu" size={25} /><div><h2>Предпросмотр данных</h2><p>Содержимое набора данных пока не доступно в этом экране.</p></div></div><Icon name="arrow" size={20} /></section>
-        <section className="inert-section panel"><div><Icon name="settings" size={25} /><div><h2>Технические сведения</h2><p>Дополнительные параметры файла будут показаны здесь, когда станут доступны.</p></div></div><Icon name="arrow" size={20} /></section>
-        <footer className="data-footer"><button className="secondary-action" disabled>Назад</button><div><p>Проверьте роли колонок перед подтверждением.</p><button className="primary-action" disabled={busy || !preparation.draft.target || !preparation.draft.identifier || preparation.draft.positive_class === null} onClick={review}>Продолжить к подтверждению <Icon name="arrow" size={19} /></button></div></footer>
+        <WarningPanel key={preparation.source.handle} preparation={preparation} />
+        <section className="permission-summary panel"><div className="section-heading"><h2>Сводка по ролям</h2><p>Сводка рассчитана по текущему черновику ролей.</p></div><div className="permission-counts">{Object.entries(preparation.summary.permission_counts).map(([key, value]) => <div key={key}><span>{permissionLabels[key]}</span><strong>{value}</strong></div>)}</div></section>
+        <footer className="data-footer"><button className="back-action" disabled>← Назад</button><div><p>Проверьте роли колонок перед подтверждением.</p><button className="primary-action" disabled={busy || !preparation.draft.target || !preparation.draft.identifier || preparation.draft.positive_class === null} onClick={review}>Продолжить к подтверждению <Icon name="arrow" size={19} /></button></div></footer>
       </>}
       {(recoveryMessage || error) && <div className="data-error" role={error ? 'alert' : 'status'}>
         {recoveryMessage && <span>{recoveryMessage}</span>}
@@ -131,10 +125,74 @@ export function DataPage({ route, sessionReady, onHome, onDatasetUploaded, onSta
         {error && <span>{error}</span>}
       </div>}
     </main>
-  </div>
 }
 
 function Fact({ label, value }: { label: string; value: string }) { return <div><dt>{label}</dt><dd>{value}</dd></div> }
+function WarningPanel({ preparation }: { preparation: DatasetPreparation }) {
+  const [expanded, setExpanded] = useState(false)
+  const [resolvedOpen, setResolvedOpen] = useState(false)
+  const [infoOpen, setInfoOpen] = useState(false)
+  const { warnings, warning_counts: counts } = preparation.summary
+  const hasRequired = counts.action_required > 0
+  const groups = [
+    { state: 'ACTION_REQUIRED' as const, count: counts.action_required },
+    { state: 'RESOLVED' as const, count: counts.resolved },
+    { state: 'INFO' as const, count: counts.info },
+  ]
+  return <section className={`attention-section panel${hasRequired ? ' has-warnings' : ' all-resolved'}`}>
+    <div className="warning-panel-header">
+      <span className={`attention-icon${hasRequired ? '' : ' is-resolved'}`} aria-hidden="true">{hasRequired ? '!' : '✓'}</span>
+      <div className="warning-panel-copy"><h2>Проверка колонок</h2><p>{hasRequired ? 'Есть замечания, которые стоит проверить перед продолжением.' : 'Все замечания учтены'}</p>
+        <div className="warning-counts" aria-label="Сводка замечаний">
+          {counts.action_required > 0 && <span className="warning-count action"><b>! {counts.action_required}</b> требуют решения</span>}
+          {counts.resolved > 0 && <span className="warning-count resolved"><b>✓ {counts.resolved}</b> уже учтены</span>}
+          {counts.info > 0 && <span className="warning-count info"><b>ⓘ {counts.info}</b> информация</span>}
+        </div>
+      </div>
+      <button type="button" className="warning-panel-toggle" aria-expanded={expanded} aria-controls="preparation-warning-groups" onClick={() => setExpanded(value => !value)}>{expanded ? 'Скрыть' : 'Показать'}<span className={`warning-chevron${expanded ? ' open' : ''}`} aria-hidden="true" /></button>
+    </div>
+    {expanded && <div className="warning-list" id="preparation-warning-groups">
+      {groups.map(({ state, count }) => {
+        if (count === 0) return null
+        const items = warnings.filter(warning => warning.resolution_state === state)
+        if (state === 'ACTION_REQUIRED') return <section key={state} className="warning-group warning-group-action"><h3><span aria-hidden="true">!</span>Требуют решения — {count}</h3>{items.map((warning, index) => <WarningRow key={`${warning.code}-${warning.column_name ?? 'dataset'}-${index}`} warning={warning} state={state} />)}</section>
+        const isResolved = state === 'RESOLVED'
+        const open = isResolved ? resolvedOpen : infoOpen
+        const toggle = isResolved ? setResolvedOpen : setInfoOpen
+        return <section key={state} className={`warning-group warning-group-${state.toLowerCase()}`}>
+          <button type="button" className="warning-group-toggle" aria-expanded={open} onClick={() => toggle(value => !value)}><span className="warning-group-symbol" aria-hidden="true">{isResolved ? '✓' : 'ⓘ'}</span><span>{isResolved ? 'Уже учтено' : 'Информация'} — {count}</span><span className={`warning-chevron${open ? ' open' : ''}`} aria-hidden="true" /></button>
+          {open && <div className="warning-group-items">{items.map((warning, index) => <WarningRow key={`${warning.code}-${warning.column_name ?? 'dataset'}-${index}`} warning={warning} state={state} />)}</div>}
+        </section>
+      })}
+    </div>}
+  </section>
+}
+
+function WarningRow({ warning, state }: { warning: PreparationWarning; state: PreparationWarning['resolution_state'] }) {
+  if (state === 'ACTION_REQUIRED') return <article className="warning-row warning-row-action">
+    <span className="warning-marker" aria-hidden="true">!</span><div className="warning-row-content">
+      <div className="warning-row-main"><strong className="warning-subject">{warning.subject_ru}</strong><span className="warning-title">{warning.title_ru}</span><WarningTooltip warning={warning} /></div>
+      {warning.check_ru && <p className="warning-row-hint">{warning.check_ru}</p>}
+    </div>
+  </article>
+  if (state === 'RESOLVED') return <article className="warning-row warning-row-resolved"><span className="warning-marker" aria-hidden="true">✓</span><div className="warning-row-content"><strong className="warning-subject">{warning.subject_ru}</strong><p className="warning-title">{warning.title_ru}</p>{warning.resolution_note_ru && <p className="warning-resolution-note">{warning.resolution_note_ru}</p>}</div></article>
+  return <article className="warning-row warning-row-info"><span className="warning-marker" aria-hidden="true">ⓘ</span><div className="warning-row-content"><strong className="warning-subject">{warning.subject_ru}</strong><p className="warning-title">{warning.title_ru}</p><p className="warning-row-hint">{warning.detail_ru}</p></div></article>
+}
+
+function WarningTooltip({ warning }: { warning: PreparationWarning }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  useEffect(() => {
+    if (!open) return
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [open])
+  return <span className="warning-tooltip-wrap" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}>
+    <button type="button" className="warning-tooltip-button" aria-label={`Подробнее: ${warning.title_ru}`} aria-describedby={open ? id : undefined} onFocus={() => setOpen(true)}>ⓘ</button>
+    {open && <span className="warning-tooltip" id={id} role="tooltip"><strong>{warning.title_ru}</strong><span>Почему AXION обратил внимание</span><p>{warning.detail_ru}</p>{warning.check_ru && <><span>Что проверить</span><p>{warning.check_ru}</p></>}</span>}
+  </span>
+}
 function InspectionProgress({ progress, now }: { progress: DatasetInspectionProgress | null; now: number }) {
   const activeStage = progress?.stage ?? null
   const activeIndex = activeStage ? inspectionStages.indexOf(activeStage) : -1
@@ -161,7 +219,7 @@ function formatElapsed(milliseconds: number) { const seconds = Math.max(0, Math.
 function stageLabel(stage: string) { return ({ RECEIVING_FILE: 'Получаем файл', STAGING_FILE: 'Сохраняем временную копию', READING_SOURCE: 'Читаем таблицу', INSPECTING_DATASET: 'Проверяем структуру данных', ANALYZING_PREPARATION: 'Определяем роли колонок' } as Record<string, string>)[stage] ?? stage }
 function decodeValue(value: string, choices: Array<string | number | boolean>) { return choices.find(item => String(item) === value) ?? null }
 
-function ConfirmationShell({ preparation, busy, setBusy, setError, onBack, onHome }: { preparation: DatasetPreparation | null; busy: boolean; setBusy: (busy: boolean) => void; setError: (message: string | null) => void; onBack: () => void; onHome: () => void }) {
+function ConfirmationShell({ preparation, busy, setBusy, setError, onBack }: { preparation: DatasetPreparation | null; busy: boolean; setBusy: (busy: boolean) => void; setError: (message: string | null) => void; onBack: () => void }) {
   const [acknowledged, setAcknowledged] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const confirm = () => {
@@ -171,11 +229,9 @@ function ConfirmationShell({ preparation, busy, setBusy, setError, onBack, onHom
       setError(text); setMessage(text)
     }).finally(() => setBusy(false))
   }
-  if (!preparation) return <div className="app-shell data-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace data-workspace confirmation-workspace"><section className="upload-panel panel"><h2>Загружаем сведения о подготовке</h2></section></main></div>
+  if (!preparation) return <main className="workspace data-workspace confirmation-workspace"><section className="upload-panel panel"><h2>Загружаем сведения о подготовке</h2></section></main>
   const counts = preparation.summary.permission_counts
-  return <div className="app-shell data-shell">
-    <Sidebar active="analysis" onHome={onHome} />
-    <main className="workspace data-workspace confirmation-workspace">
+  return <main className="workspace data-workspace confirmation-workspace">
     <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index === 0 ? 'active' : ''}><span>{index + 1}</span>{name}</li>)}</ol></div>
     <header className="data-header"><h1>Подготовка данных</h1><p>Проверьте сведения о файле, ключевые роли и итог подготовки перед созданием контекста данных.</p></header>
     <ol className="data-stepper confirmation-stepper" aria-label="Этапы подготовки данных"><li className="completed"><span>✓</span>Файл</li><li className="completed"><span>✓</span>Роли колонок</li><li className="active"><span>3</span>Подтверждение</li></ol>
@@ -184,15 +240,13 @@ function ConfirmationShell({ preparation, busy, setBusy, setError, onBack, onHom
     <section className="confirmation-card confirmation-result panel"><h2>Итог подготовки</h2><p className="confirmation-total">{preparation.source.columns} колонок всего</p><div className="confirmation-count-grid">{[
       ['MODEL_ALLOWED', 'Признаки модели'], ['DIAGNOSTIC_ONLY', 'Не используются моделью напрямую'], ['TARGET', 'Целевая колонка'], ['IDENTIFIER', 'Идентификатор'], ['BLOCKED', 'Заблокировано'],
     ].filter(([key]) => key !== 'BLOCKED' || (counts[key] ?? 0) > 0).map(([key, label]) => <div key={key} className={`confirmation-count ${key.toLowerCase()}`}><strong>{counts[key] ?? 0}</strong><span>{label}</span></div>)}</div>
-      {preparation.summary.warnings.length > 0 && <div className="confirmation-warnings"><strong>Замечания</strong>{preparation.summary.warnings.map((warning, index) => <p key={`${warning}-${index}`}>{warning}</p>)}</div>}
       <div className="confirmation-policy"><p>Вся подтверждённая популяция используется для OOF-оценки. Защищённая финальная тестовая выборка на этом этапе не создаётся.</p><label><input type="checkbox" checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} /> Я понимаю и подтверждаю эту политику.</label></div>
     </section>
     {message && <div className="data-error confirmation-error" role="alert">{message}</div>}
-    <footer className="data-footer confirmation-footer" aria-busy={busy}><button className="secondary-action" disabled={busy} onClick={onBack}>Назад к ролям</button><div><button className="primary-action" aria-busy={busy} disabled={busy || !acknowledged} onClick={confirm}>{busy ? <><span className="confirmation-progress-spinner" aria-hidden="true" />Подготавливаем признаки…</> : <>Подтвердить и перейти к признакам <Icon name="arrow" size={19} /></>}</button></div></footer>
+    <footer className="data-footer confirmation-footer" aria-busy={busy}><button className="back-action" disabled={busy} onClick={onBack}>← Назад к ролям</button><div><button className="primary-action" aria-busy={busy} disabled={busy || !acknowledged} onClick={confirm}>{busy ? <><span className="confirmation-progress-spinner" aria-hidden="true" />Подготавливаем признаки…</> : <>Подтвердить и перейти к признакам <Icon name="arrow" size={19} /></>}</button></div></footer>
     </main>
-  </div>
 }
 
-function FeaturesBoundary({ onHome }: { onHome: () => void }) {
-  return <div className="app-shell"><main className="workspace data-workspace features-boundary"><p className="eyebrow">Новый анализ · Шаг 2</p><section className="panel"><Icon name="check" size={36} /><h1>Данные подготовлены</h1><p>Подтверждённый контекст создан на сервере. Выбор признаков будет доступен на следующем этапе.</p><button className="secondary-action" onClick={onHome}>На главную</button></section></main></div>
+function FeaturesBoundary() {
+  return <main className="workspace data-workspace features-boundary"><p className="eyebrow">Новый анализ · Шаг 2</p><section className="panel"><Icon name="check" size={36} /><h1>Данные подготовлены</h1><p>Подтверждённый контекст создан на сервере. Выбор признаков будет доступен на следующем этапе.</p><button className="secondary-action" onClick={() => navigate(routes.home)}>На главную</button></section></main>
 }

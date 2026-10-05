@@ -4,6 +4,8 @@
 
 Дата фиксации: **2026-09-30**
 
+Visual revision: **2026-10-04 / Quality V2**
+
 ## 1. Цель экрана
 
 Шаг 4 верхнеуровневого native flow:
@@ -22,7 +24,11 @@ Stepper сохраняет название **«Проверка качеств�
 
 ## 2. Источник истины
 
-Visual reference:
+Primary visual reference:
+
+`docs/design/screens/new-analysis/05_quality_v2.png`
+
+Previous accepted reference:
 
 `docs/design/screens/new-analysis/05_quality_v1.png`
 
@@ -132,7 +138,7 @@ FAIL state показывает безопасное русское объясн
 
 После matching preflight PASS и валидного experiment plan: **«Начать обучение»**.
 
-Это единственная primary CTA pre-run состояния.
+Это единственная primary CTA pre-run состояния. Её visual treatment определяется общим Button System V2: `docs/design/components/buttons/02_button_system_v2.png`; этот component lock не меняет preflight semantics, gate или текст действия.
 
 Не использовать `Проверить настройки`, `Начать обучение и проверку качества` или вторую конкурирующую primary action.
 
@@ -200,7 +206,9 @@ Final test не используется для выбора модели/при
 
 Допустимый человекочитаемый вид `Часть 1 из N` — только если номера/total реально пришли из progress event.
 
-Запрещены fake percentage, придуманный ETA и искусственный progress по таймеру.
+Общий visual presentation для training и других long operations берётся из `docs/design/components/long-operations/01_long_operations_v1.png`. Для настоящей долгой операции UI может показывать backend-derived stage, elapsed и discrete units/folds. Обычный read-only `LOADING` не получает elapsed/stages только ради анимации.
+
+Запрещены fake percentage, придуманный ETA и искусственный progress по таймеру. Номер fold не преобразуется автоматически в overall percentage.
 
 ## 13. Завершение
 
@@ -226,9 +234,13 @@ Stale `PreparedDatasetContext` fail-closed возвращает пользова
 
 ## 15. Visual lock
 
-Использовать `docs/design/screens/new-analysis/05_quality_v1.png`.
+Primary screen reference: `docs/design/screens/new-analysis/05_quality_v2.png`.
 
-Инварианты: общий AXION Sidebar из Home V2; Graphite / Emerald; тот же wizard header; summary сверху; central automatic preflight; крупный success block; collapsed `Дополнительные настройки`; collapsed `Технические сведения`; footer `Назад к алгоритму` + `Начать обучение`.
+Long-operation component: `docs/design/components/long-operations/01_long_operations_v1.png`.
+
+Инварианты: общий AXION shell; sidebar-specific visual lock — `docs/design/components/sidebar/01_sidebar_final_v1.png` без fake profile/auth footer; Graphite / Emerald; тот же wizard header; summary сверху; central automatic preflight; success block `Готово к запуску`; затем дополнительный вертикальный отступ; collapsed compact `Дополнительные настройки`; collapsed compact `Технические сведения`; footer `Назад к алгоритму` + `Начать обучение`.
+
+Secondary settings/details не должны растягиваться тяжёлыми full-width полосами только ради заполнения пространства; они выровнены между собой и визуально вторичны.
 
 Visual reference задаёт composition и hierarchy. Runtime values и states всегда берутся из backend contracts, а не из demo text PNG.
 

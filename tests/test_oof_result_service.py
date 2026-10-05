@@ -54,6 +54,58 @@ class OOFResultServiceTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaisesRegex(OOFResultError, "INVALID_THRESHOLD"):
                 self.service.threshold("artifact-v3", invalid)  # type: ignore[arg-type]
 
+    def test_capture_curve_uses_descending_scores_and_row_position_for_ties(self) -> None:
+        capture = self.service.summary("artifact-v3").capture
+
+        self.assertEqual(capture.total_positive_events, 3)
+        self.assertEqual((capture.points[0].object_share, capture.points[0].event_share), (0.0, 0.0))
+        self.assertEqual((capture.points[-1].object_share, capture.points[-1].event_share), (1.0, 1.0))
+        ordered_y_true = (0, 1, 1, 0, 0, 1)
+        for requested_percent, point in enumerate(capture.points[1:], start=1):
+            selected_count = min(6, math.ceil(6 * requested_percent / 100))
+            with self.subTest(requested_percent=requested_percent):
+                self.assertAlmostEqual(point.object_share, selected_count / 6)
+                self.assertAlmostEqual(
+                    point.event_share,
+                    sum(ordered_y_true[:selected_count]) / capture.total_positive_events,
+                )
+
+        # At 1%, one row is selected.  The two highest scores tie, and the
+        # smaller row_position (10, a negative target) must win the tie.
+        self.assertEqual(capture.points[1].object_share, 1 / 6)
+        self.assertEqual(capture.points[1].event_share, 0.0)
+        # At 17%, both tied rows are selected; the row at position 40 is positive.
+        self.assertEqual(capture.points[17].object_share, 2 / 6)
+        self.assertEqual(capture.points[17].event_share, 1 / 3)
+        self.assertIsNotNone(capture.marker)
+        self.assertEqual(capture.marker.object_share, 1 / 6)  # type: ignore[union-attr]
+        self.assertEqual(capture.marker.event_share, 0.0)  # type: ignore[union-attr]
+
+    def test_capture_curve_is_safely_unavailable_without_positive_events(self) -> None:
+        evidence = replace(
+            self.artifact.run_output.oof_evidence,
+            y_true=np.zeros(6, dtype=np.int64),
+        )
+        output = replace(
+            self.artifact.run_output,
+            oof_evidence=evidence,
+            result=replace(
+                self.artifact.run_output.result,
+                confusion={"threshold": 0.5, "tp": 0, "tn": 2, "fp": 4, "fn": 0},
+                metrics={
+                    **self.artifact.run_output.result.metrics,
+                    "precision_at_0_5": 0.0,
+                    "recall_at_0_5": 0.0,
+                    "f1_at_0_5": 0.0,
+                },
+            ),
+        )
+        capture = OOFResultService(_Store(replace(self.artifact, run_output=output))).summary("artifact-v3").capture
+
+        self.assertEqual(capture.total_positive_events, 0)
+        self.assertEqual(capture.points, ())
+        self.assertIsNone(capture.marker)
+
     def test_objects_support_unicode_filters_and_inclusive_scores(self) -> None:
         view = self.service.objects(
             "artifact-v3", 0.5, 0, 20, search="  кЛиЕнТ ",

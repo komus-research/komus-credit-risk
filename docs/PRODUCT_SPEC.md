@@ -336,6 +336,15 @@ Backend не содержит собственной копии алгоритм
 
 Стандартные названия моделей, библиотек и общепринятые технические термины не переводятся искусственно.
 
+Для native React интерфейса принят единый shared-component visual lock кнопок: `docs/design/components/buttons/02_button_system_v2.png`. Button System V2 supersedes V1 по visual treatment и задаёт `Primary / Secondary / Tertiary-Ghost / Back / Destructive / Disabled` и их interactive states на всех экранах и confirmation/native modal. Canonical Primary использует restrained `Graphite + Emerald Border`, а не яркую сплошную заливку. Семантика и доступность действий по-прежнему определяются UX/backend contract конкретного flow.
+
+Cross-screen presentation также использует:
+- `docs/design/components/data-warnings/01_data_warnings_v2.png` — Data Warnings V2;
+- `docs/design/components/sidebar/01_sidebar_final_v1.png` — Sidebar Final V1, при этом fake profile/auth card из PNG не является product contract;
+- `docs/design/components/long-operations/01_long_operations_v1.png` — Long Operations V1.
+
+Sidebar navigation IA остаётся `Главная / Новый анализ / Модели / История / Настройки`; до отдельного auth/users contract нельзя показывать выдуманные avatar/name/role/login/profile menu.
+
 В Python-коде допускаются английские имена функций, классов, переменных и внутренних backend/API-сущностей. Комментарии и docstrings оформляются на русском языке.
 
 Основные экраны/блоки в перспективе:
@@ -357,6 +366,8 @@ Backend не содержит собственной копии алгоритм
 
 ### Quality V1 — проверка перед запуском
 
+Functional semantics остаются Quality V1, а основной visual reference обновлён до `docs/design/screens/new-analysis/05_quality_v2.png`. `05_quality_v1.png` сохраняется как previous accepted reference.
+
 Шаг `Проверка качества` в pre-run состоянии является автоматической контрольной точкой, а не обязательной второй формой технических настроек.
 
 Основной UX:
@@ -369,7 +380,9 @@ Backend не содержит собственной копии алгоритм
 - smoke PASS означает только техническую готовность, а не качество модели;
 - одна primary CTA — **`Начать обучение`**;
 - folds/seed/protocol находятся в collapsed `Дополнительные настройки` и приходят от backend supported protocol;
-- после запуска этот же шаг показывает реальные progress events full OOF experiment;
+- после `Готово к запуску` secondary controls визуально отделены и остаются compact/collapsed, а не растягиваются тяжёлыми full-width блоками;
+- после запуска этот же шаг показывает реальные progress events full OOF experiment через Long Operations V1;
+- training показывает реальные stage/folds и elapsed, но не fake overall percentage/ETA; fold `2 из 3` не означает автоматически `67%`;
 - quality metrics появляются только после полноценного experiment и относятся к `Результат`.
 
 Принятая backend smoke policy использует deterministic stratified sample до 128 строк, real `fit()` + `predict_positive_proba()` и проверки shape/finite/range. Matching smoke PASS обязателен перед каждым full experiment.
@@ -545,7 +558,11 @@ Target всегда явно выбирает человек.
 
 **«Использовать все строки для OOF-оценки. Отдельная финальная тестовая выборка автоматически создана не будет.»**
 
+Это подтверждение текущей evaluation policy, а не quality verdict и не доказательство временной стабильности.
+
 ### Проверка
+
+Основной visual reference шага подтверждения: `docs/design/screens/new-analysis/02_data_confirmation_v2.png`. Он сохраняет существующую semantics, но использует более плотный desktop layout примерно на 12–15% компактнее; уменьшение достигается реальными typography/gap/padding/card-height значениями, а не масштабированием всей страницы.
 
 Перед materialization показывается компактное summary:
 

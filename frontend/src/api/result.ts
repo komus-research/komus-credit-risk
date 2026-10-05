@@ -36,7 +36,22 @@ export type ThresholdMetrics = {
   above_threshold_share: number
 }
 
-export type ResultOverview = { summary: ResultSummary; threshold: ThresholdMetrics }
+export type ResultCapturePoint = {
+  object_share: number
+  event_share: number
+}
+
+export type ResultCapture = {
+  total_positive_events: number
+  points: ResultCapturePoint[]
+  marker: ResultCapturePoint | null
+}
+
+export type ResultOverview = {
+  summary: ResultSummary
+  threshold: ThresholdMetrics
+  capture: ResultCapture
+}
 
 export type GlobalOOFFeatureImportance = {
   feature_id: string
@@ -56,6 +71,57 @@ export type GlobalOOFExplanation = {
   output_space: string
   evidence_hash: string
   features: GlobalOOFFeatureImportance[]
+}
+
+export type GlobalOOFOperation = {
+  artifact_id: string
+  derivation_key: string
+  status: 'NOT_STARTED' | 'RUNNING' | 'READY' | 'FAILED'
+  stage: 'VALIDATING' | 'PROCESSING_FOLD' | 'AGGREGATING' | 'PERSISTING' | 'READY' | 'FAILED'
+  stage_label: string
+  current_fold: number | null
+  total_folds: number
+  processed_rows: number
+  total_rows: number
+  started_at: string | null
+  updated_at: string
+  elapsed_seconds: number
+  safe_error_code: string | null
+  message: string | null
+}
+
+export class GlobalOOFAPIError extends Error {
+  constructor(message: string, readonly code: string | null = null) {
+    super(message)
+    this.name = 'GlobalOOFAPIError'
+  }
+}
+
+async function globalOOFRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const fallback = 'Не удалось загрузить влияние признаков.'
+  let response: Response
+  try {
+    response = await fetch(url, init)
+  } catch (reason) {
+    if (init?.signal?.aborted || (reason instanceof Error && reason.name === 'AbortError')) throw reason
+    throw new GlobalOOFAPIError(fallback)
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { code?: string; message?: string } } | null
+    throw new GlobalOOFAPIError(payload?.detail?.message ?? fallback, payload?.detail?.code ?? null)
+  }
+  return response.json() as Promise<T>
+}
+
+export function runCurrentGlobalOOF(retry = false, signal?: AbortSignal): Promise<GlobalOOFOperation> {
+  return globalOOFRequest('/api/v1/result/explanation/global/run', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ retry }), signal,
+  })
+}
+
+export function getCurrentGlobalOOFStatus(signal?: AbortSignal): Promise<GlobalOOFOperation> {
+  return globalOOFRequest('/api/v1/result/explanation/global/status', { signal })
 }
 
 export type ResultObjectItem = {
@@ -164,24 +230,11 @@ export async function getCurrentResult(): Promise<ResultOverview> {
 export async function getCurrentGlobalOOFExplanation(signal?: AbortSignal): Promise<GlobalOOFExplanation> {
   const fallback = 'Не удалось загрузить влияние признаков.'
   const abort = (reason: unknown) => signal?.aborted || (typeof reason === 'object' && reason !== null && 'name' in reason && reason.name === 'AbortError')
-  let response: Response
   try {
-    response = await fetch('/api/v1/result/explanation/global', { signal })
-  } catch (reason) {
-    if (signal?.aborted || (reason instanceof DOMException && reason.name === 'AbortError')) throw reason
-    throw new Error(fallback)
-  }
-  if (!response.ok) {
-    let payload: { detail?: { message?: string } } | null = null
-    try { payload = await response.json() as { detail?: { message?: string } } }
-    catch (reason) { if (abort(reason)) throw reason }
-    throw new Error(payload?.detail?.message ?? fallback)
-  }
-  try {
-    return await response.json() as GlobalOOFExplanation
+    return await globalOOFRequest<GlobalOOFExplanation>('/api/v1/result/explanation/global', { signal })
   } catch (reason) {
     if (abort(reason)) throw reason
-    throw new Error(fallback)
+    throw reason instanceof GlobalOOFAPIError ? reason : new GlobalOOFAPIError(fallback)
   }
 }
 

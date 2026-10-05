@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.api.main import create_app
 from app.native_runtime import create_native_experiment_runtime
 from komus_risk.application import NativeQualityService
+from komus_risk.application import native_session as native_session_module
 from komus_risk.application.native_session import NativeSessionStore, QualityPlanStatus, QualityPreflightStatus
 from komus_risk.contracts import DatasetContract, FeatureGroup, FeatureSpec, FeatureUsageStatus
 from komus_risk.data import LoadedDataset
@@ -316,6 +317,32 @@ def test_full_training_requires_pass_and_uses_exact_trusted_configuration() -> N
     assert completed["training"]["status"] == "COMPLETED"
     assert completed["training"]["artifact_id"] == "artifact-exact"
     assert completed["can_start_training"] is False
+
+
+def test_training_elapsed_is_monotonic_and_frozen_after_completion(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = {"now": 100.0}
+    monkeypatch.setattr(native_session_module, "monotonic", lambda: clock["now"])
+    observed: list[dict[str, object]] = []
+
+    class TrainingApplication:
+        def run_configuration_smoke(self, **_kwargs):
+            return SimpleNamespace(status=SmokeStatus.PASS, smoke_identity="smoke-current", failure_code=None)
+
+        def run_experiment(self, **kwargs):
+            clock["now"] = 112.75
+            kwargs["progress_listener"](SimpleNamespace(stage="fold_started", fold_number=2, folds_total=3))
+            observed.append(quality.state(session_id)["training"])
+            return SimpleNamespace(artifact_id="artifact-timed")
+
+    store, session_id, quality = _direct_quality(TrainingApplication())
+    quality.preflight(session_id)
+    completed = quality.train(session_id)
+
+    assert observed[0]["status"] == "RUNNING"
+    assert observed[0]["elapsed_seconds"] == pytest.approx(12.75)
+    assert completed["training"]["elapsed_seconds"] == pytest.approx(12.75)
+    clock["now"] = 999.0
+    assert quality.state(session_id)["training"]["elapsed_seconds"] == pytest.approx(12.75)
 
 
 def test_duplicate_training_start_is_rejected_and_failure_allows_retry() -> None:

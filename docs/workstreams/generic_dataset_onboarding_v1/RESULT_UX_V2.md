@@ -18,6 +18,8 @@ Primary visual references:
 Эти PNG фиксируют композицию, визуальную иерархию и пользовательский поток Result V2.
 Фактические данные, доступность действий, persistence, provenance и API semantics определяются только принятыми backend/research contracts.
 
+Общий внешний вид Result-кнопок определяется cross-screen Button System V2: `docs/design/components/buttons/02_button_system_v2.png`. Он имеет приоритет над более старым видом кнопок внутри Result PNG, но не меняет action hierarchy: тип Primary / Secondary / Tertiary / Back определяется ролью действия в текущем состоянии.
+
 ## 1. Result V2 flow
 
 Canonical flow шага Result:

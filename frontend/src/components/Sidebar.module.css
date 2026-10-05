@@ -1,0 +1,46 @@
+.sidebar {
+  position: sticky !important;
+  top: 0;
+  isolation: isolate;
+  z-index: 2 !important;
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 240px;
+  width: 240px;
+  min-width: 240px;
+  min-height: 100vh;
+  height: 100vh;
+  align-self: flex-start;
+  overflow: hidden;
+  border-right: 1px solid #153035;
+  background: #07161a;
+}
+
+.sidebar::before {
+  position: absolute;
+  z-index: 0;
+  inset: auto 0 0;
+  width: 240px;
+  height: 360px;
+  pointer-events: none;
+  background: url('../../public/native-assets/shell/sidebar-motif-v2.png') left bottom / 240px 360px no-repeat;
+  content: '';
+  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, .18) 20%, #000 54%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, .18) 20%, #000 54%);
+}
+
+.brand, .navigation { position: relative; z-index: 1; }
+.brand { display: flex; flex: 0 0 72px; align-items: center; width: 100%; height: 72px; border-bottom: 1px solid #153035; background: url('../../public/native-assets/shell/sidebar-brand-final-v2.png') center / 170px 46px no-repeat; }
+.navigation { display: grid; gap: 0; padding: 0; }
+
+.item { position: relative; display: flex; align-items: center; width: 100%; height: 56px; gap: 12px; padding: 0 16px; border: 0; border-left: 4px solid transparent; color: #e7f4f3; text-align: left; white-space: nowrap; background: transparent; font: inherit; font-size: 14px; transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease; }
+.item > :global(.icon) { box-sizing: border-box; width: 48px; height: 48px; flex: 0 0 48px; padding: 12px; border-radius: 12px; color: #e7f4f3; background: #0f2328; }
+.active { border-left-color: #00ebc7; color: #00ebc7; background: linear-gradient(90deg, #0b3a37 0%, rgba(11, 58, 55, .72) 72%, transparent 100%); }
+.active > :global(.icon) { color: #00ebc7; background: #0a514b; outline: 1px solid rgba(0, 235, 199, .22); outline-offset: 1px; }
+.item:not(.active):not(:disabled):hover { color: #e7f4f3; background: #0e262b; }
+.item:disabled { color: #5c6e73; cursor: not-allowed; }
+.item:disabled > :global(.icon) { color: #415156; background: #0f2328; opacity: .6; }
+.newAnalysis > :global(.icon) { width: 40px; height: 40px; flex-basis: 40px; margin-left: 4px; padding: 8px; border: 1px solid #00bfa8; border-radius: 50%; color: #00e5c6; background: transparent; }
+.newAnalysis.active > :global(.icon) { background: rgba(0, 229, 198, .09); outline: none; }
+.withDivider { margin-top: 16px; }
+.withDivider::before { position: absolute; top: -8px; right: 16px; left: 16px; height: 1px; background: #153035; content: ''; }

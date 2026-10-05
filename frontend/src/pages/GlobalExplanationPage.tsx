@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getCurrentGlobalOOFExplanation, getCurrentResult, type GlobalOOFExplanation } from '../api/result'
+import { getCurrentGlobalOOFExplanation, getCurrentGlobalOOFStatus, getCurrentResult, GlobalOOFAPIError, runCurrentGlobalOOF, type GlobalOOFExplanation, type GlobalOOFOperation } from '../api/result'
 import { Icon } from '../components/Icon'
-import { Sidebar } from '../components/Sidebar'
 import { navigate, routes } from '../routing'
 
-type PageState = 'IDLE' | 'LOADING' | 'READY' | 'ERROR'
+type PageState = 'IDLE' | 'LOADING' | 'RUNNING' | 'READY' | 'FAILED' | 'ERROR' | 'STALE'
 const integerFormat = new Intl.NumberFormat('ru-RU')
 const valueFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 3, maximumFractionDigits: 4 })
 const staleMessage = 'Текущий результат изменился. Откройте влияние признаков заново.'
@@ -13,66 +12,126 @@ function isAbortError(reason: unknown) {
   return typeof reason === 'object' && reason !== null && 'name' in reason && reason.name === 'AbortError'
 }
 
-export function GlobalExplanationPage({ onHome }: { onHome: () => void }) {
+function waitForNextPoll(signal: AbortSignal): Promise<void> {
+  return new Promise(resolve => {
+    const finish = () => {
+      window.clearTimeout(timer)
+      signal.removeEventListener('abort', finish)
+      resolve()
+    }
+    const timer = window.setTimeout(finish, 1000)
+    signal.addEventListener('abort', finish, { once: true })
+  })
+}
+
+export function GlobalExplanationPage() {
   const [state, setState] = useState<PageState>('IDLE')
   const [explanation, setExplanation] = useState<GlobalOOFExplanation | null>(null)
+  const [operation, setOperation] = useState<GlobalOOFOperation | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [presentation, setPresentation] = useState<'ALL' | 'TOP_10'>('ALL')
   const expectedArtifact = useRef<string | null>(null)
   const controllerRef = useRef<AbortController | null>(null)
-  const initialLoadStarted = useRef(false)
-  const mounted = useRef(false)
+  const activeRef = useRef(false)
 
-  const loadExplanation = useCallback(async (artifactId: string, controller: AbortController) => {
-    setState('LOADING')
+  const showReady = useCallback(async (artifactId: string, signal: AbortSignal) => {
+    const value = await getCurrentGlobalOOFExplanation(signal)
+    if (!activeRef.current || signal.aborted) return
+    if (value.artifact_id !== artifactId) {
+      setState('STALE')
+      setError(staleMessage)
+      return
+    }
+    setExplanation(value)
+    setOperation(null)
+    setState('READY')
+  }, [])
+
+  const applyOperation = useCallback(async (next: GlobalOOFOperation, artifactId: string, signal: AbortSignal) => {
+    if (!activeRef.current || signal.aborted) return
+    if (next.artifact_id !== artifactId) {
+      setState('STALE')
+      setError(staleMessage)
+      return
+    }
+    setOperation(next)
+    if (next.status === 'READY') {
+      await showReady(artifactId, signal)
+    } else if (next.status === 'FAILED') {
+      setError(next.message ?? 'Не удалось рассчитать влияние признаков. Сам результат модели остаётся доступен.')
+      setState('FAILED')
+    } else {
+      setState('RUNNING')
+    }
+  }, [showReady])
+
+  const beginLifecycle = useCallback(async (artifactId: string, controller: AbortController, retry = false) => {
+    const { signal } = controller
     setError(null)
     setExplanation(null)
+    setOperation(null)
+    setState('LOADING')
     try {
-      const value = await getCurrentGlobalOOFExplanation(controller.signal)
-      if (controller.signal.aborted || !mounted.current) return
-      if (value.artifact_id !== artifactId) {
-        setState('ERROR')
+      let recoveredUnexpectedNotStarted = false
+      let next = await runCurrentGlobalOOF(retry, signal)
+      if (!activeRef.current || signal.aborted) return
+      if (next.artifact_id !== artifactId) {
+        setState('STALE')
         setError(staleMessage)
         return
       }
-      setExplanation(value)
-      setState('READY')
+      if (next.status === 'NOT_STARTED') {
+        recoveredUnexpectedNotStarted = true
+        next = await runCurrentGlobalOOF(false, signal)
+      }
+      if (next.status === 'NOT_STARTED') throw new Error('Расчёт не запустился. Попробуйте ещё раз.')
+      await applyOperation(next, artifactId, signal)
+      while (activeRef.current && !signal.aborted && next.status === 'RUNNING') {
+        await waitForNextPoll(signal)
+        if (!activeRef.current || signal.aborted) return
+        next = await getCurrentGlobalOOFStatus(signal)
+        if (next.status === 'NOT_STARTED') {
+          if (recoveredUnexpectedNotStarted) throw new Error('Расчёт не запустился. Попробуйте ещё раз.')
+          recoveredUnexpectedNotStarted = true
+          next = await runCurrentGlobalOOF(false, signal)
+          if (next.status === 'NOT_STARTED') throw new Error('Расчёт не запустился. Попробуйте ещё раз.')
+        }
+        await applyOperation(next, artifactId, signal)
+      }
     } catch (reason) {
-      if (controller.signal.aborted || !mounted.current || isAbortError(reason)) return
-      setState('ERROR')
-      setError(reason instanceof Error ? reason.message : 'Не удалось загрузить влияние признаков.')
+      if (!activeRef.current || signal.aborted || isAbortError(reason)) return
+      if (reason instanceof GlobalOOFAPIError && reason.code === 'RESULT_CHANGED') {
+        setError(staleMessage)
+        setState('STALE')
+      } else {
+        setError(reason instanceof Error ? reason.message : 'Не удалось рассчитать влияние признаков.')
+        setState('ERROR')
+      }
     }
-  }, [])
+  }, [applyOperation])
 
   useEffect(() => {
-    mounted.current = true
-    if (!initialLoadStarted.current) {
-      initialLoadStarted.current = true
-      const controller = new AbortController()
-      controllerRef.current = controller
-      setState('LOADING')
-      void getCurrentResult()
-        .then(result => {
-          if (controller.signal.aborted || !mounted.current) return
-          const artifactId = result.summary?.artifact_id
-          if (!artifactId) throw new Error('Не удалось подтвердить текущий результат.')
-          expectedArtifact.current = artifactId
-          return loadExplanation(artifactId, controller)
-        })
-        .catch(reason => {
-          if (controller.signal.aborted || !mounted.current || isAbortError(reason)) return
-          setState('ERROR')
-          setError(reason instanceof Error ? reason.message : 'Не удалось загрузить результат обучения.')
-        })
-    }
+    activeRef.current = true
+    const controller = new AbortController()
+    controllerRef.current = controller
+    setState('LOADING')
+    void getCurrentResult().then(result => {
+      if (!activeRef.current || controller.signal.aborted) return
+      const artifactId = result.summary?.artifact_id
+      if (!artifactId) throw new Error('Не удалось подтвердить текущий результат.')
+      expectedArtifact.current = artifactId
+      return beginLifecycle(artifactId, controller)
+    }).catch(reason => {
+      if (!activeRef.current || controller.signal.aborted || isAbortError(reason)) return
+      setError(reason instanceof Error ? reason.message : 'Не удалось загрузить результат обучения.')
+      setState('ERROR')
+    })
     return () => {
-      mounted.current = false
-      queueMicrotask(() => {
-        if (!mounted.current) controllerRef.current?.abort()
-      })
+      activeRef.current = false
+      controller.abort()
     }
-  }, [loadExplanation])
+  }, [beginLifecycle])
 
   const retry = () => {
     const artifactId = expectedArtifact.current
@@ -80,7 +139,7 @@ export function GlobalExplanationPage({ onHome }: { onHome: () => void }) {
     controllerRef.current?.abort()
     const controller = new AbortController()
     controllerRef.current = controller
-    void loadExplanation(artifactId, controller)
+    void beginLifecycle(artifactId, controller, true)
   }
 
   const allFeatures = explanation?.features ?? []
@@ -90,17 +149,18 @@ export function GlobalExplanationPage({ onHome }: { onHome: () => void }) {
   const presentationFeatures = presentation === 'TOP_10' ? allFeatures.slice(0, 10) : allFeatures
   const visibleFeatures = presentationFeatures.filter(feature => feature.column_name.toLocaleLowerCase('ru').includes(search.trim().toLocaleLowerCase('ru')))
 
-  return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace result-workspace global-explanation-workspace">
+  return <main className="workspace result-workspace global-explanation-workspace">
     <div className="analysis-nav"><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
     <header className="global-explanation-header">
-      <button className="global-back-link" onClick={() => navigate(routes.result)}>← Назад к результату</button>
+      <button className="back-action global-back-link" onClick={() => navigate(routes.result)}>← Назад к результату</button>
       <div className="global-breadcrumb"><span>Результат</span><b>/</b><span>Влияние признаков</span></div>
       <h1>Влияние признаков</h1>
       <p>Среднее абсолютное влияние признаков на оценки модели по OOF-проверке.</p>
     </header>
 
-    {state === 'LOADING' && <section className="global-state-card panel" aria-live="polite"><span className="global-spinner" /><p>Загружаем влияние признаков…</p></section>}
-    {state === 'ERROR' && <section className="global-state-card global-error-card panel" role="alert"><Icon name="alert-circle" size={24} /><div><strong>Не удалось показать влияние признаков</strong><p>{error}</p><div className="global-error-actions">{expectedArtifact.current !== null && <button className="secondary-action" onClick={retry}>Повторить</button>}<button className="global-back-link" onClick={() => navigate(routes.result)}>← Назад к результату</button></div></div></section>}
+    {state === 'LOADING' && <section className="global-state-card panel" aria-live="polite"><span className="global-spinner" /><div><strong>Готовим влияние признаков</strong><p>Проверяем сохранённый результат и состояние расчёта.</p></div></section>}
+    {state === 'RUNNING' && <section className="global-state-card panel" aria-live="polite"><div><strong>{operation?.stage_label ?? 'Расчёт влияния признаков'}</strong>{operation?.current_fold != null && <p>Часть {integerFormat.format(operation.current_fold)} из {integerFormat.format(operation.total_folds)}</p>}{operation && operation.total_rows > 0 && <p>Обработано {integerFormat.format(operation.processed_rows)} из {integerFormat.format(operation.total_rows)} объектов</p>}{operation && <p>Прошло {integerFormat.format(Math.floor(operation.elapsed_seconds))} с</p>}</div></section>}
+    {(state === 'FAILED' || state === 'ERROR' || state === 'STALE') && <section className="global-state-card global-error-card panel" role="alert"><Icon name="alert-circle" size={24} /><div><strong>{state === 'FAILED' ? 'Не удалось рассчитать влияние признаков' : state === 'STALE' ? 'Результат изменился' : 'Не удалось показать влияние признаков'}</strong><p>{error}</p><div className="global-error-actions">{(state === 'FAILED' || state === 'ERROR') && expectedArtifact.current !== null && <button className="primary-action" onClick={retry}>{state === 'FAILED' ? 'Повторить расчёт' : 'Повторить'}</button>}<button className="back-action" onClick={() => navigate(routes.result)}>← Назад к результату</button></div></div></section>}
 
     {state === 'READY' && explanation && <>
       <section className="global-summary-row" aria-label="Сводка OOF-объяснения">
@@ -146,7 +206,7 @@ export function GlobalExplanationPage({ onHome }: { onHome: () => void }) {
 
       <details className="global-technical panel"><summary><Icon name="file" size={19} /><strong>Технические сведения</strong><span>Метод: OOF mean(abs(SHAP))</span><span>Выходное пространство: {explanation.output_space}</span><span>Объясняющий метод: SHAP</span><span>OOF строк: {integerFormat.format(explanation.row_count)}</span><span>Фолды: {integerFormat.format(explanation.folds)}</span><b>⌄</b></summary><dl><dt>Метод</dt><dd>OOF mean(abs(SHAP))</dd><dt>Выходное пространство</dt><dd>{explanation.output_space}</dd><dt>Объясняющий метод</dt><dd>SHAP</dd><dt>OOF строк</dt><dd>{integerFormat.format(explanation.row_count)}</dd><dt>Фолды</dt><dd>{integerFormat.format(explanation.folds)}</dd></dl></details>
     </>}
-  </main></div>
+  </main>
 }
 
 function SummaryCard({ icon, label, value, secondary, badge }: { icon: 'algorithm' | 'table' | 'chart'; label: string; value: string; secondary?: string; badge?: string }) {

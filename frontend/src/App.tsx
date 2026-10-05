@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getNativeSession, type NativeSession } from './api/session'
+import { getNativeSession, startNewAnalysis, type NativeSession } from './api/session'
+import { Sidebar } from './components/Sidebar'
 import { DataPage } from './pages/DataPage'
 import { HomePage } from './pages/HomePage'
 import { AlgorithmPage } from './pages/AlgorithmPage'
@@ -19,6 +20,8 @@ export function App() {
   const [session, setSession] = useState<NativeSession | null>(null)
   const [sessionReady, setSessionReady] = useState(false)
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
+  const [confirmingNewAnalysis, setConfirmingNewAnalysis] = useState(false)
+  const [startingNewAnalysis, setStartingNewAnalysis] = useState(false)
   const requestedRoute = useRef<AppRoute>(route)
   const resultThresholdAccess = useRef(false)
   const resultObjectsAccess = useRef(false)
@@ -116,15 +119,46 @@ export function App() {
     navigate(routes.roles)
   }, [])
   const recoverStaleSession = useCallback(() => void sync(requestedRoute.current, true), [sync])
+  const beginNewAnalysis = useCallback((confirmReset = false) => {
+    setStartingNewAnalysis(true)
+    void startNewAnalysis(confirmReset).then(result => {
+      if (result.status === 'CONFIRMATION_REQUIRED') setConfirmingNewAnalysis(true)
+      else navigate(result.resume_route)
+    }).finally(() => setStartingNewAnalysis(false))
+  }, [])
 
-  if (route === routes.home) return <HomePage session={session} onContinue={continueAnalysis} />
-  if (route === routes.features) return <FeaturesPage onHome={openHome} onSessionChange={setSession} />
-  if (route === routes.algorithm) return <AlgorithmPage onHome={openHome} />
-  if (route === routes.quality) return <QualityPage onHome={openHome} />
-  if (route === routes.result) return <ResultPage onHome={openHome} onOpenThreshold={openResultThreshold} onOpenObjects={openResultObjects} />
-  if (route === routes.resultGlobalExplanation) return <GlobalExplanationPage onHome={openHome} />
-  if (route === routes.resultThreshold) return <ThresholdPage onHome={openHome} />
-  if (route === routes.resultObjects) return <ObjectsPage onHome={openHome} />
-  if (isObjectDetailRoute(route)) return <ObjectDetailPage objectId={objectIdFromRoute(route)!} onBack={backToObjects} onHome={openHome} />
-  return <DataPage route={route} sessionReady={sessionReady} onHome={openHome} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
+  const page = route === routes.home
+    ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={beginNewAnalysis} startingNewAnalysis={startingNewAnalysis} />
+    : route === routes.features
+      ? <FeaturesPage onSessionChange={setSession} />
+      : route === routes.algorithm
+        ? <AlgorithmPage />
+        : route === routes.quality
+          ? <QualityPage />
+          : route === routes.result
+            ? <ResultPage onOpenThreshold={openResultThreshold} onOpenObjects={openResultObjects} />
+            : route === routes.resultGlobalExplanation
+              ? <GlobalExplanationPage />
+              : route === routes.resultThreshold
+                ? <ThresholdPage />
+                : route === routes.resultObjects
+                  ? <ObjectsPage />
+                  : isObjectDetailRoute(route)
+                    ? <ObjectDetailPage objectId={objectIdFromRoute(route)!} onBack={backToObjects} />
+                    : <DataPage route={route} sessionReady={sessionReady} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
+  const shellClass = route === routes.home
+    ? 'home-shell'
+    : route === routes.file || route === routes.roles || route === routes.confirmation
+      ? 'workflow-shell data-shell'
+      : route === routes.features || route === routes.algorithm || route === routes.quality
+        ? 'workflow-shell features-shell'
+        : 'features-shell'
+
+  return <>
+    <div className={`app-shell ${shellClass}`}>
+      <Sidebar active={route === routes.home ? 'home' : 'analysis'} onHome={openHome} onNewAnalysis={() => beginNewAnalysis()} />
+      <div className="app-page">{page}</div>
+    </div>
+    {confirmingNewAnalysis && <div className="native-modal-backdrop" role="presentation"><section className="native-modal" role="dialog" aria-modal="true" aria-labelledby="new-analysis-title"><h2 id="new-analysis-title">Начать новый анализ?</h2><p>Текущие неподтверждённые данные будут сброшены.</p><div><button className="secondary-action" onClick={() => setConfirmingNewAnalysis(false)}>Отмена</button><button className="destructive-action" disabled={startingNewAnalysis} onClick={() => { setConfirmingNewAnalysis(false); beginNewAnalysis(true) }}>Начать новый</button></div></section></div>}
+  </>
 }

@@ -9,8 +9,17 @@ from copy import deepcopy
 import pandas as pd
 
 from komus_risk.data import DatasetInspector, TabularReadError, TabularReader, TabularSnapshot
-from komus_risk.preparation import DatasetPreparationAnalyzer, PredictorEligibility, ProposedColumnRole
+from komus_risk.application.dataset_onboarding import PreparationDraft, project_preparation_warnings
+from komus_risk.preparation import DatasetPreparationAnalyzer, PredictorEligibility, ProposalWarning, ProposedColumnRole, WarningSeverity
 from komus_risk.preparation.service import DEFAULT_POLICY
+
+
+def _warning(code: str, column: str | None = None, *, evidence: dict[str, object] | None = None) -> ProposalWarning:
+    return ProposalWarning(code, WarningSeverity.WARNING, column, None, (f"Detected {code}.",), evidence or {}, True)
+
+
+def _draft(*, target: str | None = "DefMark", identifier: str | None = "INN", statuses: dict[str, str] | None = None, blocked: dict[str, str] | None = None) -> PreparationDraft:
+    return PreparationDraft(target, None, identifier, statuses or {}, blocked or {}, "FULL_OOF_NO_PROTECTED_FINAL_TEST", False)
 
 
 class DatasetOnboardingTests(unittest.TestCase):
@@ -29,6 +38,95 @@ class DatasetOnboardingTests(unittest.TestCase):
         self.assertEqual("customer_id", proposal.identifier_candidates[0].column_name)
         self.assertEqual({0, 1}, {item.value for item in proposal.positive_class_candidates})
         self.assertTrue(all(item.requires_confirmation for item in proposal.positive_class_candidates))
+
+    def test_warning_projection_is_structured_deterministic_and_preserves_order(self) -> None:
+        source = (
+            ProposalWarning("no_target_candidate", WarningSeverity.WARNING, None, None, ("Нет кандидата цели.",), {}, True),
+            ProposalWarning("target_candidate_has_missing_values", WarningSeverity.WARNING, "event_flag", 2, ("В цели есть пропуски.",), {}, True),
+            ProposalWarning("no_identifier_candidate", WarningSeverity.INFO, None, None, ("Нет кандидата идентификатора.",), {}, False),
+            ProposalWarning("mixed_value_types", WarningSeverity.WARNING, "amount", 3, ("Смешанные типы.",), {"private": "not projected"}, True),
+            ProposalWarning("insufficient_evidence", WarningSeverity.INFO, None, None, ("Недостаточно данных.",), {}, True),
+            ProposalWarning("future_global_warning", WarningSeverity.INFO, None, None, ("Новое глобальное замечание.",), {}, False),
+        )
+
+        projected = project_preparation_warnings(source, _draft(target="event_flag", identifier="id"))
+
+        self.assertEqual([warning.code for warning in projected], [warning.code for warning in source])
+        self.assertEqual(projected[0].severity, "WARNING")
+        self.assertEqual(projected[0].detected_reasons, ("Нет кандидата цели.",))
+        self.assertTrue(projected[0].detected_requires_confirmation)
+        self.assertEqual(projected[0].resolution_state, "RESOLVED")
+        self.assertEqual(projected[0].title_ru, "Целевая колонка не выбрана")
+        self.assertEqual((projected[1].column_name, projected[1].scope), ("event_flag", "COLUMN"))
+        self.assertEqual((projected[0].column_name, projected[0].scope), (None, "DATASET"))
+        self.assertEqual(
+            [warning.action for warning in projected],
+            ["REVIEW_TARGET", "REVIEW_TARGET", "REVIEW_IDENTIFIER", "REVIEW_COLUMN", "REVIEW_DATASET", None],
+        )
+
+    def test_warning_resolution_uses_current_draft_roles_and_is_dynamic(self) -> None:
+        multiple = _warning("multiple_target_candidates")
+        no_target = project_preparation_warnings((multiple,), _draft(target=None))[0]
+        selected_target = project_preparation_warnings((multiple,), _draft(target="DefMark"))[0]
+        self.assertEqual(no_target.resolution_state, "ACTION_REQUIRED")
+        self.assertEqual(selected_target.resolution_state, "RESOLVED")
+
+        near_unique = _warning("near_unique_column", "INN")
+        by_identifier = project_preparation_warnings((near_unique,), _draft(identifier="INN"))[0]
+        by_feature = project_preparation_warnings((near_unique,), _draft(identifier=None, statuses={"INN": "MODEL_ALLOWED"}))[0]
+        self.assertEqual(by_identifier.resolution_state, "RESOLVED")
+        self.assertEqual(by_feature.resolution_state, "ACTION_REQUIRED")
+
+        missing = _warning("missing_values_present", "INN")
+        self.assertEqual(project_preparation_warnings((missing,), _draft(identifier="INN"))[0].resolution_state, "ACTION_REQUIRED")
+
+        target_missing = _warning("target_candidate_has_missing_values", "DefMark")
+        self.assertEqual(project_preparation_warnings((target_missing,), _draft(target="DefMark"))[0].resolution_state, "ACTION_REQUIRED")
+        self.assertEqual(project_preparation_warnings((target_missing,), _draft(target="Other"))[0].resolution_state, "RESOLVED")
+
+        proxy = _warning("potential_target_proxy", "proxy", evidence={"related_target_candidate": "DefMark"})
+        self.assertEqual(project_preparation_warnings((proxy,), _draft(target="DefMark", statuses={"proxy": "MODEL_ALLOWED"}))[0].resolution_state, "ACTION_REQUIRED")
+        self.assertEqual(project_preparation_warnings((proxy,), _draft(target="DefMark", statuses={"proxy": "DIAGNOSTIC_ONLY"}))[0].resolution_state, "RESOLVED")
+        self.assertEqual(project_preparation_warnings((proxy,), _draft(target="DefMark", statuses={"proxy": "BLOCKED"}, blocked={"proxy": "Excluded by reviewer"}))[0].resolution_state, "RESOLVED")
+        self.assertEqual(project_preparation_warnings((proxy,), _draft(target="Other", statuses={"proxy": "MODEL_ALLOWED"}))[0].resolution_state, "RESOLVED")
+        self.assertEqual(project_preparation_warnings((proxy,), _draft(target=None, statuses={"proxy": "MODEL_ALLOWED"}))[0].resolution_state, "INFO")
+
+        before = multiple
+        project_preparation_warnings((multiple,), _draft(target="DefMark"))
+        project_preparation_warnings((multiple,), _draft(target=None))
+        self.assertIs(multiple, before)
+        self.assertIsNone(multiple.column_name)
+
+    def test_warning_presentation_subjects_and_resolution_notes_do_not_change_states(self) -> None:
+        column = project_preparation_warnings((_warning("near_unique_column", "INN"),), _draft(identifier="INN"))[0]
+        self.assertEqual(column.subject_ru, "INN")
+        self.assertEqual(column.resolution_state, "RESOLVED")
+        self.assertEqual(column.resolution_note_ru, "Выбрана в качестве идентификатора.")
+
+        target = project_preparation_warnings((_warning("multiple_target_candidates"),), _draft(target="DefMark"))[0]
+        self.assertEqual(target.subject_ru, "Целевая колонка")
+        self.assertEqual(target.resolution_state, "RESOLVED")
+        self.assertEqual(target.resolution_note_ru, "Выбрана целевая колонка DefMark.")
+        manual_target = project_preparation_warnings((_warning("no_target_candidate"),), _draft(target="DefMark"))[0]
+        self.assertEqual(manual_target.resolution_note_ru, "Целевая колонка выбрана вручную: DefMark.")
+
+        identifier = project_preparation_warnings((_warning("multiple_identifier_candidates"),), _draft(identifier="INN"))[0]
+        self.assertEqual(identifier.subject_ru, "Идентификатор")
+        self.assertEqual(identifier.resolution_state, "RESOLVED")
+        self.assertEqual(identifier.resolution_note_ru, "Выбран идентификатор INN.")
+
+        diagnostic = project_preparation_warnings((_warning("missing_values_present", "amount"),), _draft(statuses={"amount": "DIAGNOSTIC_ONLY"}))[0]
+        self.assertEqual((diagnostic.resolution_state, diagnostic.resolution_note_ru), ("INFO", "Колонка не используется как признак модели."))
+        blocked = project_preparation_warnings((_warning("missing_values_present", "amount"),), _draft(statuses={"amount": "BLOCKED"}, blocked={"amount": "reviewed"}))[0]
+        self.assertEqual((blocked.resolution_state, blocked.resolution_note_ru), ("RESOLVED", "Колонка исключена из признаков модели."))
+
+        proxy = _warning("potential_target_proxy", "proxy", evidence={"related_target_candidate": "OtherTarget"})
+        other_target = project_preparation_warnings((proxy,), _draft(target="DefMark", statuses={"proxy": "MODEL_ALLOWED"}))[0]
+        self.assertEqual(other_target.resolution_state, "RESOLVED")
+        self.assertEqual(other_target.resolution_note_ru, "Предупреждение относится к другой кандидатной цели.")
+        missing_target = project_preparation_warnings((_warning("target_candidate_has_missing_values", "OtherTarget"),), _draft(target="DefMark"))[0]
+        self.assertEqual(missing_target.resolution_note_ru, "Выбрана другая целевая колонка.")
+
 
     def test_structural_facts_and_roles_are_not_confirmed(self) -> None:
         frame = pd.DataFrame({"all_missing": [None] * 50, "constant": ["x"] * 50, "almost_id": list(range(49)) + [0], "when": pd.date_range("2026-01-01", periods=50)})

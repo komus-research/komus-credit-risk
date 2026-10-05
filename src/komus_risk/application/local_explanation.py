@@ -26,11 +26,47 @@ _EXPLAINER_VERSIONS = {
     "xgboost": xgboost.__version__,
     "lightgbm": lightgbm.__version__,
 }
-_ADDITIVITY_TOLERANCES = {
-    "catboost": (1e-7, 1e-8),
-    "xgboost": (1e-6, 1e-6),
-    "lightgbm": (1e-7, 1e-8),
+@dataclass(frozen=True, slots=True)
+class NativeShapNumericalProfile:
+    profile_id: str
+    version: str
+    additivity_rtol: float
+    additivity_atol: float
+    probability_rtol: float
+    probability_atol: float
+
+
+NATIVE_SHAP_NUMERICAL_PROFILES = {
+    "catboost": NativeShapNumericalProfile("native_treeshap_catboost", "1", 1e-7, 1e-8, 1e-7, 1e-9),
+    "xgboost": NativeShapNumericalProfile("native_treeshap_xgboost", "2", 1e-6, 2e-5, 1e-7, 1e-8),
+    "lightgbm": NativeShapNumericalProfile("native_treeshap_lightgbm", "1", 1e-7, 1e-8, 1e-7, 1e-9),
 }
+
+
+def validate_native_shap_numerics(
+    model_id: str, shap_values: np.ndarray, base_values: np.ndarray,
+    raw_model_output: np.ndarray, probabilities: np.ndarray,
+) -> NativeShapNumericalProfile:
+    """Validate native raw-margin SHAP with the reviewed, versioned model profile."""
+    try:
+        profile = NATIVE_SHAP_NUMERICAL_PROFILES[model_id]
+    except KeyError as error:
+        raise ValueError("Native SHAP numerical profile is unsupported.") from error
+    values = np.asarray(shap_values, dtype=float)
+    bases = np.asarray(base_values, dtype=float)
+    margins = np.asarray(raw_model_output, dtype=float)
+    probs = np.asarray(probabilities, dtype=float)
+    if (values.ndim != 2 or bases.shape != (len(values),) or margins.shape != (len(values),)
+            or probs.shape != (len(values),) or not len(values)
+            or not all(np.isfinite(item).all() for item in (values, bases, margins, probs))):
+        raise ValueError("Native SHAP numerical validation received invalid shape or non-finite values.")
+    reconstructed = bases + np.sum(values, axis=1, dtype=np.float64)
+    if not np.isclose(reconstructed, margins, rtol=profile.additivity_rtol, atol=profile.additivity_atol).all():
+        raise ValueError("Native SHAP values fail the raw-margin additivity check.")
+    margin_probs = np.asarray([LocalExplanationService._margin_probability(float(value)) for value in margins])
+    if not np.isclose(margin_probs, probs, rtol=profile.probability_rtol, atol=profile.probability_atol).all():
+        raise ValueError("Native SHAP raw margin does not reproduce the model probability.")
+    return profile
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,11 +176,10 @@ class LocalExplanationService:
         if not np.isclose(probability, row.probability, rtol=1e-9, atol=1e-12):
             raise ValueError("Recomputed probability does not match the displayed PredictionBatch probability.")
         shap_values, base_value, raw_model_output = loaded_model_version.predictor.local_shap(frame)
-        relative_tolerance, absolute_tolerance = _ADDITIVITY_TOLERANCES[model_id]
-        if not np.isclose(base_value + float(np.sum(shap_values)), raw_model_output, rtol=relative_tolerance, atol=absolute_tolerance):
-            raise ValueError("Native SHAP values fail the raw-margin additivity check.")
-        if not np.isclose(self._margin_probability(raw_model_output), probability, rtol=1e-7, atol=1e-9):
-            raise ValueError("Native SHAP raw margin does not reproduce the model probability.")
+        validate_native_shap_numerics(
+            model_id, shap_values.reshape(1, -1), np.asarray([base_value]),
+            np.asarray([raw_model_output]), np.asarray([probability]),
+        )
 
         contributions = [
             LocalFeatureContribution(

@@ -51,10 +51,17 @@ class NativePredictor:
 
     def local_shap(self, X: pd.DataFrame) -> tuple[np.ndarray, float, float]:
         """Return native additive TreeSHAP values and raw margin for one exact row."""
+        if not isinstance(X, pd.DataFrame) or len(X) != 1:
+            raise ValueError("Native local SHAP requires exactly one DataFrame row.")
+        shap_values, base_values, raw_values = self.native_shap_batch(X)
+        return shap_values[0].copy(), float(base_values[0]), float(raw_values[0])
+
+    def native_shap_batch(self, X: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return native TreeSHAP values, base values, and raw outputs for exact rows."""
         if self.model_id not in {"catboost", "xgboost", "lightgbm"} or self._local_shap is None or self._raw_predict is None:
-            raise ValueError("Local explanations are unsupported for this native model.")
-        if not isinstance(X, pd.DataFrame) or tuple(X.columns) != self.feature_columns or len(X) != 1:
-            raise ValueError("Native local SHAP requires one row with exact persisted feature columns.")
+            raise ValueError("Native batch explanations are unsupported for this model.")
+        if not isinstance(X, pd.DataFrame) or tuple(X.columns) != self.feature_columns or len(X) < 1:
+            raise ValueError("Native batch SHAP requires rows with exact persisted feature columns.")
         try:
             raw_shap = self._local_shap(X)
             if hasattr(raw_shap, "toarray"):
@@ -63,11 +70,12 @@ class NativePredictor:
             raw_values = np.asarray(self._raw_predict(X), dtype=float)
         except Exception as error:
             raise ValueError("Native local SHAP returned invalid values.") from error
-        expected_shape = (1, len(self.feature_columns) + 1)
-        if (shap_matrix.shape != expected_shape or raw_values.shape not in {(1,), (1, 1)}
+        row_count = len(X)
+        expected_shape = (row_count, len(self.feature_columns) + 1)
+        if (shap_matrix.shape != expected_shape or raw_values.shape not in {(row_count,), (row_count, 1)}
                 or not np.isfinite(shap_matrix).all() or not np.isfinite(raw_values).all()):
-            raise ValueError("Native local SHAP returned invalid values.")
-        return shap_matrix[0, :-1].copy(), float(shap_matrix[0, -1]), float(raw_values.reshape(-1)[0])
+            raise ValueError("Native batch SHAP returned invalid values.")
+        return shap_matrix[:, :-1].copy(), shap_matrix[:, -1].copy(), raw_values.reshape(-1).copy()
 
     def catboost_local_shap(self, X: pd.DataFrame) -> tuple[np.ndarray, float, float]:
         """Backward-compatible CatBoost-only local-SHAP entry point."""

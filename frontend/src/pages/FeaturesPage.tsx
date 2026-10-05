@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { continueFeatures, getFeatures, patchFeatureSelection, type FeatureSelection, type NativeSession } from '../api/session'
 import { Icon } from '../components/Icon'
-import { Sidebar } from '../components/Sidebar'
 import { navigate, routes } from '../routing'
 
 const stepNames = ['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат']
 
-export function FeaturesPage({ onHome, onSessionChange }: { onHome: () => void; onSessionChange: (session: NativeSession) => void }) {
+export function FeaturesPage({ onSessionChange }: { onSessionChange: (session: NativeSession) => void }) {
   const [data, setData] = useState<FeatureSelection | null>(null)
   const [query, setQuery] = useState('')
   const [group, setGroup] = useState('all')
@@ -70,7 +69,7 @@ export function FeaturesPage({ onHome, onSessionChange }: { onHome: () => void; 
       .finally(() => { requestInFlight.current = false; setBusy(false) })
   }
 
-  return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace features-workspace">
+  return <main className="workspace features-workspace">
     <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{stepNames.map((name, index) => <li key={name} className={index === 0 ? 'completed' : index === 1 ? 'active' : ''}><span>{index === 0 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
     <header className="features-header"><div><p className="eyebrow">Шаг 2 из 5</p><h1>Выбор признаков</h1><p>Выберите разрешённые признаки для текущего эксперимента.</p></div></header>
     {data && <>
@@ -107,5 +106,5 @@ export function FeaturesPage({ onHome, onSessionChange }: { onHome: () => void; 
       <footer className="feature-footer"><span>{error && <span className="feature-warning">{error}</span>}</span><button className="primary-action" disabled={busy || data.selected_count === 0} onClick={continueToAlgorithm}>Далее: алгоритм <Icon name="arrow" size={19} /></button></footer>
     </>}
     {!data && !error && <p className="feature-loading">Загружаем доступные признаки…</p>}{error && !data && <p className="feature-warning">{error}</p>}
-  </main></div>
+  </main>
 }

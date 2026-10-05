@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import math
 from typing import Any, Protocol
 
 from komus_risk.hashing import stable_hash
@@ -76,6 +77,40 @@ class ModelExplanationProvider(Protocol):
 
     def explain(self, *, loaded_model_version: Any, prediction_batch: Any, row_id: str, explanation_context: TrustedExplanationContext | None = None) -> Any: ...
     def explain_batch(self, *, loaded_model_version: Any, prediction_batch: Any, row_ids: tuple[str, ...], explanation_context: TrustedExplanationContext) -> tuple[Any, ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class OOFShapChunkAggregate:
+    row_count: int
+    sum_abs_shap: tuple[float, ...]
+    provider_id: str
+    provider_version: str
+    explanation_method_id: str
+    explanation_method_version: str
+    aggregation_method_id: str
+    aggregation_method_version: str
+    numerical_validation_profile_id: str
+    numerical_validation_profile_version: str
+    output_space: str
+    model_binding_id: str
+    feature_binding_hash: str
+    background_policy_id: str
+    background_hash: str
+
+    def __post_init__(self) -> None:
+        values = tuple(float(value) for value in self.sum_abs_shap)
+        if (self.row_count < 1 or not values or any(not math.isfinite(value) or value < 0 for value in values)
+                or any(not isinstance(getattr(self, field), str) or not getattr(self, field).strip() for field in (
+                    "provider_id", "provider_version", "explanation_method_id", "explanation_method_version",
+                    "aggregation_method_id", "aggregation_method_version", "numerical_validation_profile_id",
+                    "numerical_validation_profile_version", "output_space", "model_binding_id",
+                    "feature_binding_hash", "background_policy_id", "background_hash"))):
+            raise ValueError("OOF SHAP chunk aggregate is invalid.")
+        object.__setattr__(self, "sum_abs_shap", values)
+
+
+class OOFPredictionReplayMismatch(ValueError):
+    """Stable typed failure when a persisted OOF score does not replay."""
 
 
 class ModelExplanationProviderRegistry:
@@ -171,6 +206,85 @@ class BuiltinNativeExplanationProvider:
     def explain(self, *, loaded_model_version: Any, prediction_batch: Any, row_id: str, explanation_context: TrustedExplanationContext | None = None) -> Any:
         from komus_risk.application.local_explanation import LocalExplanationService
         return LocalExplanationService(provider_descriptor=self.descriptor, expected_model_id=self.model_id).explain(loaded_model_version=loaded_model_version, prediction_batch=prediction_batch, row_id=row_id)
+
+    def aggregate_oof_chunk(
+        self, *, loaded_model_version: Any, prediction_batch: Any, feature_matrix: Any,
+        persisted_oof_probabilities: Any, row_positions: Sequence[int],
+        explanation_context: TrustedExplanationContext,
+    ) -> OOFShapChunkAggregate:
+        """Validate and aggregate exact OOF rows without constructing row evidence."""
+        import numpy as np
+        import pandas as pd
+        from komus_risk.application.local_explanation import (
+            NATIVE_SHAP_NUMERICAL_PROFILES, validate_native_shap_numerics,
+        )
+
+        metadata = loaded_model_version.metadata
+        summary = loaded_model_version.summary
+        if (self.model_id not in {"catboost", "xgboost", "lightgbm"}
+                or metadata.get("model_id") != self.model_id or summary.model_id != self.model_id
+                or loaded_model_version.predictor.model_id != self.model_id
+                or summary.experiment_artifact_id != metadata.get("experiment_artifact_id")
+                or summary.model_version != metadata.get("model_version")):
+            raise ValueError("Native OOF aggregate model binding is invalid.")
+        if not isinstance(feature_matrix, pd.DataFrame) or len(feature_matrix) < 1:
+            raise ValueError("OOF aggregate feature matrix must be a non-empty DataFrame.")
+        columns = tuple(metadata.get("feature_columns", ()))
+        feature_binding_hash = metadata.get("feature_set_hash")
+        if (tuple(feature_matrix.columns) != columns or tuple(loaded_model_version.predictor.feature_columns) != columns
+                or not isinstance(feature_binding_hash, str) or not feature_binding_hash.strip()):
+            raise ValueError("OOF aggregate feature columns/order do not match the persisted model.")
+        if not isinstance(explanation_context, TrustedExplanationContext):
+            raise ValueError("Native OOF aggregate requires trusted fold context.")
+        if len(prediction_batch.rows) != len(feature_matrix) or len(prediction_batch.validated_feature_values) != len(feature_matrix):
+            raise ValueError("OOF aggregate chunk does not match its PredictionBatch.")
+        values = np.asarray(feature_matrix, dtype=float)
+        batch_values = np.asarray(prediction_batch.validated_feature_values, dtype=float)
+        positions = tuple(row_positions)
+        batch_positions = tuple(row.source_row_position for row in prediction_batch.rows)
+        if (values.shape != (len(prediction_batch.rows), len(columns)) or not np.isfinite(values).all()
+                or batch_values.shape != values.shape or not np.array_equal(values, batch_values)
+                or len(positions) != len(values) or positions != batch_positions
+                or len(set(positions)) != len(positions)
+                or len({row.row_id for row in prediction_batch.rows}) != len(prediction_batch.rows)):
+            raise ValueError("OOF aggregate chunk row binding or feature values are invalid.")
+        _validate_oof_context_binding(
+            metadata=metadata, context=explanation_context, prediction_batch=prediction_batch,
+            selected_rows=prediction_batch.rows, expected_model_version_id=summary.model_version_id,
+        )
+        expected_specs = metadata.get("feature_specs")
+        if (not isinstance(expected_specs, list) or len(expected_specs) != len(columns)
+                or any(not isinstance(spec, Mapping) or spec.get("column_name") != columns[index]
+                       for index, spec in enumerate(expected_specs))):
+            raise ValueError("OOF aggregate feature binding metadata is invalid.")
+        persisted = np.asarray(persisted_oof_probabilities, dtype=float)
+        if persisted.shape != (len(values),) or not np.isfinite(persisted).all() or ((persisted < 0) | (persisted > 1)).any():
+            raise ValueError("Persisted OOF probabilities have invalid shape or values.")
+        replayed = np.asarray(loaded_model_version.predictor.predict_positive_proba(feature_matrix), dtype=float)
+        displayed = np.asarray([row.probability for row in prediction_batch.rows], dtype=float)
+        if (replayed.shape != persisted.shape or not np.isfinite(replayed).all()
+                or not np.isclose(replayed, persisted, rtol=1e-12, atol=1e-12).all()
+                or not np.isclose(persisted, displayed, rtol=1e-12, atol=1e-12).all()):
+            raise OOFPredictionReplayMismatch("Fold probability replay does not match persisted OOF probabilities.")
+        shap_values, bases, margins = loaded_model_version.predictor.native_shap_batch(feature_matrix)
+        profile = validate_native_shap_numerics(self.model_id, shap_values, bases, margins, replayed)
+        return OOFShapChunkAggregate(
+            row_count=len(values),
+            sum_abs_shap=tuple(np.sum(np.abs(shap_values), axis=0, dtype=np.float64).tolist()),
+            provider_id=self.descriptor.provider_id,
+            provider_version=self.descriptor.provider_version,
+            explanation_method_id=self.descriptor.provider_id,
+            explanation_method_version=self.descriptor.provider_version,
+            aggregation_method_id="sum_absolute_shap",
+            aggregation_method_version="1",
+            numerical_validation_profile_id=profile.profile_id,
+            numerical_validation_profile_version=profile.version,
+            output_space="raw_margin",
+            model_binding_id=explanation_context.model_binding_id,
+            feature_binding_hash=feature_binding_hash,
+            background_policy_id=explanation_context.background_policy_id,
+            background_hash=explanation_context.background_hash,
+        )
 
     def explain_batch(self, *, loaded_model_version: Any, prediction_batch: Any, row_ids: tuple[str, ...], explanation_context: TrustedExplanationContext) -> tuple[Any, ...]:
         if not isinstance(explanation_context, TrustedExplanationContext):

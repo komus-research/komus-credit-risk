@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getCurrentObjects, getCurrentResult, type ResultObjectItem, type ResultObjectList, type ResultObjectsQuery, type ResultOverview } from '../api/result'
-import { Sidebar } from '../components/Sidebar'
 import { buildObjectsRoute, currentRoute, navigate, navigateObjectDetail, navigateObjects, parseObjectsQuery, replaceObjects, routes, type ObjectsQueryState } from '../routing'
 
 const chunkSize = 50
@@ -27,7 +26,7 @@ function targetMarker(item: ResultObjectItem) {
   return <span className={`objects-target objects-target-${item.outcome.toLowerCase()}`}><b aria-hidden="true">{item.y_true === 1 ? '●' : '○'}</b>{item.y_true === 1 ? 'Да' : 'Нет'}</span>
 }
 
-export function ObjectsPage({ onHome }: { onHome: () => void }) {
+export function ObjectsPage() {
   const [result, setResult] = useState<ResultOverview | null>(null)
   const [contextError, setContextError] = useState<string | null>(null)
   const [objects, setObjects] = useState<ResultObjectList | null>(null)
@@ -138,12 +137,12 @@ export function ObjectsPage({ onHome }: { onHome: () => void }) {
   const lastShown = objects ? objects.offset + objects.returned_count : 0
   const openObject = (objectId: string) => navigateObjectDetail(objectId, parseObjectsQuery())
 
-  return <div className="app-shell features-shell"><Sidebar active="analysis" onHome={onHome} /><main className="workspace result-workspace objects-workspace">
+  return <main className="workspace result-workspace objects-workspace">
     <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
-    <button className="objects-back-link" onClick={() => navigate(routes.result)}>← Назад к результату модели</button>
+    <button className="back-action objects-back-link" onClick={() => navigate(routes.result)}>← Назад к результату модели</button>
     <header className="result-header"><p className="eyebrow">Шаг 5 из 5 · Результат</p><h1>Объекты оценки</h1><p>Просмотрите OOF-оценки отдельных объектов, найдите ошибки и отфильтруйте сохранённый результат.</p></header>
 
-    {contextError && <section className="result-error" role="alert"><strong>Результат недоступен</strong><p>{contextError}</p><button className="secondary-action" onClick={() => navigate(routes.result)}>← Вернуться к результату</button></section>}
+    {contextError && <section className="result-error" role="alert"><strong>Результат недоступен</strong><p>{contextError}</p><button className="back-action" onClick={() => navigate(routes.result)}>← Вернуться к результату</button></section>}
     {!result && !contextError && <p className="feature-loading">Загружаем контекст сохранённого результата…</p>}
     {result && <>
       <section className="objects-context-grid">
@@ -174,5 +173,5 @@ export function ObjectsPage({ onHome }: { onHome: () => void }) {
         {objects && objects.filtered_count > 0 && <div className="objects-chunk-controls"><button className="secondary-action" disabled={objects.offset === 0 || loadingObjects} onClick={() => updateObjectsQuery({ ...objectsQuery, offset: Math.max(0, objectsQuery.offset - chunkSize) })}>← Предыдущие</button><button className="secondary-action" disabled={objects.offset + objects.returned_count >= objects.filtered_count || loadingObjects} onClick={() => updateObjectsQuery({ ...objectsQuery, offset: objectsQuery.offset + chunkSize })}>Следующие →</button></div>}
       </section>
     </>}
-  </main></div>
+  </main>
 }

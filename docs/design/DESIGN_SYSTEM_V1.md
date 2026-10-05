@@ -42,9 +42,15 @@ Status: **PRIMARY VISUAL SYSTEM / IMPLEMENTATION REFERENCE**
 
 ## 4. Общий shell
 
-Главный source of truth:
+Главный source of truth для общей композиции:
 
-`screens/home/01_home_axion_v1.png`
+`screens/home/01_home_axion_v2_candidate.png` — accepted VISUAL LOCK общего shell; имя файла историческое.
+
+Для sidebar поверх Home V2 действует более новый shared-component lock:
+
+`components/sidebar/01_sidebar_final_v1.png`.
+
+Он фиксирует фирменный волновой/точечный motif, плотность, иконки и active-state. Демонстрационная карточка пользователя внизу этого PNG исключена из принятого contract: до отдельного auth/users workstream нельзя показывать выдуманные avatar/name/role/profile/login.
 
 Общие элементы продукта:
 
@@ -73,7 +79,61 @@ Status: **PRIMARY VISUAL SYSTEM / IMPLEMENTATION REFERENCE**
 
 Навигация не должна менять scientific state без явного действия пользователя.
 
-До отдельного authentication/users workstream sidebar не показывает fake user profile: avatar, имя, роль пользователя, profile menu, login/logout не являются частью V1 shell.
+До отдельного authentication/users workstream sidebar не показывает fake user profile: avatar, имя, роль пользователя, profile menu, login/logout не являются частью V1 shell. Нижняя зона sidebar остаётся неинтерактивной брендовой областью; точный auth UI появится только после отдельного контракта.
+
+Canonical navigation IA остаётся `Главная / Новый анализ / Модели / История / Настройки`; демонстрационные подписи вроде `Проекты / История` не создают новую domain-сущность или route.
+
+## 5.1. Система кнопок
+
+Canonical shared-component visual lock:
+
+`components/buttons/02_button_system_v2.png`
+
+Статус: **VISUAL LOCK / PRIMARY SHARED COMPONENT REFERENCE**. Button System V2 supersedes V1 по visual treatment; V1 сохраняется как previous reference.
+
+Button System V2 применяется последовательно на native React экранах и в confirmation/native modal. Роли: `Primary`, `Secondary`, `Tertiary / Ghost`, `Back`, `Destructive`, `Disabled`. Состояния: Default / Hover / Pressed / Focus / Disabled.
+
+Базовая геометрия из visual lock:
+
+- height / min-height: `44 px`;
+- horizontal padding: `18 px`;
+- border radius: `12 px`;
+- icon: `16 px`;
+- gap icon → text: `10 px`;
+- typography: `15 px`, Semibold;
+- border: `1 px`;
+- subtle shadow/glow: `0 2px 8px rgba(16, 185, 129, 0.15)`;
+- focus ring: `0 0 0 2px rgba(16, 185, 129, 0.5)`.
+
+Canonical Primary direction — **Graphite + Emerald Border**: заметный emerald accent без яркой сплошной зелёной плитки. Кнопки по умолчанию content-based по ширине; full-width допустим только когда этого требует layout.
+
+Класс кнопки определяется **ролью действия в текущем состоянии экрана**, а не текстом примера на component sheet. На одном action level не должно быть нескольких конкурирующих Primary без отдельного UX-решения.
+
+Component visual lock определяет внешний вид, но не меняет routing, доступность действия, backend gate или scientific semantics. Если старый screen PNG показывает кнопку иначе, чем Button System V2, сохранить композицию и смысл экрана, а внешний вид кнопки брать из Button System V2.
+
+## 5.2. Long Operations
+
+Canonical shared-component reference:
+
+`components/long-operations/01_long_operations_v1.png`.
+
+Различаются два базовых режима:
+
+- `LOADING` — чтение уже существующего state/result; показывает title/message и indeterminate AXION indicator, без elapsed/stage/percent/ETA;
+- `RUNNING_LONG_OPERATION` — реальная длительная backend-операция; может показывать только фактически известные stage, elapsed и discrete units/folds.
+
+Training показывает реальные folds/stages и elapsed. Folds не переводятся автоматически в overall percentage. Fake ETA и smooth 0–100% запрещены. Если backend позже публикует точные determinate units, UI может показать их как реальные processed/total, не выдавая за ETA.
+
+`ERROR` должен завершать loading и давать стабильное понятное состояние; `READY/COMPLETED` — короткий переход к следующему доступному действию.
+
+## 5.3. Data Confirmation / Quality density
+
+Canonical screen locks:
+
+- `screens/new-analysis/02_data_confirmation_v2.png`;
+- `screens/new-analysis/05_quality_v2.png`.
+
+Оба экрана используют более плотный desktop rhythm. Уменьшение выполняется реальными typography/gap/padding/card-height значениями, а не `transform: scale()`. На Quality secondary controls (`Дополнительные настройки`, `Технические сведения`) остаются визуально вторичными и компактными.
 
 ## 6. Карточки и панели
 
@@ -115,9 +175,10 @@ Status: **PRIMARY VISUAL SYSTEM / IMPLEMENTATION REFERENCE**
 
 1. Фактический backend contract — истина для данных, доступности и поведения.
 2. Accepted UX document — истина для state transitions и interaction semantics.
-3. Конкретный PNG screen reference — истина для композиции и визуальной иерархии.
-4. Этот Design System — истина для общего визуального языка.
-5. Brandbook — истина для бренда, логотипа, цветов и ограничений.
+3. Accepted shared-component visual lock — истина для внешнего вида соответствующего общего компонента; в текущем наборе это Buttons, Data Warnings, Sidebar и Long Operations.
+4. Конкретный PNG screen reference — истина для композиции и визуальной иерархии экрана; для Confirmation и Quality основными являются V2 refs.
+5. Этот Design System — истина для общего визуального языка.
+6. Brandbook — истина для бренда, логотипа, цветов и ограничений.
 
 Если источники конфликтуют, Developer не принимает решение самостоятельно: STOP и сообщает точное расхождение.
 

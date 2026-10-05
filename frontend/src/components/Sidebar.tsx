@@ -1,16 +1,16 @@
 import { Icon } from './Icon'
-
-const asset = (path: string) => `/native-assets/${path}`
+// @ts-expect-error Vite resolves CSS Modules at runtime; this project has no generated CSS declarations.
+import styles from './Sidebar.module.css'
 
 export function Sidebar({ active, onHome, onNewAnalysis }: { active: 'home' | 'analysis'; onHome: () => void; onNewAnalysis?: () => void }) {
-  return <aside className="sidebar shared-sidebar">
-    <div className="brand-block" role="img" aria-label="AXION"><img className="brand-mark" src={asset('brand/logo-mark-primary.png')} alt="" /><img className="brand-wordmark" src={asset('brand/wordmark-dark.png')} alt="" /></div>
-    <nav aria-label="Основная навигация" className="navigation">
-      <button className={`nav-item ${active === 'home' ? 'is-active' : ''}`} onClick={onHome} aria-current={active === 'home' ? 'page' : undefined}><Icon name="home" size={26} /><span>Главная</span></button>
-      {onNewAnalysis ? <button className={`nav-item ${active === 'analysis' ? 'is-active' : ''}`} onClick={onNewAnalysis}><Icon name="plus" size={26} /><span>Новый анализ</span></button> : <div className={`nav-item ${active === 'analysis' ? 'is-active' : ''}`}><Icon name="plus" size={26} /><span>Новый анализ</span></div>}
-      <button className="nav-item" disabled title="Будет доступно позже"><Icon name="model" size={26} /><span>Модели</span></button>
-      <button className="nav-item" disabled title="Будет доступно позже"><Icon name="menu" size={26} /><span>История</span></button>
-      <button className="nav-item with-divider" disabled title="Будет доступно позже"><Icon name="settings" size={26} /><span>Настройки</span></button>
+  return <aside className={styles.sidebar}>
+    <div className={styles.brand} role="img" aria-label="AXION" />
+    <nav aria-label="Основная навигация" className={styles.navigation}>
+      <button className={`${styles.item} ${active === 'home' ? styles.active : ''}`} onClick={onHome} aria-current={active === 'home' ? 'page' : undefined}><Icon name="home" size={24} /><span>Главная</span></button>
+      {onNewAnalysis ? <button className={`${styles.item} ${styles.newAnalysis} ${active === 'analysis' ? styles.active : ''}`} onClick={onNewAnalysis}><Icon name="plus" size={24} /><span>Новый анализ</span></button> : <div className={`${styles.item} ${styles.newAnalysis} ${active === 'analysis' ? styles.active : ''}`}><Icon name="plus" size={24} /><span>Новый анализ</span></div>}
+      <button className={styles.item} disabled title="Будет доступно позже"><Icon name="model" size={24} /><span>Модели</span></button>
+      <button className={styles.item} disabled title="Будет доступно позже"><Icon name="menu" size={24} /><span>История</span></button>
+      <button className={`${styles.item} ${styles.withDivider}`} disabled title="Будет доступно позже"><Icon name="settings" size={24} /><span>Настройки</span></button>
     </nav>
   </aside>
 }
