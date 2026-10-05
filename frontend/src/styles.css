@@ -1329,15 +1329,15 @@ body:has(.global-explanation-workspace) { min-width: 0; }
 .data-workspace .data-header { padding: 7px 0 5px; }
 .data-workspace .data-header h1,
 .confirmation-workspace .data-header h1 { font-size: 26px; }
-.data-workspace .data-stepper { margin-bottom: 12px; }
-.data-workspace .file-summary { min-height: 88px; gap: 14px; margin-bottom: 12px; padding: 10px 14px; }
+.data-workspace .data-stepper { margin-bottom: 18px; }
+.data-workspace .file-summary { min-height: 88px; gap: 14px; margin-bottom: 20px; padding: 10px 14px; }
 .data-workspace .file-identity { gap: 11px; }
 .data-workspace .file-icon { width: 48px; height: 52px; }
 .data-workspace .file-summary h2 { margin-bottom: 5px; }
 .data-workspace .file-ready { margin-bottom: 3px; }
 .data-workspace .file-facts > div { padding: 2px 10px; }
 .data-workspace .file-facts dt { margin-bottom: 4px; }
-.data-workspace .key-roles { margin-bottom: 12px; padding: 10px 12px; }
+.data-workspace .key-roles { margin-bottom: 20px; padding: 10px 12px; }
 .data-workspace .section-heading h2 { margin-bottom: 3px; font-size: 17px; }
 .data-workspace .role-grid { margin-top: 9px; }
 .data-workspace .role-card { grid-template-columns: 42px minmax(0, 1fr); gap: 9px; }
@@ -1345,7 +1345,7 @@ body:has(.global-explanation-workspace) { min-width: 0; }
 .data-workspace .role-card label { margin: 1px 0 5px; }
 .data-workspace .role-card p { min-height: 27px; margin-top: 5px; }
 .data-workspace .attention-section,
-.data-workspace .permission-summary { margin-bottom: 12px; padding: 10px 12px; }
+.data-workspace .permission-summary { margin-bottom: 20px; padding: 10px 12px; }
 .data-workspace .warning-panel-header { grid-template-columns: 32px minmax(0, 1fr) auto; gap: 9px; }
 .data-workspace .attention-icon { width: 30px; height: 30px; font-size: 21px; }
 .data-workspace .warning-panel-copy h2 { font-size: 16px; }
