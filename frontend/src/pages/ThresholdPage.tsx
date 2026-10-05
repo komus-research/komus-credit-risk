@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import {
   getCurrentResult,
   getCurrentThresholdPreview,
@@ -15,8 +15,32 @@ const thresholdFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 
 const percentFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 })
 const integerFormat = new Intl.NumberFormat('ru-RU')
 const metricFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
+const ratioFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 })
+const compactCostFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 })
+const rubleFormat = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB', maximumFractionDigits: 0 })
 
 function percent(value: number) { return `${percentFormat.format(value * 100)}%` }
+function sanitizeCostInput(value: string) {
+  const digits = value.replace(/\D/g, '').replace(/^0+(?=\d)/, '')
+  return digits.slice(0, 15)
+}
+function formatCostInput(value: string) {
+  if (!value) return ''
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? integerFormat.format(parsed) : value
+}
+function parseScenarioCost(value: string) {
+  if (!value.trim()) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+}
+function compactCostLabel(value: number | null) {
+  if (value === null) return 'Введите сумму за одну ошибку'
+  if (value >= 1_000_000_000) return `${compactCostFormat.format(value / 1_000_000_000)} млрд ₽`
+  if (value >= 1_000_000) return `${compactCostFormat.format(value / 1_000_000)} млн ₽`
+  if (value >= 1_000) return `${compactCostFormat.format(value / 1_000)} тыс. ₽`
+  return `${integerFormat.format(value)} ₽`
+}
 function clampThreshold(value: number) { return Math.min(1, Math.max(0, Math.round(value * 100) / 100)) }
 function sameThreshold(left: number, right: number) { return Math.abs(left - right) < 0.000001 }
 
@@ -158,6 +182,135 @@ function ErrorCard({ label, count, rate, note, tone }: {
   </article>
 }
 
+function ThresholdInfoTooltip({ title, body, note }: { title: string; body: string; note?: string }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+
+  useEffect(() => {
+    if (!open) return
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [open])
+
+  return <span
+    className="threshold-info-wrap"
+    onMouseEnter={() => setOpen(true)}
+    onMouseLeave={() => setOpen(false)}
+    onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}
+  >
+    <button
+      type="button"
+      className="threshold-info-button"
+      aria-label={`Подробнее: ${title}`}
+      aria-describedby={open ? id : undefined}
+      onFocus={() => setOpen(true)}
+      onClick={event => { event.stopPropagation(); setOpen(value => !value) }}
+    ><Icon name="info" size={14} /></button>
+    {open && <span className="threshold-info-tooltip" id={id} role="tooltip">
+      <strong>{title}</strong>
+      <p>{body}</p>
+      {note && <p className="threshold-info-note">{note}</p>}
+    </span>}
+  </span>
+}
+
+function CostScenario({ metrics, fnCostInput, fpCostInput, onFnCostChange, onFpCostChange }: {
+  metrics: ThresholdMetrics
+  fnCostInput: string
+  fpCostInput: string
+  onFnCostChange: (value: string) => void
+  onFpCostChange: (value: string) => void
+}) {
+  const fnCost = parseScenarioCost(fnCostInput)
+  const fpCost = parseScenarioCost(fpCostInput)
+  const fnLoss = fnCost === null ? null : metrics.fn * fnCost
+  const fpLoss = fpCost === null ? null : metrics.fp * fpCost
+  const totalLoss = fnLoss === null || fpLoss === null ? null : fnLoss + fpLoss
+  const totalErrors = metrics.fn + metrics.fp
+  const fnShare = totalErrors ? metrics.fn / totalErrors : 0
+  const fpShare = totalErrors ? metrics.fp / totalErrors : 0
+  const errorRatio = metrics.fp > 0 ? `${ratioFormat.format(metrics.fn / metrics.fp)} : 1` : metrics.fn > 0 ? '∞ : 1' : '0 : 0'
+
+  const costText = (value: number | null) => value === null ? '—' : rubleFormat.format(value)
+
+  return <div className="threshold-cost-scenario">
+    <div className="threshold-cost-counts">
+      <div className="fn"><small>Пропущенные события (FN)</small><strong>{integerFormat.format(metrics.fn)}</strong><div><i style={{ width: `${fnShare * 100}%` }} /></div></div>
+      <div className="fp"><small>Ложные срабатывания (FP)</small><strong>{integerFormat.format(metrics.fp)}</strong><div><i style={{ width: `${fpShare * 100}%` }} /></div></div>
+    </div>
+
+    <div className="threshold-cost-inputs">
+      <div className="threshold-cost-field">
+        <div className="threshold-cost-field-label">
+          <span>Стоимость FN</span>
+          <ThresholdInfoTooltip
+            title="Стоимость FN — пропущенного события"
+            body="FN (False Negative) — фактическое целевое событие произошло, но оценка объекта оказалась ниже выбранного порога, поэтому модель не отнесла его к положительному классу."
+            note="Укажите среднюю денежную стоимость одного такого случая именно для вашего бизнес-сценария. Это не стоимость, рассчитанная моделью, и не утверждённая сумма Комуса."
+          />
+        </div>
+        <div className="threshold-cost-input-box">
+          <input
+            aria-label="Сценарная стоимость FN"
+            inputMode="numeric"
+            value={formatCostInput(fnCostInput)}
+            placeholder="500 000"
+            onChange={event => onFnCostChange(sanitizeCostInput(event.currentTarget.value))}
+          />
+          <b>₽</b>
+        </div>
+        <small className="threshold-cost-magnitude">{compactCostLabel(fnCost)}</small>
+      </div>
+
+      <div className="threshold-cost-field">
+        <div className="threshold-cost-field-label">
+          <span>Стоимость FP</span>
+          <ThresholdInfoTooltip
+            title="Стоимость FP — ложного срабатывания"
+            body="FP (False Positive) — фактического целевого события не было, но оценка объекта оказалась выше выбранного порога, поэтому модель отнесла его к положительному классу."
+            note="Укажите среднюю стоимость одного такого случая по вашей политике: например, стоимость лишней проверки или необоснованного ограничения клиента — только если бизнес именно так трактует FP."
+          />
+        </div>
+        <div className="threshold-cost-input-box">
+          <input
+            aria-label="Сценарная стоимость FP"
+            inputMode="numeric"
+            value={formatCostInput(fpCostInput)}
+            placeholder="5 000"
+            onChange={event => onFpCostChange(sanitizeCostInput(event.currentTarget.value))}
+          />
+          <b>₽</b>
+        </div>
+        <small className="threshold-cost-magnitude">{compactCostLabel(fpCost)}</small>
+      </div>
+    </div>
+
+    <div className="threshold-error-ratio">
+      <div>
+        <strong>Соотношение ошибок
+          <ThresholdInfoTooltip
+            title="Соотношение FN : FP"
+            body="Это соотношение количества ошибок при текущем пороге, а не их денежной стоимости. Например, 9,9 : 1 означает примерно 9,9 пропущенного события на одно ложное срабатывание."
+            note="При движении порога FN и FP меняются автоматически, поэтому это соотношение тоже пересчитывается."
+          />
+        </strong>
+        <b>FN : FP = {errorRatio}</b>
+      </div>
+      <div><span className="fn"><i />Пропущенные события — {percent(fnShare)}</span><span className="fp"><i />Ложные срабатывания — {percent(fpShare)}</span></div>
+    </div>
+
+    <div className="threshold-loss-estimate">
+      <h3>Оценка бизнес-потерь при текущем пороге</h3>
+      <div><span className="fn"><i />Пропущенный дефолт (FN)</span><small>{integerFormat.format(metrics.fn)} × {fnCost === null ? '—' : rubleFormat.format(fnCost)}</small><strong>{costText(fnLoss)}</strong></div>
+      <div><span className="fp"><i />Ложное срабатывание (FP)</span><small>{integerFormat.format(metrics.fp)} × {fpCost === null ? '—' : rubleFormat.format(fpCost)}</small><strong>{costText(fpLoss)}</strong></div>
+      <footer><b>Общие потери</b><strong>{costText(totalLoss)}</strong></footer>
+    </div>
+
+    <small className="threshold-cost-scenario-note">Исследовательский сценарий: стоимость FN/FP задаётся пользователем и не является утверждённой политикой Комуса.</small>
+  </div>
+}
+
 export function ThresholdPage() {
   const [result, setResult] = useState<ResultOverview | null>(null)
   const [savedMetrics, setSavedMetrics] = useState<ThresholdMetrics | null>(null)
@@ -170,6 +323,13 @@ export function ThresholdPage() {
   const [error, setError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [appliedNotice, setAppliedNotice] = useState<string | null>(null)
+  const [errorPanelTab, setErrorPanelTab] = useState<'errors' | 'cost'>('errors')
+  const [fnCostInput, setFnCostInput] = useState('')
+  const [fpCostInput, setFpCostInput] = useState('')
+  const sweepByStep = useMemo(
+    () => new Map(sweep.map(point => [Math.round(point.threshold * 100), point])),
+    [sweep],
+  )
 
   useEffect(() => {
     const controller = new AbortController()
@@ -202,6 +362,14 @@ export function ThresholdPage() {
       return
     }
 
+    const sweepPoint = sweepByStep.get(Math.round(selected * 100))
+    if (sweepPoint && sameThreshold(sweepPoint.threshold, selected)) {
+      setMetrics(sweepPoint)
+      setPreviewLoading(false)
+      setPreviewError(null)
+      return
+    }
+
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       setPreviewLoading(true)
@@ -218,7 +386,7 @@ export function ThresholdPage() {
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [selected, savedMetrics])
+  }, [selected, savedMetrics, sweepByStep])
 
   const unsaved = selected !== null && savedMetrics !== null && !sameThreshold(selected, savedMetrics.threshold)
   const summary = result?.summary
@@ -259,8 +427,15 @@ export function ThresholdPage() {
   }
 
   const setThreshold = (value: number) => {
+    const next = clampThreshold(value)
     setAppliedNotice(null)
-    setSelected(clampThreshold(value))
+    setSelected(next)
+    const sweepPoint = sweepByStep.get(Math.round(next * 100))
+    if (sweepPoint && sameThreshold(sweepPoint.threshold, next)) {
+      setMetrics(sweepPoint)
+      setPreviewLoading(false)
+      setPreviewError(null)
+    }
   }
 
   return <main className="workspace result-workspace threshold-workspace threshold-explorer">
@@ -318,10 +493,22 @@ export function ThresholdPage() {
         </section>
 
         <section className="threshold-errors-panel panel">
-          <h2>Ошибки при текущем пороге <Icon name="info" size={16} /></h2>
-          <ErrorCard label="Пропущенные события (FN)" count={metrics.fn} rate={fnRate} note={`от всех фактических целевых событий (${integerFormat.format(targetEvents)})`} tone="fn" />
-          <ErrorCard label="Ложные срабатывания (FP)" count={metrics.fp} rate={fpRate} note={`среди объектов выше порога (${integerFormat.format(metrics.above_threshold_count)})`} tone="fp" />
-          <aside className="threshold-ranking-note"><Icon name="info" size={18} /><span>Gini, ROC-AUC и PR-AUC не зависят от выбранного порога.</span></aside>
+          <div className="threshold-error-tabs" role="tablist" aria-label="Ошибки и цена ошибки">
+            <button className={errorPanelTab === 'errors' ? 'active' : ''} role="tab" aria-selected={errorPanelTab === 'errors'} onClick={() => setErrorPanelTab('errors')}>Ошибки при текущем пороге</button>
+            <div className="threshold-cost-tab-control">
+              <button className={errorPanelTab === 'cost' ? 'active' : ''} role="tab" aria-selected={errorPanelTab === 'cost'} onClick={() => setErrorPanelTab('cost')}>Цена ошибки</button>
+              <ThresholdInfoTooltip
+                title="Цена ошибки"
+                body="Этот режим переводит текущие FN и FP в денежный исследовательский сценарий. Формула простая: FN × стоимость одного FN + FP × стоимость одного FP."
+                note="Порог меняет количество FN/FP, а введённые вами суммы меняют денежную оценку. Модель при этом не переобучается, а значения стоимости не считаются утверждённой политикой Комуса."
+              />
+            </div>
+          </div>
+          {errorPanelTab === 'errors' ? <>
+            <ErrorCard label="Пропущенные события (FN)" count={metrics.fn} rate={fnRate} note={`от всех фактических целевых событий (${integerFormat.format(targetEvents)})`} tone="fn" />
+            <ErrorCard label="Ложные срабатывания (FP)" count={metrics.fp} rate={fpRate} note={`среди объектов выше порога (${integerFormat.format(metrics.above_threshold_count)})`} tone="fp" />
+            <aside className="threshold-ranking-note"><Icon name="info" size={18} /><span>Gini, ROC-AUC и PR-AUC не зависят от выбранного порога.</span></aside>
+          </> : <CostScenario metrics={metrics} fnCostInput={fnCostInput} fpCostInput={fpCostInput} onFnCostChange={setFnCostInput} onFpCostChange={setFpCostInput} />}
         </section>
       </div>
 

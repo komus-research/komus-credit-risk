@@ -172,11 +172,11 @@ class OOFResultService:
         return self._threshold_metrics(context, value)
 
     def threshold_sweep(self, artifact_id: str) -> tuple[OOFThresholdMetrics, ...]:
-        """Return a bounded 0.00..1.00 threshold sweep from immutable OOF evidence."""
+        """Return exact 0.01 threshold steps from immutable OOF evidence."""
         context = self._context(artifact_id)
         return tuple(
-            self._threshold_metrics(context, index / 50)
-            for index in range(51)
+            self._threshold_metrics(context, index / 100)
+            for index in range(101)
         )
 
     def objects(
