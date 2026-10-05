@@ -2,6 +2,9 @@ import type { NativeSession } from './api/session'
 
 export const routes = {
   home: '#/home',
+  documentation: '#/help/documentation',
+  hotkeys: '#/help/hotkeys',
+  about: '#/help/about',
   file: '#/analysis/data/file',
   roles: '#/analysis/data/roles',
   confirmation: '#/analysis/data/confirmation',
@@ -197,7 +200,7 @@ export function guardedRoute(route: AppRoute, session: NativeSession, allowResul
   if (isObjectDetailRoute(route)) {
     return session.resume_route === routes.result ? route : session.resume_route
   }
-  if (route === routes.home || route === routes.file) return route
+  if (route === routes.home || route === routes.file || route === routes.documentation || route === routes.hotkeys || route === routes.about) return route
   if (route === routes.roles) {
     return session.analysis_active && session.data_substep === 'ROLES' ? route : routes.file
   }

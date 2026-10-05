@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-type IconName = 'algorithm' | 'alert-circle' | 'arrow' | 'box' | 'chart' | 'check' | 'clock' | 'download' | 'file' | 'folder' | 'home' | 'info' | 'layers' | 'menu' | 'model' | 'plus' | 'search' | 'settings' | 'table' | 'users' | 'warning'
+type IconName = 'algorithm' | 'alert-circle' | 'arrow' | 'box' | 'chart' | 'check' | 'clock' | 'download' | 'file' | 'folder' | 'home' | 'info' | 'keyboard' | 'layers' | 'menu' | 'model' | 'plus' | 'search' | 'settings' | 'table' | 'users' | 'warning'
 
 const paths: Record<IconName, ReactNode> = {
   algorithm: <><path d="m12 2.8 7.5 4.3v8.7L12 20l-7.5-4.2V7.1L12 2.8Z" /><circle cx="12" cy="11.5" r="3.4" /><path d="M12 6.1v2M12 14.9v2M6.5 11.5h2M15.5 11.5h2" /></>,
@@ -15,6 +15,7 @@ const paths: Record<IconName, ReactNode> = {
   folder: <path d="M3 6.5h6l1.8 2H21v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-11Z" />,
   home: <path d="m3 10 9-7 9 7v10h-6v-6H9v6H3V10Z" />,
   info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5m0-8h.01" /></>,
+  keyboard: <><rect x="2.5" y="5.5" width="19" height="13" rx="2.5" /><path d="M6 10h.01M9 10h.01M12 10h.01M15 10h.01M18 10h.01M7 14h10" /></>,
   layers: <><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 12 9 5 9-5M3 16l9 5 9-5" /></>,
   menu: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>,
   table: <><rect x="3.5" y="3" width="17" height="18" rx="2" /><path d="M3.5 8h17M9 8v13m5-13v13M3.5 13h17" /></>,

@@ -44,3 +44,34 @@
 .newAnalysis.active > :global(.icon) { background: rgba(0, 229, 198, .09); outline: none; }
 .withDivider { margin-top: 16px; }
 .withDivider::before { position: absolute; top: -8px; right: 16px; left: 16px; height: 1px; background: #153035; content: ''; }
+
+.utility {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0;
+  margin-top: auto;
+  padding: 14px 16px 18px;
+  border-top: 1px solid rgba(21, 48, 53, .9);
+}
+
+.utilityItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 8px;
+  color: #d8e6e5;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.utilityItem > :global(.icon) { width: 20px; height: 20px; flex: 0 0 20px; color: #c8d8d8; }
+.utilityItem:not(.utilityActive):hover { color: #f0fbf9; background: rgba(14, 38, 43, .7); }
+.utilityActive { color: #00ebc7; background: rgba(11, 58, 55, .5); }
+.utilityActive > :global(.icon) { color: #00ebc7; }

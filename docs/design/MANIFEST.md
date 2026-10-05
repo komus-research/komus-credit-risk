@@ -29,8 +29,9 @@ V2 применяется ко всем runtime-кнопкам, включая h
 | Экран | Файл | Роль |
 | --- | --- | --- |
 | Главная | `screens/home/01_home_axion_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
-| Главная V2 | `screens/home/01_home_axion_v2_candidate.png` | VISUAL LOCK; основной reference общего AXION shell / Home V2 |
-| Главная — Button System V2 application | `screens/home/02_home_button_system_v2.png` | VISUAL LOCK APPLICATION REFERENCE; показывает canonical применение Button System V2 на текущей Главной без изменения layout |
+| Главная V2 | `screens/home/01_home_axion_v2_candidate.png` | PREVIOUS VISUAL REFERENCE; исторический reference Home V2 |
+| Главная — Button System V2 application | `screens/home/02_home_button_system_v2.png` | PREVIOUS APPLICATION REFERENCE; canonical Button System V2 сохраняется, но полный Home authority обновлён |
+| Главная V3 | `screens/home/03_home_final_v3.png` | **CURRENT VISUAL LOCK**; актуальный полный reference Home + persistent Sidebar + нижнее меню справки |
 | История анализов V1 | `screens/history/01_analysis_history_v1.png` | VISUAL LOCK; read-only каталог завершённых ExperimentArtifact, без Project entity |
 | Настройки V1 | `screens/settings/01_settings_v1.png` | VISUAL LOCK; основной collapsed state глобальных настроек AXION |
 | Настройки V1 — privacy expanded | `screens/settings/02_settings_privacy_expanded_v1.png` | VISUAL LOCK; тот же Settings screen с раскрытым `Как защищаются данные?` |

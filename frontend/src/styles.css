@@ -1431,3 +1431,9 @@ body:has(.global-explanation-workspace) { min-width: 0; }
 .result-influence-loading strong { color: #dcebea; font-size: 12px; font-weight: 600; }
 .result-influence-loading small { color: #9eb6b8; font-size: 11px; line-height: 1.4; }
 .result-influence-spinner { width: 16px; height: 16px; flex: 0 0 16px; }
+
+/* Sidebar utility placeholders: intentionally minimal until these sections are implemented. */
+.utility-placeholder-workspace { min-height: 100vh; padding-top: 24px; }
+.utility-placeholder-panel { min-height: 220px; display: grid; place-content: center; gap: 8px; text-align: center; }
+.utility-placeholder-panel h1 { margin: 0; font-size: 28px; }
+.utility-placeholder-panel p { margin: 0; color: #9fb4b6; font-size: 14px; }

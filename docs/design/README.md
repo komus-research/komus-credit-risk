@@ -18,7 +18,7 @@
 
 ## Основной visual reference
 
-Принятая Главная AXION V2 (`screens/home/01_home_axion_v2_candidate.png`; историческое имя файла) задаёт общий visual shell продукта:
+Принятая Главная AXION V3 (`screens/home/03_home_final_v3.png`) задаёт актуальный visual shell продукта. Более ранние Home PNG сохранены как исторические reference:
 - тёмный graphite background;
 - emerald / teal accent;
 - светлый основной текст;

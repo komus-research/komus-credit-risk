@@ -11,6 +11,7 @@ import { ObjectsPage } from './pages/ObjectsPage'
 import { ObjectDetailPage } from './pages/ObjectDetailPage'
 import { ThresholdPage } from './pages/ThresholdPage'
 import { GlobalExplanationPage } from './pages/GlobalExplanationPage'
+import { UtilityPlaceholderPage } from './pages/UtilityPlaceholderPage'
 import { currentRoute, guardedRoute, isObjectDetailRoute, navigate, navigateObjects, objectIdFromRoute, parseObjectsQuery, replaceRoute, routes, type AppRoute } from './routing'
 
 const recoveryText = 'Сессия подготовки была сброшена. Загрузите файл повторно.'
@@ -101,6 +102,9 @@ export function App() {
   }, [sync])
 
   const openHome = useCallback(() => navigate(routes.home), [])
+  const openDocumentation = useCallback(() => navigate(routes.documentation), [])
+  const openHotkeys = useCallback(() => navigate(routes.hotkeys), [])
+  const openAbout = useCallback(() => navigate(routes.about), [])
   const openResultThreshold = useCallback(() => {
     resultThresholdAccess.current = true
     navigate(routes.resultThreshold)
@@ -129,7 +133,13 @@ export function App() {
 
   const page = route === routes.home
     ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={beginNewAnalysis} startingNewAnalysis={startingNewAnalysis} />
-    : route === routes.features
+    : route === routes.documentation
+      ? <UtilityPlaceholderPage title="Документация" />
+      : route === routes.hotkeys
+        ? <UtilityPlaceholderPage title="Горячие клавиши" />
+        : route === routes.about
+          ? <UtilityPlaceholderPage title="О платформе" />
+          : route === routes.features
       ? <FeaturesPage onSessionChange={setSession} />
       : route === routes.algorithm
         ? <AlgorithmPage />
@@ -146,7 +156,7 @@ export function App() {
                   : isObjectDetailRoute(route)
                     ? <ObjectDetailPage objectId={objectIdFromRoute(route)!} onBack={backToObjects} />
                     : <DataPage route={route} sessionReady={sessionReady} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
-  const shellClass = route === routes.home
+  const shellClass = route === routes.home || route === routes.documentation || route === routes.hotkeys || route === routes.about
     ? 'home-shell'
     : route === routes.file || route === routes.roles || route === routes.confirmation
       ? 'workflow-shell data-shell'
@@ -156,7 +166,14 @@ export function App() {
 
   return <>
     <div className={`app-shell ${shellClass}`}>
-      <Sidebar active={route === routes.home ? 'home' : 'analysis'} onHome={openHome} onNewAnalysis={() => beginNewAnalysis()} />
+      <Sidebar
+        active={route === routes.home ? 'home' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
+        onHome={openHome}
+        onNewAnalysis={() => beginNewAnalysis()}
+        onDocumentation={openDocumentation}
+        onHotkeys={openHotkeys}
+        onAbout={openAbout}
+      />
       <div className="app-page">{page}</div>
     </div>
     {confirmingNewAnalysis && <div className="native-modal-backdrop" role="presentation"><section className="native-modal" role="dialog" aria-modal="true" aria-labelledby="new-analysis-title"><h2 id="new-analysis-title">Начать новый анализ?</h2><p>Текущие неподтверждённые данные будут сброшены.</p><div><button className="secondary-action" onClick={() => setConfirmingNewAnalysis(false)}>Отмена</button><button className="destructive-action" disabled={startingNewAnalysis} onClick={() => { setConfirmingNewAnalysis(false); beginNewAnalysis(true) }}>Начать новый</button></div></section></div>}
