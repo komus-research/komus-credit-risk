@@ -46,37 +46,96 @@ function MetricCard({ label, value, bar, tone = 'teal', detail }: {
 }
 
 function ThresholdCurve({ points, metrics }: { points: ThresholdMetrics[]; metrics: ThresholdMetrics }) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const width = 640
   const height = 236
-  const left = 42
+  const left = 58
   const right = 18
   const top = 18
-  const bottom = 34
+  const bottom = 40
   const plotWidth = width - left - right
   const plotHeight = height - top - bottom
   const x = (threshold: number) => left + threshold * plotWidth
   const y = (value: number) => top + (1 - Math.max(0, Math.min(1, value))) * plotHeight
-  const pathFor = (selector: (point: ThresholdMetrics) => number) => points
-    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${x(point.threshold).toFixed(2)} ${y(selector(point)).toFixed(2)}`)
-    .join(' ')
+  const hasPositivePredictions = (point: ThresholdMetrics) => point.above_threshold_count > 0
+  const recallAt = (point: ThresholdMetrics) => hasPositivePredictions(point) ? point.recall : null
+  const precisionAt = (point: ThresholdMetrics) => hasPositivePredictions(point) ? point.precision : null
+  const pathFor = (selector: (point: ThresholdMetrics) => number | null) => {
+    let drawing = false
+    return points
+      .map(point => {
+        const value = selector(point)
+        if (value === null || !Number.isFinite(value)) {
+          drawing = false
+          return ''
+        }
+        const command = drawing ? 'L' : 'M'
+        drawing = true
+        return `${command} ${x(point.threshold).toFixed(2)} ${y(value).toFixed(2)}`
+      })
+      .filter(Boolean)
+      .join(' ')
+  }
   const grid = [0, .25, .5, .75, 1]
+  const hovered = hoveredIndex === null ? null : points[hoveredIndex]
+
+  const handlePointerMove = (event: React.MouseEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (!rect.width) return
+    const viewX = ((event.clientX - rect.left) / rect.width) * width
+    const threshold = Math.max(0, Math.min(1, (viewX - left) / plotWidth))
+    let nearestIndex = 0
+    let nearestDistance = Number.POSITIVE_INFINITY
+    points.forEach((point, index) => {
+      const distance = Math.abs(point.threshold - threshold)
+      if (distance < nearestDistance) {
+        nearestDistance = distance
+        nearestIndex = index
+      }
+    })
+    setHoveredIndex(nearestIndex)
+  }
+
+  const hoveredPrecision = hovered ? precisionAt(hovered) : null
 
   return <div className="threshold-chart-shell">
-    <svg className="threshold-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Зависимость Recall и Precision от диагностического порога">
+    <svg
+      className="threshold-chart"
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label="Зависимость Recall и Precision от диагностического порога"
+      onMouseMove={handlePointerMove}
+      onMouseLeave={() => setHoveredIndex(null)}
+    >
       {grid.map(value => <g key={value}>
         <line className="threshold-chart-grid" x1={left} x2={width - right} y1={y(value)} y2={y(value)} />
         <text className="threshold-chart-label" x={left - 8} y={y(value) + 4} textAnchor="end">{Math.round(value * 100)}</text>
       </g>)}
       {[0, .2, .4, .6, .8, 1].map(value => <g key={value}>
         <line className="threshold-chart-grid vertical" x1={x(value)} x2={x(value)} y1={top} y2={height - bottom} />
-        <text className="threshold-chart-label" x={x(value)} y={height - 9} textAnchor="middle">{value.toFixed(1).replace('.', ',')}</text>
+        <text className="threshold-chart-label" x={x(value)} y={height - 18} textAnchor="middle">{value.toFixed(1).replace('.', ',')}</text>
       </g>)}
-      <path className="threshold-chart-line recall" d={pathFor(point => point.recall)} />
-      <path className="threshold-chart-line precision" d={pathFor(point => point.precision)} />
+      <text className="threshold-chart-axis-label" x={15} y={top + plotHeight / 2} textAnchor="middle" transform={`rotate(-90 15 ${top + plotHeight / 2})`}>Доля, %</text>
+      <text className="threshold-chart-axis-label" x={width - right} y={height - 3} textAnchor="end">Порог</text>
+      <path className="threshold-chart-line recall" d={pathFor(recallAt)} />
+      <path className="threshold-chart-line precision" d={pathFor(precisionAt)} />
       <line className="threshold-chart-marker" x1={x(metrics.threshold)} x2={x(metrics.threshold)} y1={top} y2={height - bottom} />
-      <circle className="threshold-chart-dot recall" cx={x(metrics.threshold)} cy={y(metrics.recall)} r="5" />
-      <circle className="threshold-chart-dot precision" cx={x(metrics.threshold)} cy={y(metrics.precision)} r="5" />
+      {hasPositivePredictions(metrics) && <circle className="threshold-chart-dot recall" cx={x(metrics.threshold)} cy={y(metrics.recall)} r="5" />}
+      {hasPositivePredictions(metrics) && <circle className="threshold-chart-dot precision" cx={x(metrics.threshold)} cy={y(metrics.precision)} r="5" />}
+      {hovered && <>
+        <line className="threshold-chart-hover-marker" x1={x(hovered.threshold)} x2={x(hovered.threshold)} y1={top} y2={height - bottom} />
+        {hasPositivePredictions(hovered) && <circle className="threshold-chart-hover-dot recall" cx={x(hovered.threshold)} cy={y(hovered.recall)} r="4.5" />}
+        {hoveredPrecision !== null && <circle className="threshold-chart-hover-dot precision" cx={x(hovered.threshold)} cy={y(hoveredPrecision)} r="4.5" />}
+      </>}
     </svg>
+    <div className="threshold-chart-hover-readout" aria-live="polite">
+      {hovered && <>
+        <strong>Порог {thresholdFormat.format(hovered.threshold)}</strong>
+        <span><i className="recall" />Recall <b>{percent(hovered.recall)}</b></span>
+        <span><i className="precision" />Precision <b>{hoveredPrecision === null ? '—' : percent(hoveredPrecision)}</b></span>
+        {hoveredPrecision === null && <small>нет объектов выше порога</small>}
+      </>}
+    </div>
     <div className="threshold-chart-legend">
       <span><i className="recall" />Recall</span>
       <span><i className="precision" />Precision</span>
@@ -110,6 +169,7 @@ export function ThresholdPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [appliedNotice, setAppliedNotice] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -173,7 +233,7 @@ export function ThresholdPage() {
     }
   }, [metrics])
 
-  const saveScenario = async () => {
+  const applyThreshold = async () => {
     if (selected === null || !unsaved) return
     setSaving(true)
     setPreviewError(null)
@@ -182,8 +242,9 @@ export function ThresholdPage() {
       setSavedMetrics(value)
       setMetrics(value)
       setSelected(value.threshold)
+      setAppliedNotice(`Порог ${thresholdFormat.format(value.threshold)} применён к текущему результату`)
     } catch (reason) {
-      setPreviewError(reason instanceof Error ? reason.message : 'Не удалось сохранить выбранный порог.')
+      setPreviewError(reason instanceof Error ? reason.message : 'Не удалось применить выбранный порог.')
     } finally {
       setSaving(false)
     }
@@ -194,16 +255,20 @@ export function ThresholdPage() {
     setSelected(savedMetrics.threshold)
     setMetrics(savedMetrics)
     setPreviewError(null)
+    setAppliedNotice(null)
   }
 
-  const setThreshold = (value: number) => setSelected(clampThreshold(value))
+  const setThreshold = (value: number) => {
+    setAppliedNotice(null)
+    setSelected(clampThreshold(value))
+  }
 
   return <main className="workspace result-workspace threshold-workspace threshold-explorer">
     <div className="analysis-nav"><span className="analysis-context">Новый анализ</span><ol className="analysis-stepper" aria-label="Этапы анализа">{['Данные', 'Признаки', 'Алгоритм', 'Проверка качества', 'Результат'].map((name, index) => <li key={name} className={index < 4 ? 'completed' : 'active'}><span>{index < 4 ? '✓' : index + 1}</span>{name}</li>)}</ol></div>
 
     <header className="threshold-explorer-header">
       <div className="threshold-breadcrumbs"><button className="text-action" onClick={() => navigate(routes.result)}>← Назад к результату модели</button><span>Результат модели</span><b>/</b><span>Исследование порога</span></div>
-      <div className="threshold-title-row"><div><h1>Исследование порога</h1><p>Посмотрите, как изменение порога влияет на количество найденных и пропущенных событий.</p></div>{unsaved && <span className="threshold-unsaved"><i />Изменения не сохранены</span>}</div>
+      <div className="threshold-title-row"><div><h1>Исследование порога</h1><p>Посмотрите, как изменение порога влияет на количество найденных и пропущенных событий.</p></div>{unsaved ? <span className="threshold-unsaved"><i />Изменения не применены</span> : appliedNotice ? <span className="threshold-applied"><i />{appliedNotice}</span> : null}</div>
     </header>
 
     {error && <section className="result-error" role="alert"><strong>Исследование порога недоступно</strong><p>{error}</p><button className="back-action" onClick={() => navigate(routes.result)}>← Вернуться к результату</button></section>}
@@ -232,7 +297,7 @@ export function ThresholdPage() {
           <span className="threshold-scenario-badge">Диагностический сценарий</span>
           <button className="secondary-action" disabled={sameThreshold(selected, DEFAULT_THRESHOLD)} onClick={() => setThreshold(DEFAULT_THRESHOLD)}>Вернуть исходный порог</button>
         </div>
-        <p className="threshold-preview-status">{previewLoading ? 'Пересчитываем метрики…' : previewError ? 'Предпросмотр временно недоступен. Выбранный порог всё равно можно сохранить.' : 'Изменяйте порог — метрики и графики пересчитываются автоматически.'}</p>
+        <p className="threshold-preview-status">{previewLoading ? 'Пересчитываем метрики…' : previewError ? 'Предпросмотр временно недоступен. Выбранный порог всё равно можно применить.' : appliedNotice ? 'Порог применён к текущему результату. Модель не переобучалась.' : 'Изменяйте порог — метрики и графики пересчитываются автоматически.'}</p>
       </section>
 
       <section className="threshold-metrics panel">
@@ -271,14 +336,14 @@ export function ThresholdPage() {
           <div><dt>Artifact ID</dt><dd>{summary.artifact_id}</dd></div>
           <div><dt>Источник оценок</dt><dd>OOF</dd></div>
           <div><dt>Исходный порог</dt><dd>{thresholdFormat.format(DEFAULT_THRESHOLD)}</dd></div>
-          <div><dt>Сохранённый порог</dt><dd>{thresholdFormat.format(savedMetrics.threshold)}</dd></div>
+          <div><dt>Применённый порог</dt><dd>{thresholdFormat.format(savedMetrics.threshold)}</dd></div>
           <div><dt>Точек графика</dt><dd>{sweep.length || '—'}</dd></div>
         </dl>
       </details>
 
       <footer className="threshold-explorer-footer">
         <button className="back-action" onClick={() => navigate(routes.result)}>← Назад к результату модели</button>
-        <div><button className="secondary-action" disabled={!unsaved || saving} onClick={cancelChanges}>Отменить изменения</button><button className="primary-action" disabled={!unsaved || saving || previewLoading} onClick={saveScenario}>{saving ? 'Сохраняем…' : 'Сохранить сценарий'}</button></div>
+        <div><button className="secondary-action" disabled={!unsaved || saving} onClick={cancelChanges}>Отменить изменения</button><button className="primary-action" title="Применить выбранный порог к текущему результату. Модель не переобучается." disabled={!unsaved || saving || previewLoading} onClick={applyThreshold}>{saving ? 'Применяем…' : 'Применить порог'}</button></div>
       </footer>
     </>}
   </main>
