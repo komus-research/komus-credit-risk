@@ -39,7 +39,7 @@ export function HomePage({ session, onContinue, onStartNewAnalysis, startingNewA
         <section className="panel quick-start"><h2>Быстрый старт</h2><div className="quick-grid">
           <FutureAction icon="plus" title="Новый анализ" description="Загрузить данные и начать новый анализ" accent onClick={onStartNewAnalysis} disabled={startingNewAnalysis} />
           <FutureAction icon="box" title="Открыть модель" description="Использовать сохранённую модель без повторного обучения" />
-          {session?.analysis_active
+          {session?.analysis_active && session.has_meaningful_temporary_work
             ? <FutureAction icon="menu" title="Продолжить текущий анализ" description="Вернуться к активному анализу" accent onClick={onContinue} disabled={false} />
             : <FutureAction icon="menu" title="Продолжить последний проект" description="История проектов пока не подключена" />}
         </div></section>

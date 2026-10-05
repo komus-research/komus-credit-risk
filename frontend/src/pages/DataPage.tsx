@@ -117,7 +117,7 @@ export function DataPage({ route, sessionReady, onDatasetUploaded, onStaleSessio
         <section className="key-roles panel"><div className="section-heading"><h2>Ключевые роли</h2><p>Укажите, какие колонки являются целевой, идентификатором и какое значение считается целевым событием.</p></div><div className="role-grid">{roleCards.map(role => <RoleControl key={role.key} role={role} preparation={preparation} busy={busy} update={update} />)}</div></section>
         <WarningPanel key={preparation.source.handle} preparation={preparation} />
         <section className="permission-summary panel"><div className="section-heading"><h2>Сводка по ролям</h2><p>Сводка рассчитана по текущему черновику ролей.</p></div><div className="permission-counts">{Object.entries(preparation.summary.permission_counts).map(([key, value]) => <div key={key}><span>{permissionLabels[key]}</span><strong>{value}</strong></div>)}</div></section>
-        <footer className="data-footer"><button className="back-action" disabled>← Назад</button><div><p>Проверьте роли колонок перед подтверждением.</p><button className="primary-action" disabled={busy || !preparation.draft.target || !preparation.draft.identifier || preparation.draft.positive_class === null} onClick={review}>Продолжить к подтверждению <Icon name="arrow" size={19} /></button></div></footer>
+        <footer className="data-footer"><button className="back-action" disabled={busy} onClick={() => navigate(routes.file)}>← Назад</button><div><p>Проверьте роли колонок перед подтверждением.</p><button className="primary-action" disabled={busy || !preparation.draft.target || !preparation.draft.identifier || preparation.draft.positive_class === null} onClick={review}>Продолжить к подтверждению <Icon name="arrow" size={19} /></button></div></footer>
       </>}
       {(recoveryMessage || error) && <div className="data-error" role={error ? 'alert' : 'status'}>
         {recoveryMessage && <span>{recoveryMessage}</span>}
@@ -198,7 +198,7 @@ function InspectionProgress({ progress, now }: { progress: DatasetInspectionProg
   const activeIndex = activeStage ? inspectionStages.indexOf(activeStage) : -1
   const elapsed = progress?.started_at ? formatElapsed(now - Date.parse(progress.started_at)) : null
   return <div className="inspection-progress" aria-live="polite">
-    <Icon name="settings" size={35} />
+    <span className="inspection-stage-icon" aria-hidden="true"><Icon name="table" size={24} /></span>
     <div><h2>{progress?.stage_label ?? 'Проверка запускается'}</h2>{elapsed && <p className="inspection-elapsed">Прошло {elapsed}</p>}<p className="inspection-heartbeat"><span aria-hidden="true" />Проверка активна</p></div>
     <ol>{inspectionStages.map((stage, index) => <li key={stage} className={index < activeIndex ? 'done' : index === activeIndex ? 'current' : ''}><span>{index < activeIndex ? '✓' : index === activeIndex ? '●' : '○'}</span>{stageLabel(stage)}</li>)}</ol>
     <p className="inspection-note">Проверка продолжается, приложение работает. Для больших XLSB это может занять несколько минут.</p>

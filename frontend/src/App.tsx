@@ -117,7 +117,7 @@ export function App() {
     resultObjectsAccess.current = true
     navigateObjects(parseObjectsQuery())
   }, [])
-  const continueAnalysis = useCallback(() => { if (session) navigate(session.resume_route) }, [session])
+  const continueAnalysis = useCallback(() => { if (session?.analysis_active && session.has_meaningful_temporary_work) navigate(session.resume_route) }, [session])
   const handleDatasetUploaded = useCallback(() => {
     setRecoveryMessage(null)
     navigate(routes.roles)
@@ -132,7 +132,7 @@ export function App() {
   }, [])
 
   const page = route === routes.home
-    ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={beginNewAnalysis} startingNewAnalysis={startingNewAnalysis} />
+    ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={() => beginNewAnalysis()} startingNewAnalysis={startingNewAnalysis} />
     : route === routes.documentation
       ? <UtilityPlaceholderPage title="Документация" />
       : route === routes.hotkeys
