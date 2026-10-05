@@ -81,7 +81,7 @@ export function QualityPage() {
     }).then(setData).catch(reason => setError(reason instanceof NativeApiError ? reason.message : reason instanceof Error ? reason.message : 'Не удалось сохранить настройки.')).finally(() => setBusy(false))
   }
   const startTraining = () => {
-    if (!data?.can_start_training || operationBusy) return
+    if (!data?.can_start_training || operationBusy || draftChanged) return
     setError(null)
     setData(current => current ? { ...current, training: { ...current.training, status: 'RUNNING', stage: null, stage_label: null, fold_number: null, folds_total: null, artifact_id: null, failure_code: null, elapsed_seconds: null, message: 'Отправляем запрос на запуск обучения.' }, can_start_training: false } : current)
     void runQualityTraining().then(setData).catch(reason => {
@@ -126,7 +126,7 @@ export function QualityPage() {
         <details className="quality-details panel"><summary><span>▧</span><div><strong>Технические сведения</strong><small>Информация о протоколе проверки, используемых данных и других технических деталях.</small></div></summary><dl><div><dt>Protocol</dt><dd>{data.supported_protocol.protocol_id} v{data.supported_protocol.protocol_version}</dd></div><div><dt>Folds / seed</dt><dd>{data.settings.folds} / {data.settings.seed}</dd></div><div><dt>Model</dt><dd>{data.summary.selected_model_id}</dd></div><div><dt>Plan / smoke</dt><dd>{data.plan.status} / {data.preflight.status}</dd></div>{data.preflight.identity && <div><dt>Smoke identity</dt><dd>{data.preflight.identity}</dd></div>}{data.training.artifact_id && <div><dt>Artifact ID</dt><dd>{data.training.artifact_id}</dd></div>}</dl></details>
       </div>
       {data.training.status === 'COMPLETED' && <section className="quality-status-strip quality-training-complete panel"><b>✓</b><div><h2>Обучение завершено</h2><p>Обучение и проверка качества завершены. Результат сохранён.</p></div></section>}
-      <footer className="quality-footer"><button className="back-action" disabled={operationBusy} onClick={() => navigate(routes.algorithm)}>← Назад к алгоритму</button><div>{data.training.status === 'COMPLETED' ? <button className="primary-action" onClick={() => navigate(routes.result)}>Открыть результат →</button> : <button className="primary-action" disabled={!data.can_start_training || operationBusy} onClick={startTraining}>{trainingRunning ? 'Обучение выполняется…' : 'Начать обучение →'}</button>}</div></footer>
+      <footer className="quality-footer"><button className="back-action" disabled={operationBusy} onClick={() => navigate(routes.algorithm)}>← Назад к алгоритму</button><div>{data.training.status === 'COMPLETED' ? <button className="primary-action" onClick={() => navigate(routes.result)}>Открыть результат →</button> : <button className="primary-action" disabled={!data.can_start_training || operationBusy || draftChanged} onClick={startTraining}>{trainingRunning ? 'Обучение выполняется…' : 'Начать обучение →'}</button>}</div></footer>
     </>}
   </main>
 }

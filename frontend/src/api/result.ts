@@ -238,6 +238,24 @@ export async function getCurrentGlobalOOFExplanation(signal?: AbortSignal): Prom
   }
 }
 
+export async function getCurrentThresholdPreview(threshold: number, signal?: AbortSignal): Promise<ThresholdMetrics> {
+  const response = await fetch(`/api/v1/result/threshold?threshold=${encodeURIComponent(String(threshold))}`, { signal })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { message?: string } } | null
+    throw new Error(payload?.detail?.message ?? 'Не удалось пересчитать метрики для выбранного порога.')
+  }
+  return response.json() as Promise<ThresholdMetrics>
+}
+
+export async function getCurrentThresholdSweep(signal?: AbortSignal): Promise<ThresholdMetrics[]> {
+  const response = await fetch('/api/v1/result/threshold/sweep', { signal })
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as { detail?: { message?: string } } | null
+    throw new Error(payload?.detail?.message ?? 'Не удалось загрузить график зависимости метрик от порога.')
+  }
+  return response.json() as Promise<ThresholdMetrics[]>
+}
+
 export async function updateCurrentThreshold(threshold: number): Promise<ThresholdMetrics> {
   const response = await fetch('/api/v1/result/threshold', {
     method: 'PATCH',
@@ -246,7 +264,7 @@ export async function updateCurrentThreshold(threshold: number): Promise<Thresho
   })
   if (!response.ok) {
     const payload = await response.json().catch(() => null) as { detail?: { message?: string } } | null
-    throw new Error(payload?.detail?.message ?? 'Не удалось изменить диагностический порог.')
+    throw new Error(payload?.detail?.message ?? 'Не удалось сохранить выбранный порог.')
   }
   return response.json() as Promise<ThresholdMetrics>
 }

@@ -54,6 +54,16 @@ class OOFResultServiceTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaisesRegex(OOFResultError, "INVALID_THRESHOLD"):
                 self.service.threshold("artifact-v3", invalid)  # type: ignore[arg-type]
 
+    def test_threshold_sweep_returns_bounded_points_from_same_oof_evidence(self) -> None:
+        sweep = self.service.threshold_sweep("artifact-v3")
+
+        self.assertEqual(len(sweep), 51)
+        self.assertEqual(sweep[0].threshold, 0.0)
+        self.assertEqual(sweep[25].threshold, 0.5)
+        self.assertEqual(sweep[-1].threshold, 1.0)
+        self.assertEqual((sweep[25].tp, sweep[25].tn, sweep[25].fp, sweep[25].fn), (2, 1, 2, 1))
+        self.assertAlmostEqual(sweep[25].recall, 2 / 3)
+
     def test_capture_curve_uses_descending_scores_and_row_position_for_ties(self) -> None:
         capture = self.service.summary("artifact-v3").capture
 

@@ -1054,6 +1054,89 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             ],
         )
 
+    @api.get("/api/v1/result/threshold", response_model=ResultThresholdResponse)
+    def preview_current_result_threshold(
+        threshold: Annotated[float, Query(ge=0.0, le=1.0)],
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> ResultThresholdResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
+        try:
+            value = result_service.threshold(artifact_id, threshold)
+        except OOFResultError as exc:
+            if exc.code == "INVALID_THRESHOLD":
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "INVALID_THRESHOLD", "message": "Порог должен быть числом от 0 до 1."},
+                ) from None
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "RESULT_READ_ERROR", "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        return ResultThresholdResponse(
+            threshold=value.threshold,
+            tp=value.tp,
+            tn=value.tn,
+            fp=value.fp,
+            fn=value.fn,
+            precision=value.precision,
+            recall=value.recall,
+            f1=value.f1,
+            above_threshold_count=value.above_threshold_count,
+            above_threshold_share=value.above_threshold_share,
+        )
+
+    @api.get("/api/v1/result/threshold/sweep", response_model=list[ResultThresholdResponse])
+    def get_current_result_threshold_sweep(
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> list[ResultThresholdResponse]:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id = store.current_result_artifact_id(resolved_session_id)
+        if artifact_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
+        try:
+            values = result_service.threshold_sweep(artifact_id)
+        except OOFResultError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "RESULT_READ_ERROR", "message": "Не удалось прочитать сохранённый результат."},
+            ) from None
+        return [
+            ResultThresholdResponse(
+                threshold=value.threshold,
+                tp=value.tp,
+                tn=value.tn,
+                fp=value.fp,
+                fn=value.fn,
+                precision=value.precision,
+                recall=value.recall,
+                f1=value.f1,
+                above_threshold_count=value.above_threshold_count,
+                above_threshold_share=value.above_threshold_share,
+            )
+            for value in values
+        ]
+
     @api.patch("/api/v1/result/threshold", response_model=ResultThresholdResponse)
     def update_current_result_threshold(
         payload: ResultThresholdPatch,

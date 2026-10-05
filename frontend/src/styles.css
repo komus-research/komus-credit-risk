@@ -1447,3 +1447,200 @@ body:has(.global-explanation-workspace) { min-width: 0; }
 .utility-placeholder-panel { min-height: 220px; display: grid; place-content: center; gap: 8px; text-align: center; }
 .utility-placeholder-panel h1 { margin: 0; font-size: 28px; }
 .utility-placeholder-panel p { margin: 0; color: #9fb4b6; font-size: 14px; }
+
+/* Threshold Explorer V1 — scoped to the Result threshold route. */
+.threshold-explorer { max-width: 1320px; padding-bottom: 24px; }
+.threshold-explorer-header { margin: 12px 0 12px; }
+.threshold-breadcrumbs { display: flex; align-items: center; gap: 10px; min-height: 30px; color: #9fb7b9; font-size: 12px; }
+.threshold-breadcrumbs .text-action { padding: 0; color: #25d9c7; }
+.threshold-breadcrumbs b { color: #58797b; font-weight: 500; }
+.threshold-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.threshold-title-row h1 { margin: 2px 0 3px; font-size: 28px; line-height: 1.1; }
+.threshold-title-row p { margin: 0; color: #b8cbcd; font-size: 13px; }
+.threshold-unsaved { display: inline-flex; align-items: center; gap: 7px; margin-top: 8px; color: #f5b629; font-size: 12px; white-space: nowrap; }
+.threshold-unsaved i { width: 8px; height: 8px; border-radius: 50%; background: #f5b629; box-shadow: 0 0 8px rgba(245,182,41,.35); }
+
+.threshold-explorer-notice { display: flex; align-items: center; gap: 11px; margin-bottom: 10px; padding: 9px 13px; border: 1px solid #188da0; border-radius: 7px; color: #c7dadd; background: rgba(5,40,48,.88); font-size: 12px; }
+.threshold-explorer-notice .icon { flex: 0 0 auto; color: #55cde9; }
+.threshold-explorer-notice p { margin: 0; }
+
+.threshold-context-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0; margin-bottom: 10px; padding: 0; overflow: hidden; }
+.threshold-context-strip > div { position: relative; display: grid; grid-template-columns: 44px minmax(0,1fr); grid-template-rows: auto auto; column-gap: 10px; align-items: center; min-height: 68px; padding: 10px 14px; }
+.threshold-context-strip > div:not(:last-child)::after { content: ""; position: absolute; top: 12px; right: 0; bottom: 12px; width: 1px; background: #19484c; }
+.threshold-context-icon { grid-row: 1 / span 2; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 7px; color: #00e5c2; background: #073f42; }
+.threshold-context-strip small { color: #a8c0c2; font-size: 11px; }
+.threshold-context-strip strong { color: #edf8f6; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.threshold-selector { margin-bottom: 10px; padding: 11px 15px 10px; }
+.threshold-selector-title { display: flex; align-items: center; gap: 12px; }
+.threshold-selector-title h2 { display: inline-flex; align-items: center; gap: 7px; margin: 0; font-size: 17px; }
+.threshold-selector-title h2 .icon { color: #24c9e8; }
+.threshold-selected-badge { padding: 4px 10px; border: 1px solid #28797d; border-radius: 6px; color: #dff9f5; background: #0b3a3c; font-size: 13px; font-weight: 650; }
+.threshold-slider-row { display: grid; grid-template-columns: minmax(360px, 1fr) 92px auto auto; gap: 12px; align-items: center; margin-top: 7px; }
+.threshold-slider-wrap { position: relative; min-width: 0; padding-top: 18px; }
+.threshold-slider-wrap input[type=range] { display: block; width: 100%; height: 7px; margin: 0; accent-color: #00e5c2; cursor: pointer; }
+.threshold-default-marker { position: absolute; top: 2px; bottom: 15px; width: 1px; transform: translateX(-50%); background: #9fb7b9; pointer-events: none; }
+.threshold-default-marker i { position: absolute; left: -4px; top: 20px; width: 9px; height: 9px; border: 2px solid #d4e1e1; border-radius: 50%; background: #4b6568; }
+.threshold-default-marker small { position: absolute; top: 0; left: 50%; transform: translateX(-50%); color: #b7c8ca; font-size: 10px; white-space: nowrap; }
+.threshold-range-labels { display: flex; justify-content: space-between; margin-top: 4px; color: #9cb3b5; font-size: 10px; }
+.threshold-number-input { width: 92px; height: 38px; padding: 0 10px; border: 1px solid #285b5f; border-radius: 6px; color: #f1fbfa; background: #071f23; font: inherit; font-size: 16px; }
+.threshold-scenario-badge { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; padding: 0 12px; border: 1px solid #276278; border-radius: 6px; color: #bcd9e2; background: rgba(8,37,45,.82); font-size: 11px; white-space: nowrap; }
+.threshold-preview-status { min-height: 16px; margin: 5px 0 0; color: #91abad; font-size: 10px; }
+
+.threshold-metrics { margin-bottom: 10px; padding: 10px 13px; }
+.threshold-metrics > h2, .threshold-chart-panel > h2, .threshold-errors-panel > h2 { display: flex; align-items: center; gap: 7px; margin: 0 0 9px; font-size: 16px; }
+.threshold-metrics h2 .icon, .threshold-chart-panel h2 .icon, .threshold-errors-panel h2 .icon { color: #24c9e8; }
+.threshold-metrics-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.threshold-metric-card { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto auto; gap: 2px 10px; min-height: 72px; padding: 9px 11px; border: 1px solid #1a575a; border-radius: 7px; background: rgba(6,35,39,.74); }
+.threshold-metric-card small { color: #b8ccce; font-size: 11px; }
+.threshold-metric-card strong { grid-column: 1; color: #effafa; font-size: 20px; }
+.threshold-metric-card > span { align-self: end; color: #c3d4d5; font-size: 12px; }
+.threshold-metric-track { grid-column: 1 / -1; height: 7px; overflow: hidden; border-radius: 99px; background: #173c43; }
+.threshold-metric-track i { display: block; height: 100%; border-radius: inherit; background: #20e6b7; }
+.threshold-metric-track i.cyan { background: #21cbe7; }
+.threshold-interpretation { display: flex; align-items: center; gap: 12px; margin-top: 10px; padding: 10px 12px; border: 1px solid #1a9f8f; border-radius: 7px; background: linear-gradient(90deg, rgba(8,73,68,.68), rgba(6,39,42,.65)); }
+.threshold-interpretation > .icon { flex: 0 0 auto; color: #12ddc1; }
+.threshold-interpretation strong { color: #eefaf8; font-size: 12px; }
+.threshold-interpretation p { margin: 3px 0 0; color: #c1d4d5; font-size: 11px; }
+
+.threshold-analysis-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(340px, .85fr); gap: 10px; margin-bottom: 10px; }
+.threshold-chart-panel, .threshold-errors-panel { padding: 11px 13px; }
+.threshold-chart-shell { min-width: 0; }
+.threshold-chart { display: block; width: 100%; max-height: 235px; overflow: visible; }
+.threshold-chart-grid { stroke: #21464c; stroke-width: 1; }
+.threshold-chart-grid.vertical { stroke: #173a40; }
+.threshold-chart-label { fill: #91abad; font-size: 10px; }
+.threshold-chart-line { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.threshold-chart-line.recall { stroke: #20e6b7; }
+.threshold-chart-line.precision { stroke: #22cce8; }
+.threshold-chart-marker { stroke: #d8e4e3; stroke-width: 1.2; stroke-dasharray: 5 5; }
+.threshold-chart-dot { stroke: #061b1f; stroke-width: 2; }
+.threshold-chart-dot.recall { fill: #20e6b7; }
+.threshold-chart-dot.precision { fill: #22cce8; }
+.threshold-chart-legend { display: flex; align-items: center; gap: 18px; margin-top: -3px; color: #b7cbcd; font-size: 11px; }
+.threshold-chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.threshold-chart-legend i { width: 10px; height: 10px; border-radius: 50%; }
+.threshold-chart-legend i.recall { background: #20e6b7; }
+.threshold-chart-legend i.precision { background: #22cce8; }
+.threshold-chart-legend strong { margin-left: auto; color: #d8e7e6; font-size: 11px; font-weight: 600; }
+
+.threshold-errors-panel { display: flex; flex-direction: column; }
+.threshold-error-card { display: grid; grid-template-columns: 1fr 140px; gap: 8px 14px; padding: 10px 11px; border: 1px solid #1c4d51; border-radius: 7px; background: rgba(6,34,38,.75); }
+.threshold-error-card + .threshold-error-card { margin-top: 8px; }
+.threshold-error-card small { display: block; color: #c7d7d8; font-size: 11px; }
+.threshold-error-card strong { display: block; margin-top: 3px; color: #f0f9f8; font-size: 21px; }
+.threshold-error-rate { align-self: center; }
+.threshold-error-rate b { display: block; font-size: 16px; }
+.threshold-error-card.fn .threshold-error-rate b { color: #ff6e76; }
+.threshold-error-card.fp .threshold-error-rate b { color: #ffc13d; }
+.threshold-error-rate span { display: block; margin-top: 2px; color: #aabfc1; font-size: 10px; line-height: 1.25; }
+.threshold-error-track { grid-column: 1 / -1; height: 7px; overflow: hidden; border-radius: 99px; background: #183e45; }
+.threshold-error-track i { display: block; height: 100%; border-radius: inherit; }
+.threshold-error-card.fn .threshold-error-track i { background: #ff5f6d; }
+.threshold-error-card.fp .threshold-error-track i { background: #ffc229; }
+.threshold-ranking-note { display: flex; align-items: center; gap: 8px; margin-top: auto; padding: 8px 9px; border: 1px solid #1a83a2; border-radius: 6px; color: #b9d6dd; background: rgba(5,37,44,.72); font-size: 10px; }
+.threshold-ranking-note .icon { color: #46c9e7; flex: 0 0 auto; }
+
+.threshold-details { margin-bottom: 8px; padding: 0; overflow: hidden; }
+.threshold-details summary { min-height: 38px; display: grid; grid-template-columns: 24px auto 1fr 20px; align-items: center; gap: 8px; padding: 7px 12px; cursor: pointer; list-style: none; }
+.threshold-details summary::-webkit-details-marker { display: none; }
+.threshold-details summary .icon { color: #c5d4d4; }
+.threshold-details summary strong { color: #e8f3f2; font-size: 12px; }
+.threshold-details summary small { color: #9fb4b6; font-size: 10px; }
+.threshold-details summary > span { justify-self: end; color: #b5c9ca; }
+.threshold-details[open] summary { border-bottom: 1px solid #1b4548; }
+.threshold-table-wrap { max-height: 320px; overflow: auto; }
+.threshold-table-wrap table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.threshold-table-wrap th, .threshold-table-wrap td { padding: 7px 10px; border-bottom: 1px solid #163b3e; text-align: right; }
+.threshold-table-wrap th:first-child, .threshold-table-wrap td:first-child { text-align: left; }
+.threshold-table-wrap th { position: sticky; top: 0; color: #a9c0c2; background: #08272b; }
+.threshold-technical-list { display: grid; grid-template-columns: 160px 1fr; gap: 0; margin: 0; padding: 8px 12px; font-size: 11px; }
+.threshold-technical-list > div { display: contents; }
+.threshold-technical-list dt, .threshold-technical-list dd { padding: 7px 5px; border-bottom: 1px solid #163b3e; }
+.threshold-technical-list dt { color: #96afb1; }
+.threshold-technical-list dd { min-width: 0; margin: 0; color: #c8d9da; overflow-wrap: anywhere; }
+
+.threshold-explorer-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #1b4548; }
+.threshold-explorer-footer > div { display: flex; gap: 10px; }
+
+@media (max-width: 1050px) {
+  .threshold-context-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .threshold-context-strip > div:nth-child(3)::after { display: none; }
+  .threshold-slider-row { grid-template-columns: 1fr 92px; }
+  .threshold-scenario-badge { justify-self: start; }
+  .threshold-analysis-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .threshold-title-row, .threshold-explorer-footer { align-items: stretch; flex-direction: column; }
+  .threshold-context-strip, .threshold-metrics-grid { grid-template-columns: 1fr 1fr; }
+  .threshold-slider-row { grid-template-columns: 1fr; }
+  .threshold-number-input { width: 100%; }
+  .threshold-error-card { grid-template-columns: 1fr; }
+  .threshold-explorer-footer > div { flex-direction: column; }
+  .threshold-technical-list { grid-template-columns: 1fr; }
+}
+
+/* Threshold Explorer V1 — compact defence pass (real dimensions, no transform/scale). */
+.threshold-explorer.threshold-workspace { padding-top: 0; padding-bottom: 14px; }
+.threshold-explorer .analysis-nav { min-height: 44px; margin-bottom: 6px; }
+.threshold-explorer-header { margin: 7px 0 8px; }
+.threshold-breadcrumbs { min-height: 24px; gap: 8px; font-size: 11px; }
+.threshold-title-row h1 { margin: 1px 0 2px; font-size: 25px; }
+.threshold-title-row p { font-size: 12px; }
+.threshold-unsaved { margin-top: 5px; font-size: 11px; }
+
+.threshold-explorer-notice { gap: 9px; margin-bottom: 7px; padding: 7px 11px; font-size: 11px; }
+.threshold-context-strip { margin-bottom: 7px; }
+.threshold-context-strip > div { grid-template-columns: 38px minmax(0,1fr); column-gap: 8px; min-height: 58px; padding: 7px 11px; }
+.threshold-context-strip > div:not(:last-child)::after { top: 9px; bottom: 9px; }
+.threshold-context-icon { width: 32px; height: 32px; }
+.threshold-context-icon .icon { width: 20px; height: 20px; }
+.threshold-context-strip small { font-size: 10px; }
+.threshold-context-strip strong { font-size: 14px; }
+
+.threshold-selector { margin-bottom: 7px; padding: 8px 12px 7px; }
+.threshold-selector-title h2 { font-size: 15px; }
+.threshold-selected-badge { padding: 3px 8px; font-size: 12px; }
+.threshold-slider-row { grid-template-columns: minmax(420px, 640px) 84px auto auto; gap: 9px; justify-content: start; margin-top: 4px; }
+.threshold-slider-wrap { padding-top: 22px; }
+.threshold-slider-wrap .threshold-default-marker { top: 0; bottom: 13px; }
+.threshold-slider-wrap .threshold-default-marker small { top: -2px; padding: 1px 5px; border-radius: 4px; background: #08272b; }
+.threshold-slider-wrap .threshold-default-marker i { top: 27px; width: 7px; height: 7px; }
+@media (max-width: 1050px) { .threshold-explorer .threshold-slider-row { grid-template-columns: minmax(280px, 1fr) 84px; } }
+@media (max-width: 760px) { .threshold-explorer .threshold-slider-row { grid-template-columns: 1fr; } }
+.threshold-number-input { width: 84px; height: 34px; font-size: 14px; }
+.threshold-scenario-badge { min-height: 34px; padding: 0 10px; font-size: 10px; }
+.threshold-selector .secondary-action { min-height: 36px; height: 36px; padding-inline: 13px; font-size: 13px; }
+.threshold-preview-status { min-height: 13px; margin-top: 3px; font-size: 9px; }
+
+.threshold-metrics { margin-bottom: 7px; padding: 8px 11px; }
+.threshold-metrics > h2, .threshold-chart-panel > h2, .threshold-errors-panel > h2 { margin-bottom: 7px; font-size: 15px; }
+.threshold-metrics-grid { gap: 8px; }
+.threshold-metric-card { min-height: 62px; padding: 7px 9px; }
+.threshold-metric-card small { font-size: 10px; }
+.threshold-metric-card strong { font-size: 18px; }
+.threshold-metric-card > span { font-size: 11px; }
+.threshold-metric-track { height: 6px; }
+.threshold-interpretation { gap: 10px; margin-top: 7px; padding: 7px 10px; }
+.threshold-interpretation strong { font-size: 11px; }
+.threshold-interpretation p { margin-top: 2px; font-size: 10px; }
+
+.threshold-analysis-grid { gap: 8px; margin-bottom: 7px; }
+.threshold-chart-panel, .threshold-errors-panel { padding: 8px 10px; }
+.threshold-chart { max-height: 190px; }
+.threshold-chart-legend { gap: 14px; font-size: 10px; }
+.threshold-error-card { gap: 6px 12px; padding: 7px 9px; }
+.threshold-error-card + .threshold-error-card { margin-top: 6px; }
+.threshold-error-card small { font-size: 10px; }
+.threshold-error-card strong { font-size: 19px; }
+.threshold-error-rate b { font-size: 14px; }
+.threshold-error-rate span { font-size: 9px; }
+.threshold-error-track { height: 6px; }
+.threshold-ranking-note { gap: 7px; padding: 6px 8px; font-size: 9px; }
+
+.threshold-details { margin-bottom: 6px; }
+.threshold-details summary { min-height: 34px; gap: 7px; padding: 5px 10px; }
+.threshold-details summary strong { font-size: 11px; }
+.threshold-details summary small { font-size: 9px; }
+.threshold-explorer-footer { gap: 10px; margin-top: 8px; padding-top: 8px; }
+.threshold-explorer-footer > div { gap: 8px; }

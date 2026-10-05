@@ -36,6 +36,7 @@ def _completed_session(store: NativeSessionStore, session_id: str, artifact_id: 
 class _ResultService:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, float | None]] = []
+        self.sweep_calls: list[str] = []
         self.object_calls: list[tuple[object, ...]] = []
         self.detail_calls: list[tuple[str, str, float]] = []
         self.summary_value = SimpleNamespace(
@@ -69,6 +70,13 @@ class _ResultService:
         if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not 0 <= threshold <= 1:
             raise OOFResultError("INVALID_THRESHOLD")
         return SimpleNamespace(**{**vars(self.threshold_value), "threshold": float(threshold)})
+
+    def threshold_sweep(self, artifact_id: str):
+        self.sweep_calls.append(artifact_id)
+        return tuple(
+            SimpleNamespace(**{**vars(self.threshold_value), "threshold": index / 50})
+            for index in range(51)
+        )
 
     def objects(self, artifact_id: str, threshold: float, offset: int, limit: int, **query):
         self.object_calls.append((artifact_id, threshold, offset, limit, query))
@@ -597,6 +605,37 @@ def test_threshold_patch_saves_session_value_and_next_get_uses_it() -> None:
         ("threshold", "artifact-exact", 0.65),
     ]
     assert overview.json()["threshold"]["threshold"] == 0.65
+
+
+def test_threshold_preview_recomputes_without_saving_session_value() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+    assert store.current_result_threshold(session_id) == 0.5
+
+    response = client.get("/api/v1/result/threshold", params={"threshold": 0.37})
+
+    assert response.status_code == 200, response.text
+    assert service.calls == [("threshold", "artifact-exact", 0.37)]
+    assert response.json()["threshold"] == 0.37
+    assert store.current_result_threshold(session_id) == 0.5
+
+
+def test_threshold_sweep_returns_bounded_curve_without_saving_session_value() -> None:
+    service = _ResultService()
+    client, store, session_id = _client(service)
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.get("/api/v1/result/threshold/sweep")
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert service.sweep_calls == ["artifact-exact"]
+    assert len(payload) == 51
+    assert payload[0]["threshold"] == 0.0
+    assert payload[25]["threshold"] == 0.5
+    assert payload[-1]["threshold"] == 1.0
+    assert store.current_result_threshold(session_id) == 0.5
 
 
 def test_invalid_threshold_does_not_change_current_session_value() -> None:
