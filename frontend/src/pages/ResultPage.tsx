@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
+  createCurrentGlobalResultInterpretation,
   getCurrentGlobalOOFExplanation,
   getCurrentGlobalOOFStatus,
   getCurrentResult,
@@ -7,7 +8,9 @@ import {
   type GlobalOOFOperation,
   runCurrentGlobalOOF,
   type GlobalOOFExplanation,
+  type GlobalResultInterpretation,
   type ResultCapture,
+  type ResultInterpreterRole,
   type ResultOverview,
 } from '../api/result'
 import { Icon } from '../components/Icon'
@@ -24,6 +27,167 @@ function percent(value: number) { return percentFormat.format(value) }
 function errorRate(numerator: number, denominator: number) { return denominator === 0 ? '—' : percent(numerator / denominator) }
 
 type GlobalPreviewStatus = 'idle' | 'loading' | 'running' | 'ready' | 'changed' | 'error'
+
+const globalInterpreterRoles: Array<{ id: ResultInterpreterRole; name: string; purpose: string }> = [
+  { id: 'sales_manager', name: 'Менеджер по продажам', purpose: 'Бизнес-интерпретация качества модели и ошибок' },
+  { id: 'credit_controller', name: 'Кредитный контролёр', purpose: 'Разбор качества, порога, ошибок и стабильности' },
+  { id: 'lawyer', name: 'Юрист', purpose: 'Нейтральное объяснение ограничений и применения модели' },
+  { id: 'information_security', name: 'Информационная безопасность', purpose: 'Фокус на данных, признаках и рисках использования' },
+]
+
+type GlobalInterpretationStatus = 'IDLE' | 'LOADING' | 'READY' | 'ERROR'
+type GlobalInterpretationState = {
+  status: GlobalInterpretationStatus
+  response?: GlobalResultInterpretation
+  message?: string
+  refreshing?: boolean
+}
+type GlobalInterpretationStates = Record<ResultInterpreterRole, GlobalInterpretationState>
+
+function createGlobalInterpretationStates(): GlobalInterpretationStates {
+  return Object.fromEntries(globalInterpreterRoles.map(({ id }) => [id, { status: 'IDLE' }])) as GlobalInterpretationStates
+}
+
+function globalInterpretationStatusCopy(state: GlobalInterpretationState) {
+  if (state.refreshing) return 'Обновление'
+  return ({ IDLE: 'Не сформировано', LOADING: 'Формирование', READY: 'Готово', ERROR: 'Ошибка' } as const)[state.status]
+}
+
+function globalInterpretationCreatedAt(value: string) {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
+
+function GlobalResultInterpreterPanel({ globalStatus, artifactId }: { globalStatus: GlobalPreviewStatus; artifactId: string }) {
+  const [selectedRole, setSelectedRole] = useState<ResultInterpreterRole>('sales_manager')
+  const [interpretations, setInterpretations] = useState<GlobalInterpretationStates>(createGlobalInterpretationStates)
+  const [copiedRole, setCopiedRole] = useState<ResultInterpreterRole | null>(null)
+  const controllers = useRef<Partial<Record<ResultInterpreterRole, AbortController>>>({})
+  const copyTimer = useRef<number | null>(null)
+  const activeArtifactId = useRef(artifactId)
+  activeArtifactId.current = artifactId
+  const evidenceReady = globalStatus === 'ready'
+  const selected = globalInterpreterRoles.find(role => role.id === selectedRole)!
+  const selectedInterpretation = interpretations[selectedRole]
+
+  useEffect(() => {
+    setSelectedRole('sales_manager')
+    setInterpretations(createGlobalInterpretationStates())
+    setCopiedRole(null)
+    Object.values(controllers.current).forEach(controller => controller?.abort())
+    controllers.current = {}
+  }, [artifactId])
+
+  useEffect(() => () => {
+    Object.values(controllers.current).forEach(controller => controller?.abort())
+    if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
+  }, [])
+
+  function updateInterpretation(role: ResultInterpreterRole, next: GlobalInterpretationState) {
+    setInterpretations(current => ({ ...current, [role]: next }))
+  }
+
+  function generateInterpretation(role: ResultInterpreterRole) {
+    const prior = interpretations[role]
+    if (!evidenceReady || prior.status === 'LOADING' || prior.refreshing || controllers.current[role]) return
+    const controller = new AbortController()
+    controllers.current[role] = controller
+    const regenerating = prior.status === 'READY' && Boolean(prior.response)
+    updateInterpretation(role, regenerating
+      ? { ...prior, refreshing: true, message: undefined }
+      : { status: 'LOADING' })
+
+    void createCurrentGlobalResultInterpretation(role, controller.signal)
+      .then(response => {
+        if (controller.signal.aborted || activeArtifactId.current !== artifactId) return
+        if (response.artifact_id !== artifactId || response.role !== role) {
+          const message = 'Текущий результат изменился. Сформируйте объяснение заново.'
+          updateInterpretation(role, regenerating ? { ...prior, refreshing: false, message } : { status: 'ERROR', message })
+          return
+        }
+        updateInterpretation(role, { status: 'READY', response })
+      })
+      .catch(reason => {
+        if (controller.signal.aborted || activeArtifactId.current !== artifactId || (reason instanceof Error && reason.name === 'AbortError')) return
+        const message = reason instanceof Error ? reason.message : 'Не удалось сформировать интерпретацию общего результата.'
+        updateInterpretation(role, regenerating ? { ...prior, refreshing: false, message } : { status: 'ERROR', message })
+      })
+      .finally(() => {
+        if (controllers.current[role] === controller) delete controllers.current[role]
+      })
+  }
+
+  function generateAllInterpretations() {
+    globalInterpreterRoles.forEach(({ id }) => {
+      const state = interpretations[id]
+      if (state.status === 'IDLE' || state.status === 'ERROR') generateInterpretation(id)
+    })
+  }
+
+  function copyInterpretation(role: ResultInterpreterRole, text: string) {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopiedRole(role)
+      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
+      copyTimer.current = window.setTimeout(() => setCopiedRole(current => current === role ? null : current), 1800)
+    }).catch(() => undefined)
+  }
+
+  const hasBulkTargets = globalInterpreterRoles.some(({ id }) => {
+    const state = interpretations[id]
+    return state.status === 'IDLE' || state.status === 'ERROR'
+  })
+
+  return <section className="result-interpreter-section result-global-interpreter" aria-labelledby="global-result-interpreter-title">
+    <header className="result-interpreter-heading">
+      <div>
+        <p className="eyebrow">Result Interpreter</p>
+        <h2 id="global-result-interpreter-title">Интерпретация общего результата</h2>
+        <p>Объяснение всего обучения модели: качество OOF, ошибки, порог, стабильность и агрегированное влияние признаков.</p>
+      </div>
+      <button type="button" className="primary-action interpreter-bulk-action" onClick={generateAllInterpretations} disabled={!evidenceReady || !hasBulkTargets}>Сформировать все объяснения</button>
+    </header>
+    <div className="interpreter-safe-notice">
+      <span aria-hidden="true">i</span>
+      <p>В LLM передаётся только подготовленный сервером набор подтверждённых агрегированных фактов. Данные отдельных компаний, идентификаторы и локальные SHAP-объяснения в этот общий анализ не входят.</p>
+    </div>
+    <div className="interpreter-layout">
+      <div className="interpreter-master" role="tablist" aria-label="Роли интерпретации общего результата">
+        {globalInterpreterRoles.map(role => {
+          const state = interpretations[role.id]
+          const active = role.id === selectedRole
+          return <button type="button" key={role.id} role="tab" aria-selected={active} className={`interpreter-role ${active ? 'active' : ''}`} onClick={() => setSelectedRole(role.id)}>
+            <span className={`interpreter-role-status status-${state.status.toLowerCase()}`} aria-hidden="true" />
+            <span><strong>{role.name}</strong><small>{role.purpose}</small></span>
+            <em>{globalInterpretationStatusCopy(state)}</em>
+          </button>
+        })}
+      </div>
+      <div className="interpreter-detail panel" role="tabpanel">
+        <div className="interpreter-detail-heading">
+          <div><small>Роль</small><h3>{selected.name}</h3></div>
+          <span className={`interpreter-status-badge status-${selectedInterpretation.status.toLowerCase()}`}>{globalInterpretationStatusCopy(selectedInterpretation)}</span>
+        </div>
+        {!evidenceReady && <div className="interpreter-empty"><p>Сначала должен быть готов агрегированный OOF / SHAP-контекст модели.</p></div>}
+        {evidenceReady && selectedInterpretation.status === 'IDLE' && <div className="interpreter-empty"><p>Объяснение ещё не сформировано.</p><button type="button" className="primary-action" onClick={() => generateInterpretation(selectedRole)}>Сформировать объяснение</button></div>}
+        {evidenceReady && selectedInterpretation.status === 'LOADING' && <div className="interpreter-progress" aria-busy="true" aria-live="polite"><span className="object-detail-loading-mark" aria-hidden="true" /><p>Формируем объяснение общего результата для выбранной роли…</p></div>}
+        {evidenceReady && selectedInterpretation.status === 'ERROR' && <div className="interpreter-error" role="alert"><p>{selectedInterpretation.message}</p><button type="button" className="secondary-action" onClick={() => generateInterpretation(selectedRole)}>Повторить</button></div>}
+        {evidenceReady && selectedInterpretation.status === 'READY' && selectedInterpretation.response && <div className="interpreter-ready">
+          {selectedInterpretation.refreshing && <div className="interpreter-refreshing" aria-live="polite"><span className="object-detail-loading-mark" aria-hidden="true" />Обновляем объяснение…</div>}
+          {selectedInterpretation.message && <p className="interpreter-action-error" role="alert">{selectedInterpretation.message}</p>}
+          <p className="interpreter-text">{selectedInterpretation.response.text}</p>
+          <p className="interpreter-created">Сформировано: {globalInterpretationCreatedAt(selectedInterpretation.response.created_at)}</p>
+          <p className="interpreter-disclaimer">LLM объясняет подтверждённые OOF-метрики и агрегированный SHAP. Она не является кредитным предиктором, не выбирает бизнес-порог и не доказывает причинность или временную стабильность.</p>
+          <div className="interpreter-actions">
+            <button type="button" className="primary-action" onClick={() => generateInterpretation(selectedRole)} disabled={selectedInterpretation.refreshing}>Сформировать заново</button>
+            <button type="button" className="secondary-action" onClick={() => copyInterpretation(selectedRole, selectedInterpretation.response!.text)}>{copiedRole === selectedRole ? 'Скопировано' : 'Копировать'}</button>
+          </div>
+        </div>}
+      </div>
+    </div>
+  </section>
+}
 
 function waitForGlobalOOFPoll(signal: AbortSignal) {
   return new Promise<void>(resolve => {
@@ -220,6 +384,8 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
         <ObjectFact icon="info" tone="info" label="Пропущенные события" value={integerFormat.format(threshold.fn)} />
         <button className="primary-action" onClick={onOpenObjects}>Посмотреть объекты <Icon name="arrow" size={18} /></button>
       </section>
+
+      <GlobalResultInterpreterPanel globalStatus={globalPreviewStatus} artifactId={summary.artifact_id} />
 
       <details className="result-collapsible panel"><summary><Icon name="warning" size={22} /><span>Ограничения и предупреждения</span><small>Важная информация об интерпретации результата модели</small></summary>
         {summary.limitations.length ? <ul className="result-limitations">{summary.limitations.map((limitation, index) => <li key={`${index}-${limitation}`}>{limitation}</li>)}</ul> : <p className="result-muted">Backend не передал ограничений для этого результата.</p>}

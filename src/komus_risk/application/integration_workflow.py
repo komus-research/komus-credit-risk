@@ -14,6 +14,12 @@ from komus_risk.model_platform import (
     TrustedExplanationContext,
 )
 
+from .global_result_interpreter import (
+    GlobalRedactedV1OutboundPolicy,
+    GlobalResultInterpretationOutcome,
+    GlobalResultInterpreterRequest,
+    GlobalResultInterpreterService,
+)
 from .local_explanation import LocalExplanationEvidence
 from .model_inference import ModelInferenceService, PredictionBatch
 from .model_training import FinalModelTrainingService
@@ -111,6 +117,8 @@ class IntegrationWorkflowService:
         result_interpreter_service: ResultInterpreterService | None = None,
         result_interpreter_client: ResultInterpreterClient | None = None,
         outbound_interpreter_policy: OutboundInterpreterPolicy | None = None,
+        global_result_interpreter_service: GlobalResultInterpreterService | None = None,
+        global_outbound_interpreter_policy: GlobalRedactedV1OutboundPolicy | None = None,
         result_interpreter_runtime: ResultInterpreterRuntimeConfiguration | None = None,
     ) -> None:
         self.final_model_training_service = final_model_training_service
@@ -127,6 +135,8 @@ class IntegrationWorkflowService:
         self.result_interpreter_service = result_interpreter_service
         self.result_interpreter_client = result_interpreter_client
         self.outbound_interpreter_policy = outbound_interpreter_policy
+        self.global_result_interpreter_service = global_result_interpreter_service
+        self.global_outbound_interpreter_policy = global_outbound_interpreter_policy
         self.result_interpreter_runtime = result_interpreter_runtime or ResultInterpreterRuntimeConfiguration.disabled()
         training_store = getattr(final_model_training_service, "model_version_store", model_version_store)
         if training_store is not model_version_store:
@@ -291,6 +301,93 @@ class IntegrationWorkflowService:
             response=response,
             dispatch_receipt=dispatch.receipt,
         )
+
+    def prepare_global_interpretation(
+        self,
+        *,
+        summary: Any,
+        threshold: Any,
+        global_explanation: Any,
+        recipient_role: str,
+    ) -> GlobalResultInterpreterRequest:
+        if self.global_result_interpreter_service is None:
+            raise ValueError("Global result interpreter service is not configured.")
+        return self.global_result_interpreter_service.build_request(
+            summary=summary,
+            threshold=threshold,
+            global_explanation=global_explanation,
+            recipient_role=recipient_role,
+        )
+
+    def interpret_global(
+        self,
+        *,
+        request: GlobalResultInterpreterRequest,
+    ) -> GlobalResultInterpretationOutcome:
+        if not self.result_interpreter_runtime.is_ready:
+            raise ValueError("Result interpreter runtime is not ready.")
+        if self.global_result_interpreter_service is None:
+            raise ValueError("Global result interpreter service is not configured.")
+        if self.result_interpreter_client is None:
+            raise ValueError("Result interpreter client is not configured.")
+        if self.global_outbound_interpreter_policy is None:
+            raise ValueError("Global outbound interpreter policy is not configured.")
+        if (
+            self.global_outbound_interpreter_policy.policy_id != "GLOBAL_REDACTED_V1"
+            or self.global_outbound_interpreter_policy.policy_version != 1
+        ):
+            raise ValueError("Only GLOBAL_REDACTED_V1 outbound interpreter policy is permitted.")
+
+        self.global_result_interpreter_service.validate_request(request)
+        dispatch = self.global_outbound_interpreter_policy.project(request)
+        response = self.global_result_interpreter_service.interpret_request(
+            request=request,
+            client=PolicyBoundResultInterpreterClient(
+                underlying_client=self.result_interpreter_client,
+                dispatch=dispatch,
+            ),
+        )
+        return GlobalResultInterpretationOutcome(
+            response=response,
+            dispatch_receipt=dispatch.receipt,
+        )
+
+    def global_result_interpretation_capability(
+        self,
+        *,
+        global_evidence_ready: bool,
+    ) -> CapabilityStatus:
+        if not global_evidence_ready:
+            return CapabilityStatus("WAITING_FOR_INPUT", "GLOBAL_EXPLANATION_MISSING")
+        runtime = self.result_interpreter_runtime
+        if runtime.configuration_error == "CONFIG_CONFLICT":
+            return CapabilityStatus("MISCONFIGURED", "CONFIG_CONFLICT")
+        if runtime.policy_mode == "DISABLED":
+            return CapabilityStatus("DISABLED", "EXTERNAL_DATA_POLICY_DISABLED")
+        if runtime.policy_mode != "REDACTED_V1":
+            return CapabilityStatus("MISCONFIGURED", "EXTERNAL_DATA_POLICY_INVALID")
+        if not runtime.provider_configured:
+            return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_PROVIDER_MISSING")
+        if not runtime.provider_registered:
+            return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_PROVIDER_NOT_REGISTERED")
+        if not runtime.model_configured:
+            return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_MODEL_MISSING")
+        if not runtime.credentials_configured:
+            return CapabilityStatus("MISCONFIGURED", "RESULT_INTERPRETER_CREDENTIALS_MISSING")
+        if not runtime.prompts_configured:
+            return CapabilityStatus(
+                "MISCONFIGURED",
+                runtime.configuration_error or "RESULT_INTERPRETER_PROMPTS_INVALID",
+            )
+        if (
+            self.global_result_interpreter_service is None
+            or self.result_interpreter_client is None
+            or self.global_outbound_interpreter_policy is None
+            or self.global_outbound_interpreter_policy.policy_id != "GLOBAL_REDACTED_V1"
+            or self.global_outbound_interpreter_policy.policy_version != 1
+        ):
+            return CapabilityStatus("MISCONFIGURED", "GLOBAL_RESULT_INTERPRETER_RUNTIME_INCOMPLETE")
+        return CapabilityStatus("AVAILABLE", "GLOBAL_RESULT_INTERPRETER_READY")
 
     def capabilities(
         self,

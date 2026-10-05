@@ -9,8 +9,11 @@ from app.result_interpreter_runtime import compose_result_interpreter_runtime
 from komus_risk.application import (
     ExperimentApplicationService,
     FinalModelTrainingService,
+    GlobalRedactedV1OutboundPolicy,
+    GlobalResultInterpreterService,
     IntegrationWorkflowService,
     ModelInferenceService,
+    ResultInterpreterPromptLoader,
     ResultInterpreterService,
 )
 from komus_risk.artifacts import ExperimentArtifactStore, ModelVersionStore
@@ -66,6 +69,9 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         model_plugin_registry=plugins,
     )
     interpreter_runtime = compose_result_interpreter_runtime()
+    global_prompt_loader = ResultInterpreterPromptLoader(
+        _repository_root() / "resources" / "prompts" / "global_result_interpreter"
+    )
     integration_workflow_service = IntegrationWorkflowService(
         final_model_training_service=final_model_training_service,
         model_version_store=model_version_store,
@@ -74,6 +80,8 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         result_interpreter_service=ResultInterpreterService(interpreter_runtime.prompt_loader),
         result_interpreter_client=interpreter_runtime.client,
         outbound_interpreter_policy=interpreter_runtime.outbound_policy,
+        global_result_interpreter_service=GlobalResultInterpreterService(global_prompt_loader),
+        global_outbound_interpreter_policy=GlobalRedactedV1OutboundPolicy(),
         result_interpreter_runtime=interpreter_runtime.configuration,
     )
     return NativeExperimentRuntime(

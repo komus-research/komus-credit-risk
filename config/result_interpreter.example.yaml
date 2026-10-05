@@ -1,0 +1,41 @@
+# AXION Result Interpreter — пример конфигурации.
+# Скопируйте нужные значения в config/result_interpreter.yaml.
+#
+# ВАЖНО:
+# - API key не помещается в YAML и не коммитится в Git.
+# - Ключ хранится в .env / переменной окружения с именем из api_key_env.
+# - store=false для OpenAI Responses API является защитным инвариантом кода
+#   и специально не вынесен в пользовательскую настройку.
+version: 1
+
+result_interpreter:
+  # Главный выключатель LLM-интерпретации.
+  enabled: true
+
+  # Допустимое внешнее представление данных.
+  # REDACTED_V1 отправляет только разрешённый набор фактов без идентификаторов.
+  external_data_policy: REDACTED_V1
+
+  # Сейчас зарегистрирован провайдер openai.
+  provider: openai
+
+  # Основная модель Result Interpreter.
+  # Для текущей задачи рекомендована gpt-6-luna.
+  model: gpt-6-luna
+
+  # Имя секрета / переменной окружения с API key.
+  api_key_env: OPENAI_API_KEY
+
+  reasoning:
+    # none | low | medium | high
+    # low выбран как основной режим для структурированной интерпретации OOF/SHAP.
+    effort: low
+
+  generation:
+    # Максимум output tokens на одно объяснение.
+    # Увеличивайте только если промпты действительно требуют более длинный ответ.
+    max_output_tokens: 2400
+
+  transport:
+    # Сколько секунд ждать ответ провайдера до сетевого timeout.
+    timeout_seconds: 60

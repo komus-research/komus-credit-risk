@@ -259,7 +259,11 @@ class _IntegrationWorkflowService:
         self.capability_calls: list[object] = []
         self.prepare_calls: list[tuple[object, str]] = []
         self.interpret_calls: list[object] = []
+        self.global_capability_calls: list[bool] = []
+        self.global_prepare_calls: list[tuple[object, object, object, str]] = []
+        self.global_interpret_calls: list[object] = []
         self.request = object()
+        self.global_request = object()
         self.outcome = SimpleNamespace(
             response=SimpleNamespace(
                 text="Trusted interpretation",
@@ -291,6 +295,24 @@ class _IntegrationWorkflowService:
             self.on_interpret()
         if self.fail_at == "interpret":
             raise self.error or RuntimeError("private provider details")
+        return self.outcome
+
+    def global_result_interpretation_capability(self, *, global_evidence_ready: bool):
+        self.global_capability_calls.append(global_evidence_ready)
+        return SimpleNamespace(state=self.state, reason_code=self.reason_code)
+
+    def prepare_global_interpretation(self, *, summary, threshold, global_explanation, recipient_role):
+        self.global_prepare_calls.append((summary, threshold, global_explanation, recipient_role))
+        if self.fail_at == "prepare_global":
+            raise self.error or RuntimeError("private global prepare details")
+        return self.global_request
+
+    def interpret_global(self, *, request):
+        self.global_interpret_calls.append(request)
+        if self.on_interpret is not None:
+            self.on_interpret()
+        if self.fail_at == "interpret_global":
+            raise self.error or RuntimeError("private global provider details")
         return self.outcome
 
 
@@ -953,6 +975,100 @@ def test_interpretation_uses_trusted_binding_role_and_safe_response_projection()
         "private-interpreter", "private-model", "private-provider-payload",
     ):
         assert private_value not in response.text
+
+
+
+
+def test_global_interpretation_is_not_ready_without_current_result() -> None:
+    explanation = _GlobalExplanationService()
+    workflow = _IntegrationWorkflowService()
+    client, _store, _session_id = _client(
+        _ResultService(), explanation, integration_workflow_service=workflow
+    )
+
+    response = client.post("/api/v1/result/interpretations/lawyer")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_NOT_READY"
+    assert explanation.calls == []
+    assert workflow.global_capability_calls == []
+
+
+def test_global_interpretation_uses_aggregate_result_and_safe_response_projection() -> None:
+    result = _ResultService()
+    explanation = _GlobalExplanationService()
+    workflow = _IntegrationWorkflowService()
+    client, store, session_id = _client(
+        result, explanation, integration_workflow_service=workflow
+    )
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.post("/api/v1/result/interpretations/credit_controller")
+
+    assert response.status_code == 200, response.text
+    assert explanation.calls == ["artifact-exact"]
+    assert workflow.global_capability_calls == [True]
+    assert len(workflow.global_prepare_calls) == 1
+    summary_arg, threshold_arg, explanation_arg, role_arg = workflow.global_prepare_calls[0]
+    assert summary_arg is result.summary_value
+    assert threshold_arg.threshold == 0.5
+    assert explanation_arg is explanation.evidence
+    assert role_arg == "credit_controller"
+    assert workflow.global_interpret_calls == [workflow.global_request]
+    assert response.json() == {
+        "artifact_id": "artifact-exact",
+        "role": "credit_controller",
+        "text": "Trusted interpretation",
+        "created_at": "2026-10-02T10:00:00Z",
+        "response_hash": "response-hash",
+    }
+    assert "private-request-hash" not in response.text
+    assert "private-provider-payload" not in response.text
+
+
+def test_global_interpretation_capability_blocks_provider() -> None:
+    explanation = _GlobalExplanationService()
+    workflow = _IntegrationWorkflowService(
+        state="DISABLED", reason_code="EXTERNAL_DATA_POLICY_DISABLED"
+    )
+    client, store, session_id = _client(
+        _ResultService(), explanation, integration_workflow_service=workflow
+    )
+    _completed_session(store, session_id, "artifact-exact")
+
+    response = client.post("/api/v1/result/interpretations/sales_manager")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "EXTERNAL_DATA_POLICY_DISABLED"
+    assert workflow.global_prepare_calls == []
+    assert workflow.global_interpret_calls == []
+
+
+def test_global_interpretation_discards_response_when_threshold_changes() -> None:
+    explanation = _GlobalExplanationService()
+    store = NativeSessionStore()
+    session_id, _snapshot = store.get_or_create(None)
+    _completed_session(store, session_id, "artifact-exact")
+    workflow = _IntegrationWorkflowService(
+        on_interpret=lambda: store.set_current_result_threshold(
+            session_id, "artifact-exact", 0.61
+        )
+    )
+    authority = SimpleNamespace(resolve=lambda _context_id: object())
+    client = TestClient(create_app(
+        session_store=store,
+        oof_result_service=_ResultService(),
+        oof_explanation_service=explanation,
+        prepared_context_authority=authority,
+        integration_workflow_service=workflow,
+    ))
+    client.cookies.set("axion_session", session_id)
+
+    response = client.post("/api/v1/result/interpretations/lawyer")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "RESULT_CHANGED"
+    assert "Trusted interpretation" not in response.text
 
 
 def test_app_uses_native_runtime_workflow_when_not_injected(monkeypatch) -> None:

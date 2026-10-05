@@ -207,6 +207,14 @@ export type ResultInterpretation = {
   response_hash: string
 }
 
+export type GlobalResultInterpretation = {
+  artifact_id: string
+  role: ResultInterpreterRole
+  text: string
+  created_at: string
+  response_hash: string
+}
+
 export type ResultObjectsQuery = {
   offset: number
   limit: number
@@ -323,6 +331,36 @@ export async function getCurrentObjectExplanation(objectId: string, signal?: Abo
   try {
     return await response.json() as LocalExplanation
   } catch {
+    throw new Error(fallback)
+  }
+}
+
+export async function createCurrentGlobalResultInterpretation(
+  role: ResultInterpreterRole,
+  signal?: AbortSignal,
+): Promise<GlobalResultInterpretation> {
+  const fallback = 'Не удалось сформировать интерпретацию общего результата.'
+  const isAbort = (reason: unknown) => signal?.aborted || (typeof reason === 'object' && reason !== null && 'name' in reason && reason.name === 'AbortError')
+  let response: Response
+  try {
+    response = await fetch(`/api/v1/result/interpretations/${role}`, {
+      method: 'POST',
+      signal,
+    })
+  } catch (reason) {
+    if (isAbort(reason)) throw reason
+    throw new Error(fallback)
+  }
+  if (!response.ok) {
+    let payload: { detail?: { message?: string } } | null = null
+    try { payload = await response.json() as { detail?: { message?: string } } }
+    catch (reason) { if (isAbort(reason)) throw reason }
+    throw new Error(payload?.detail?.message ?? fallback)
+  }
+  try {
+    return await response.json() as GlobalResultInterpretation
+  } catch (reason) {
+    if (isAbort(reason)) throw reason
     throw new Error(fallback)
   }
 }

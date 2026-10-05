@@ -54,6 +54,8 @@ class OpenAIResultInterpreterClientTests(unittest.TestCase):
         self.assertEqual(
             {
                 "model": self.model,
+                "reasoning": {"effort": "low"},
+                "max_output_tokens": 2400,
                 "input": [
                     {"role": "system", "content": self.instruction},
                     {"role": "user", "content": canonical_json(self.payload)},
@@ -62,6 +64,20 @@ class OpenAIResultInterpreterClientTests(unittest.TestCase):
             },
             fake.responses.calls[0],
         )
+
+    def test_reasoning_and_output_limit_are_forwarded_from_configuration(self) -> None:
+        fake = FakeOpenAIClient(FakeResponse("Configured explanation."))
+        adapter = OpenAIResultInterpreterClient(
+            model=self.model,
+            reasoning_effort="medium",
+            max_output_tokens=777,
+            client=fake,
+        )
+
+        adapter.interpret(system_instruction=self.instruction, payload=self.payload)
+
+        self.assertEqual({"effort": "medium"}, fake.responses.calls[0]["reasoning"])
+        self.assertEqual(777, fake.responses.calls[0]["max_output_tokens"])
 
     def test_arbitrary_model_is_preserved_and_blank_model_fails(self) -> None:
         arbitrary_model = "any-provider-model-name"

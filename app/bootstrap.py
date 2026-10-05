@@ -601,6 +601,7 @@ def create_runtime(
     environment: Mapping[str, str] | None = None,
     secrets: Mapping[str, Any] | None = None,
     result_interpreter_factories: Mapping[str, Callable[[str, str], Any]] | None = None,
+    result_interpreter_config_path: str | Path | None = None,
 ) -> PrototypeRuntime:
     """Wire existing model, planning, application, persistence and comparison services."""
     model_runtime = compose_experiment_models()
@@ -638,6 +639,7 @@ def create_runtime(
         environment=environment,
         secrets=secrets if secrets is not None else _streamlit_secrets(),
         factories=result_interpreter_factories,
+        config_path=result_interpreter_config_path,
     )
     integration_workflow_service = IntegrationWorkflowService(
         final_model_training_service=final_model_training_service,

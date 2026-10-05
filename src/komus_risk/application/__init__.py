@@ -8,6 +8,16 @@ from .history import (
     AnalysisHistoryPage,
     AnalysisHistoryService,
 )
+from .global_result_interpreter import (
+    GLOBAL_RESULT_INTERPRETER_REQUEST_VERSION,
+    GlobalInterpreterFeatureFact,
+    GlobalInterpreterFoldFact,
+    GlobalRedactedV1OutboundPolicy,
+    GlobalResultInterpretationOutcome,
+    GlobalResultInterpreterRequest,
+    GlobalResultInterpreterResponse,
+    GlobalResultInterpreterService,
+)
 from .integration_workflow import (
     CapabilityStatus,
     IntegrationWorkflowService,
@@ -88,6 +98,14 @@ __all__ = [
     "AnalysisHistoryService",
     "ExperimentApplicationService",
     "FinalModelTrainingService",
+    "GLOBAL_RESULT_INTERPRETER_REQUEST_VERSION",
+    "GlobalInterpreterFeatureFact",
+    "GlobalInterpreterFoldFact",
+    "GlobalRedactedV1OutboundPolicy",
+    "GlobalResultInterpretationOutcome",
+    "GlobalResultInterpreterRequest",
+    "GlobalResultInterpreterResponse",
+    "GlobalResultInterpreterService",
     "IntegrationWorkflowService",
     "InterpreterFeatureFact",
     "LocalExplanationEvidence",

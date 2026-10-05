@@ -372,6 +372,14 @@ class ResultInterpretationResponse(BaseModel):
     response_hash: str
 
 
+class GlobalResultInterpretationResponse(BaseModel):
+    artifact_id: str
+    role: str
+    text: str
+    created_at: str
+    response_hash: str
+
+
 class ResultThresholdPatch(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1052,6 +1060,106 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 )
                 for feature in features
             ],
+        )
+
+    @api.post(
+        "/api/v1/result/interpretations/{role}",
+        response_model=GlobalResultInterpretationResponse,
+    )
+    def create_global_result_interpretation(
+        role: str,
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> GlobalResultInterpretationResponse:
+        allowed_roles = {
+            "sales_manager",
+            "credit_controller",
+            "lawyer",
+            "information_security",
+        }
+        if role not in allowed_roles:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_INTERPRETER_ROLE", "message": "Роль интерпретации не поддерживается."},
+            )
+
+        resolved_session_id, _ = resolve_session(response, session_id)
+        artifact_id_at_start = store.current_result_artifact_id(resolved_session_id)
+        threshold_at_start = store.current_result_threshold(resolved_session_id)
+        if artifact_id_at_start is None or threshold_at_start is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "RESULT_NOT_READY", "message": "Результат полного обучения ещё не готов."},
+            )
+
+        try:
+            summary = result_service.summary(artifact_id_at_start)
+            threshold = result_service.threshold(artifact_id_at_start, threshold_at_start)
+            global_explanation = explanation_service.global_oof_ready_result(artifact_id_at_start)
+        except OOFExplanationError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": global_oof_safe_message(exc.code)},
+            ) from None
+        except OOFResultError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": exc.code, "message": "Не удалось прочитать сохранённый OOF-результат."},
+            ) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail={"code": "GLOBAL_RESULT_INTERPRETER_EVIDENCE_ERROR", "message": "Не удалось подготовить подтверждённые данные для интерпретации."},
+            ) from None
+
+        capability = workflow.global_result_interpretation_capability(
+            global_evidence_ready=True
+        )
+        if capability.state != "AVAILABLE":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": capability.reason_code,
+                    "message": "Интерпретация общего результата сейчас недоступна.",
+                },
+            )
+
+        try:
+            request = workflow.prepare_global_interpretation(
+                summary=summary,
+                threshold=threshold,
+                global_explanation=global_explanation,
+                recipient_role=role,
+            )
+            outcome = workflow.interpret_global(request=request)
+        except Exception:
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "GLOBAL_RESULT_INTERPRETER_ERROR",
+                    "message": "Не удалось сформировать интерпретацию. Результат модели и агрегированный SHAP остаются доступными.",
+                },
+            ) from None
+
+        if (
+            store.current_result_artifact_id(resolved_session_id) != artifact_id_at_start
+            or store.current_result_threshold(resolved_session_id) != threshold_at_start
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "RESULT_CHANGED",
+                    "message": "Текущий результат или порог изменился. Сформируйте объяснение заново.",
+                },
+            )
+
+        result = outcome.response
+        return GlobalResultInterpretationResponse(
+            artifact_id=artifact_id_at_start,
+            role=role,
+            text=result.text,
+            created_at=result.created_at,
+            response_hash=result.response_hash,
         )
 
     @api.get("/api/v1/result/threshold", response_model=ResultThresholdResponse)
