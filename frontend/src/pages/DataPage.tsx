@@ -237,9 +237,19 @@ function ConfirmationShell({ preparation, busy, setBusy, setError, onBack }: { p
     <ol className="data-stepper confirmation-stepper" aria-label="Этапы подготовки данных"><li className="completed"><span>✓</span>Файл</li><li className="completed"><span>✓</span>Роли колонок</li><li className="active"><span>3</span>Подтверждение</li></ol>
     <section className="confirmation-file panel"><h2>Файл</h2><div className="confirmation-file-body"><span className="file-icon"><Icon name="box" size={38} /></span><div className="confirmation-file-identity"><strong>{preparation.source.display_name}</strong><p>{preparation.source.rows.toLocaleString('ru-RU')} строк <span>·</span> {preparation.source.columns} колонок <span>·</span> {formatSize(preparation.source.size)} <span>·</span> {preparation.source.format.toUpperCase()}</p></div></div></section>
     <section className="confirmation-card confirmation-roles panel"><h2>Ключевые роли</h2><div className="confirmation-role-grid"><article><span className="role-icon target"><Icon name="check" size={25} /></span><div><label>Цель</label><output>{preparation.draft.target ?? 'Не выбрана'}</output></div></article><article><span className="role-icon positive"><Icon name="settings" size={25} /></span><div><label>Целевое событие</label><output>{String(preparation.draft.positive_class ?? 'Не выбрано')}</output></div></article><article><span className="role-icon identifier"><Icon name="model" size={25} /></span><div><label>Идентификатор</label><output>{preparation.draft.identifier ?? 'Не выбран'}</output></div></article></div></section>
-    <section className="confirmation-card confirmation-result panel"><h2>Итог подготовки</h2><p className="confirmation-total">{preparation.source.columns} колонок всего</p><div className="confirmation-count-grid">{[
-      ['MODEL_ALLOWED', 'Признаки модели'], ['DIAGNOSTIC_ONLY', 'Не используются моделью напрямую'], ['TARGET', 'Целевая колонка'], ['IDENTIFIER', 'Идентификатор'], ['BLOCKED', 'Заблокировано'],
-    ].filter(([key]) => key !== 'BLOCKED' || (counts[key] ?? 0) > 0).map(([key, label]) => <div key={key} className={`confirmation-count ${key.toLowerCase()}`}><strong>{counts[key] ?? 0}</strong><span>{label}</span></div>)}</div>
+    <section className="confirmation-card confirmation-result panel"><h2>Итог подготовки</h2><p className="confirmation-total">{preparation.source.columns} колонок всего</p>
+      <div className="confirmation-summary-grid">
+        <section className="confirmation-summary-card" aria-label="Будет использовано в модели">
+          <h3>Будет использовано в модели</h3>
+          <div className="confirmation-summary-row model_allowed"><span className="confirmation-summary-icon"><Icon name="chart" size={21} /></span><span>Признаки модели</span><strong>{counts.MODEL_ALLOWED ?? 0}</strong></div>
+          <div className="confirmation-summary-row target"><span className="confirmation-summary-icon"><Icon name="settings" size={20} /></span><span>Целевая колонка</span><strong>{counts.TARGET ?? 0}</strong></div>
+          <div className="confirmation-summary-row identifier"><span className="confirmation-summary-icon"><Icon name="model" size={20} /></span><span>Идентификатор</span><strong>{counts.IDENTIFIER ?? 0}</strong></div>
+        </section>
+        <section className="confirmation-summary-card confirmation-summary-unused" aria-label="Не используется напрямую">
+          <h3>Не используется напрямую</h3>
+          <div className="confirmation-unused-value"><span className="confirmation-summary-icon"><Icon name="alert-circle" size={21} /></span><strong>{(counts.DIAGNOSTIC_ONLY ?? 0) + (counts.BLOCKED ?? 0)}</strong><span>колонок</span></div>
+        </section>
+      </div>
       <div className="confirmation-policy"><p>Вся подтверждённая популяция используется для OOF-оценки. Защищённая финальная тестовая выборка на этом этапе не создаётся.</p><label><input type="checkbox" checked={acknowledged} disabled={busy} onChange={event => setAcknowledged(event.target.checked)} /> Я понимаю и подтверждаю эту политику.</label></div>
     </section>
     {message && <div className="data-error confirmation-error" role="alert">{message}</div>}

@@ -37,7 +37,8 @@ V2 применяется ко всем runtime-кнопкам, включая h
 | Настройки V1 — privacy expanded | `screens/settings/02_settings_privacy_expanded_v1.png` | VISUAL LOCK; тот же Settings screen с раскрытым `Как защищаются данные?` |
 | Новый анализ — данные / роли колонок | `screens/new-analysis/01_data_roles_v1.png` | Рабочий референс шага подготовки данных |
 | Новый анализ — подтверждение V1 | `screens/new-analysis/02_data_confirmation_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
-| Новый анализ — подтверждение V2 | `screens/new-analysis/02_data_confirmation_v2.png` | VISUAL LOCK; компактный desktop-state подтверждения подготовки данных |
+| Новый анализ — подтверждение V2 | `screens/new-analysis/02_data_confirmation_v2.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
+| Новый анализ — подтверждение V3 | `screens/new-analysis/02_data_confirmation_v3.png` | **CURRENT VISUAL LOCK**; компактный grouped summary подтверждения подготовки данных |
 | Новый анализ — признаки | `screens/new-analysis/03_features_v1.png` | Рабочий референс выбора признаков |
 | Новый анализ — алгоритм | `screens/new-analysis/04_algorithm_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Новый анализ — алгоритм V2 | `screens/new-analysis/04_algorithm_v2.png` | VISUAL LOCK; основной reference для native Algorithm V2 |
@@ -77,11 +78,12 @@ V2 применяется ко всем runtime-кнопкам, включая h
 - нижняя зона должна оставаться неинтерактивной и брендовой, без выдуманных имени, роли, avatar, profile menu, login/logout;
 - logo/wordmark берутся из Brandbook/Home V2; мелкая подпись `Аналитическая платформа` на демонстрационном sheet не supersede ранее принятые logo rules.
 
-### Data Confirmation V2
+### Data Confirmation V3
 
-- `screens/new-analysis/02_data_confirmation_v2.png` — основной VISUAL LOCK подтверждения подготовки;
-- V2 сохраняет semantics V1, но делает экран примерно на 12–15% плотнее за счёт реальных размеров/gaps/paddings, без `transform: scale()`;
-- сохраняются File, Key roles, preparation summary, population policy, acknowledgement и footer navigation;
+- `screens/new-analysis/02_data_confirmation_v3.png` — **CURRENT VISUAL LOCK** подтверждения подготовки;
+- V3 сохраняет semantics V2, но собирает preparation summary в два компактных смысловых блока: `Будет использовано в модели` и `Не используется напрямую`;
+- runtime counts остаются источником истины; `Не используется напрямую` объединяет колонки, не участвующие в модели напрямую;
+- сохраняются File, Key roles, population policy, acknowledgement и footer navigation;
 - policy OOF/final-test не меняется визуальным обновлением;
 - demo filename/counts/format внутри PNG не являются runtime truth;
 - кнопки берутся из Button System V2.
