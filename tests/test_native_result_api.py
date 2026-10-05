@@ -17,6 +17,7 @@ from app.native_runtime import create_native_experiment_runtime
 from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.oof_explanation import OOFExplanationError
 from komus_risk.application import (
+    InvalidModelDisplayName,
     ModelSaveBindingConflict,
     ModelSaveContextNotReady,
     ModelSaveIncompatible,
@@ -328,6 +329,7 @@ class _ModelLibraryService:
     def __init__(self, error: Exception | None = None) -> None:
         self.record = None
         self.ensure_calls = []
+        self.rename_calls = []
         self.error = error
 
     def find_for_experiment(self, artifact_id: str):
@@ -346,11 +348,12 @@ class _ModelLibraryService:
         return SimpleNamespace(save_state="ALREADY_SAVED", record=self.record)
 
     def list(self, **_query):
+        display_name = self.record.display_name if self.record is not None else "CatBoost — Trusted dataset — v1"
         return SimpleNamespace(
             total_count=1, filtered_count=1, offset=0, limit=50,
             items=({
                 "model_version_id": "model-version-exact", "experiment_artifact_id": "artifact-exact",
-                "display_name": "CatBoost — Trusted dataset — v1", "display_version": "v1", "saved_at": "2026-10-05T10:00:00+00:00",
+                "display_name": display_name, "display_version": "v1", "saved_at": "2026-10-05T10:00:00+00:00",
                 "model_id": "catboost", "model_display_name": "CatBoost", "algorithm_version": "1",
                 "dataset_id": "dataset-exact", "dataset_name": "Trusted dataset", "feature_count": 2,
                 "oof_gini": 0.4, "oof_roc_auc": 0.7, "oof_pr_auc": 0.6,
@@ -358,13 +361,30 @@ class _ModelLibraryService:
         )
 
     def detail(self, _model_version_id: str):
+        display_name = self.record.display_name if self.record is not None else "CatBoost — Trusted dataset — v1"
         return SimpleNamespace(value={
             "model_version_id": "model-version-exact", "experiment_artifact_id": "artifact-exact",
-            "display_name": "CatBoost — Trusted dataset — v1", "display_version": "v1", "saved_at": "2026-10-05T10:00:00+00:00", "status": "SAVED",
+            "display_name": display_name, "display_version": "v1", "saved_at": "2026-10-05T10:00:00+00:00", "status": "SAVED",
             "algorithm": {}, "dataset": {}, "population": {}, "target": "target", "positive_class": 1, "identifier": "id",
             "features": [], "configuration": {}, "oof_quality": {"gini": 0.4, "roc_auc": 0.7, "pr_auc": 0.6, "precision_at_0_5": 0.5, "recall_at_0_5": 0.8, "f1_at_0_5": 0.61},
             "source_result": {"experiment_artifact_id": "artifact-exact", "result_id": "result-exact", "experiment_created_at": "2026-10-05T10:00:00+00:00"}, "technical_provenance": {},
         })
+
+    def rename(self, model_version_id: str, display_name):
+        self.rename_calls.append((model_version_id, display_name))
+        if self.error is not None:
+            raise self.error
+        if not isinstance(display_name, str) or not display_name.strip():
+            raise InvalidModelDisplayName()
+        existing = self.record or ModelLibraryRecord(
+            1, "artifact-exact", "model-version-exact",
+            "CatBoost — Trusted dataset — v1", "v1", "2026-10-05T10:00:00+00:00",
+        )
+        self.record = ModelLibraryRecord(
+            existing.schema_version, existing.experiment_artifact_id, existing.model_version_id,
+            display_name.strip(), existing.display_version, existing.saved_at,
+        )
+        return self.record
 
 
 def _client(
@@ -441,6 +461,37 @@ def test_model_versions_library_routes_expose_read_contract_and_validate_query()
     assert detail.json()["source_result"]["experiment_artifact_id"] == "artifact-exact"
     assert invalid.status_code == 400
     assert invalid.json()["detail"]["code"] == "INVALID_MODEL_LIBRARY_QUERY"
+
+
+def test_model_version_display_name_can_be_renamed_through_public_api() -> None:
+    library = _ModelLibraryService()
+    client = TestClient(create_app(model_library_service=library))
+
+    renamed = client.patch(
+        "/api/v1/model-versions/model-version-exact/display-name",
+        json={"display_name": "  Комус — основной скоринг  "},
+    )
+
+    assert renamed.status_code == 200
+    assert renamed.json() == {
+        "model_version_id": "model-version-exact",
+        "display_name": "Комус — основной скоринг",
+    }
+    assert library.rename_calls == [("model-version-exact", "  Комус — основной скоринг  ")]
+    assert client.get("/api/v1/model-versions").json()["items"][0]["display_name"] == "Комус — основной скоринг"
+    assert client.get("/api/v1/model-versions/model-version-exact").json()["display_name"] == "Комус — основной скоринг"
+
+
+def test_model_version_rename_rejects_invalid_name_with_stable_code() -> None:
+    client = TestClient(create_app(model_library_service=_ModelLibraryService()))
+
+    response = client.patch(
+        "/api/v1/model-versions/model-version-exact/display-name",
+        json={"display_name": "   "},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "INVALID_MODEL_DISPLAY_NAME"
 
 
 @pytest.mark.parametrize("error", [

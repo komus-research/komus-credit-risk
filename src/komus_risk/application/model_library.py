@@ -18,6 +18,7 @@ from .model_save_errors import (
     ModelSaveIncompatible,
 )
 from .model_library_errors import (
+    InvalidModelDisplayName,
     InvalidModelLibraryQuery,
     ModelSourceResultUnavailable,
     ModelVersionIntegrityError,
@@ -184,6 +185,41 @@ class ModelLibraryService:
             "source_result": {"experiment_artifact_id": record.experiment_artifact_id, "result_id": result.result_id, "experiment_created_at": result.created_at},
             "technical_provenance": technical_provenance,
         })
+
+    def rename(self, model_version_id: str, display_name: str) -> ModelLibraryRecord:
+        if not isinstance(model_version_id, str) or not model_version_id.strip():
+            raise ModelVersionNotFound()
+        normalized = self._normalize_display_name(display_name)
+        record = next((item for item in self._records() if item.model_version_id == model_version_id), None)
+        if record is None:
+            raise ModelVersionNotFound()
+        with self._lock_for(record.experiment_artifact_id):
+            try:
+                current = self.record_store.find_by_experiment_artifact_id(record.experiment_artifact_id)
+            except ValueError as error:
+                raise ModelVersionIntegrityError() from error
+            if current is None or current.model_version_id != model_version_id:
+                raise ModelVersionIntegrityError()
+            self._trusted_join(current)
+            if current.display_name == normalized:
+                return current
+            try:
+                return self.record_store.update_display_name(
+                    experiment_artifact_id=current.experiment_artifact_id,
+                    model_version_id=current.model_version_id,
+                    display_name=normalized,
+                )
+            except ValueError as error:
+                raise ModelVersionIntegrityError() from error
+
+    @staticmethod
+    def _normalize_display_name(value: str) -> str:
+        if not isinstance(value, str):
+            raise InvalidModelDisplayName()
+        normalized = value.strip()
+        if not normalized or len(normalized) > 160 or any(character in normalized for character in ("\r", "\n", "\x00")):
+            raise InvalidModelDisplayName()
+        return normalized
 
     def _records(self) -> tuple[ModelLibraryRecord, ...]:
         try:

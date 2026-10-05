@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-type IconName = 'algorithm' | 'alert-circle' | 'arrow' | 'box' | 'chart' | 'check' | 'clock' | 'download' | 'file' | 'folder' | 'home' | 'info' | 'keyboard' | 'layers' | 'menu' | 'model' | 'plus' | 'search' | 'settings' | 'table' | 'users' | 'warning'
+type IconName = 'algorithm' | 'alert-circle' | 'arrow' | 'box' | 'chart' | 'check' | 'clock' | 'download' | 'edit' | 'file' | 'folder' | 'home' | 'info' | 'keyboard' | 'layers' | 'menu' | 'model' | 'plus' | 'search' | 'settings' | 'table' | 'users' | 'warning'
 
 const paths: Record<IconName, ReactNode> = {
   algorithm: <><path d="m12 2.8 7.5 4.3v8.7L12 20l-7.5-4.2V7.1L12 2.8Z" /><circle cx="12" cy="11.5" r="3.4" /><path d="M12 6.1v2M12 14.9v2M6.5 11.5h2M15.5 11.5h2" /></>,
@@ -11,6 +11,7 @@ const paths: Record<IconName, ReactNode> = {
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 6v6l4 2" /></>,
   chart: <><path d="M4 20h16M6 16V9h3v7H6Zm6 0V4h3v12h-3Zm6 0v-5h3v5h-3Z" /></>,
   download: <><path d="M12 3v12m-5-5 5 5 5-5" /><path d="M5 17v4h14v-4" /></>,
+  edit: <><path d="m4 20 4.2-1 10.9-10.9-3.2-3.2L5 15.8 4 20Z" /><path d="m13.8 7 3.2 3.2" /></>,
   file: <><path d="M6 2h8l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" /><path d="M14 2v6h5M8 13h8M8 17h8" /></>,
   folder: <path d="M3 6.5h6l1.8 2H21v9A2.5 2.5 0 0 1 18.5 20h-13A2.5 2.5 0 0 1 3 17.5v-11Z" />,
   home: <path d="m3 10 9-7 9 7v10h-6v-6H9v6H3V10Z" />,

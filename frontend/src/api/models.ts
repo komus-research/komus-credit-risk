@@ -35,6 +35,11 @@ export type ModelVersionListQuery = {
   sort?: 'SAVED_DESC'
 }
 
+export type ModelVersionRenameResponse = {
+  model_version_id: string
+  display_name: string
+}
+
 export type ModelVersionDetail = {
   model_version_id: string
   experiment_artifact_id: string
@@ -144,4 +149,27 @@ export function getModelVersions(query: ModelVersionListQuery, signal?: AbortSig
 
 export function getModelVersion(modelVersionId: string, signal?: AbortSignal): Promise<ModelVersionDetail> {
   return modelsRequest<ModelVersionDetail>(`/api/v1/model-versions/${encodeURIComponent(modelVersionId)}`, signal)
+}
+
+export async function renameModelVersion(modelVersionId: string, displayName: string): Promise<ModelVersionRenameResponse> {
+  const fallback = 'Не удалось изменить название модели.'
+  let response: Response
+  try {
+    response = await fetch(`/api/v1/model-versions/${encodeURIComponent(modelVersionId)}/display-name`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ display_name: displayName }),
+    })
+  } catch {
+    throw new ModelsAPIError(fallback)
+  }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as ErrorPayload | null
+    throw new ModelsAPIError(payload?.detail?.message ?? fallback, payload?.detail?.code ?? null)
+  }
+  try {
+    return await response.json() as ModelVersionRenameResponse
+  } catch {
+    throw new ModelsAPIError(fallback)
+  }
 }

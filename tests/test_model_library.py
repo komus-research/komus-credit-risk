@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from komus_risk.application import ModelLibraryService, ModelSaveBindingConflict
+from komus_risk.application import InvalidModelDisplayName, ModelLibraryService, ModelSaveBindingConflict
 from komus_risk.artifacts import ModelLibraryRecord, ModelLibraryRecordStore, ModelVersionSummary
 
 
@@ -213,3 +213,59 @@ def test_library_read_uses_exact_trusted_bindings_without_model_load() -> None:
         assert detail["configuration"]["resolved_parameters"] == {"depth": 6}
         assert detail["source_result"]["experiment_artifact_id"] == artifact_id
         assert artifacts.reads == [artifact_id, artifact_id]
+
+
+def test_rename_changes_only_organizational_name_and_persists() -> None:
+    with TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        versions = _ReadableVersions()
+        artifact_id = "9" * 64
+        versions.by_artifact[artifact_id] = [
+            ModelVersionSummary("model-rename", artifact_id, "catboost", "1", ("f_b", "f_a"))
+        ]
+        records = ModelLibraryRecordStore(root / "library")
+        original = ModelLibraryRecord(
+            1, artifact_id, "model-rename", "CatBoost — Exact dataset — v1", "v1",
+            "2026-10-05T10:00:00+00:00",
+        )
+        records.save(original)
+        service = ModelLibraryService(
+            record_store=records, model_version_store=versions,
+            integration_workflow_service=_Workflow(versions), experiment_artifact_store=_Artifacts(),
+        )
+
+        renamed = service.rename("model-rename", "  Моя скоринговая модель  ")
+
+        assert renamed.display_name == "Моя скоринговая модель"
+        assert renamed.model_version_id == original.model_version_id
+        assert renamed.experiment_artifact_id == original.experiment_artifact_id
+        assert renamed.display_version == original.display_version
+        assert renamed.saved_at == original.saved_at
+        assert service.list().items[0]["display_name"] == "Моя скоринговая модель"
+        assert service.detail("model-rename").value["display_name"] == "Моя скоринговая модель"
+        reloaded = ModelLibraryRecordStore(root / "library").find_by_experiment_artifact_id(artifact_id)
+        assert reloaded is not None
+        assert reloaded.display_name == "Моя скоринговая модель"
+
+
+@pytest.mark.parametrize("display_name", ["", "   ", "x" * 161, "две\nстроки"])
+def test_rename_rejects_invalid_display_name(display_name: str) -> None:
+    with TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        versions = _ReadableVersions()
+        artifact_id = "8" * 64
+        versions.by_artifact[artifact_id] = [
+            ModelVersionSummary("model-rename", artifact_id, "catboost", "1", ("f_b", "f_a"))
+        ]
+        records = ModelLibraryRecordStore(root / "library")
+        records.save(ModelLibraryRecord(
+            1, artifact_id, "model-rename", "CatBoost — Exact dataset — v1", "v1",
+            "2026-10-05T10:00:00+00:00",
+        ))
+        service = ModelLibraryService(
+            record_store=records, model_version_store=versions,
+            integration_workflow_service=_Workflow(versions), experiment_artifact_store=_Artifacts(),
+        )
+
+        with pytest.raises(InvalidModelDisplayName):
+            service.rename("model-rename", display_name)

@@ -22,6 +22,7 @@ from komus_risk.application import (
     ModelSaveBindingConflict,
     ModelSaveContextNotReady,
     ModelSaveError,
+    InvalidModelDisplayName,
     InvalidModelLibraryQuery,
     ModelLibraryError,
     ModelSourceResultUnavailable,
@@ -312,6 +313,16 @@ class ModelVersionDetailResponse(BaseModel):
     oof_quality: dict[str, float]
     source_result: dict[str, str]
     technical_provenance: dict[str, Any]
+
+
+class ModelVersionRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display_name: Any
+
+
+class ModelVersionRenameResponse(BaseModel):
+    model_version_id: str
+    display_name: str
 
 
 class ResultOverviewResponse(BaseModel):
@@ -682,12 +693,18 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
 
     def model_library_error(exc: ModelLibraryError) -> HTTPException:
         status = (
-            400 if isinstance(exc, InvalidModelLibraryQuery)
+            422 if isinstance(exc, InvalidModelDisplayName)
+            else 400 if isinstance(exc, InvalidModelLibraryQuery)
             else 404 if isinstance(exc, ModelVersionNotFound)
             else 409 if isinstance(exc, (ModelVersionIntegrityError, ModelSourceResultUnavailable))
             else 500
         )
-        return HTTPException(status_code=status, detail={"code": exc.code, "message": "Model library request could not be completed."})
+        message = (
+            "Название модели должно содержать от 1 до 160 символов в одной строке."
+            if isinstance(exc, InvalidModelDisplayName)
+            else "Model library request could not be completed."
+        )
+        return HTTPException(status_code=status, detail={"code": exc.code, "message": message})
 
     @api.get("/api/v1/model-versions", response_model=ModelVersionListResponse)
     def list_model_versions(
@@ -725,6 +742,22 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             raise model_library_error(error) from None
         except Exception:
             raise model_library_error(ModelLibraryError()) from None
+
+    @api.patch("/api/v1/model-versions/{model_version_id}/display-name", response_model=ModelVersionRenameResponse)
+    def rename_model_version(
+        model_version_id: str,
+        payload: ModelVersionRenameRequest,
+    ) -> ModelVersionRenameResponse:
+        try:
+            record = model_library.rename(model_version_id, payload.display_name)
+        except ModelLibraryError as error:
+            raise model_library_error(error) from None
+        except Exception:
+            raise model_library_error(ModelLibraryError()) from None
+        return ModelVersionRenameResponse(
+            model_version_id=record.model_version_id,
+            display_name=record.display_name,
+        )
 
     @api.get("/api/v1/result/objects", response_model=ResultObjectListResponse)
     def get_current_result_objects(

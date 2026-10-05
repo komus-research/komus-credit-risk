@@ -118,6 +118,43 @@ class ModelLibraryRecordStore:
             if temporary.exists():
                 temporary.unlink()
 
+    def update_display_name(
+        self,
+        *,
+        experiment_artifact_id: str,
+        model_version_id: str,
+        display_name: str,
+    ) -> ModelLibraryRecord:
+        path = self.root / self._path(experiment_artifact_id)
+        if not path.is_file():
+            raise ValueError("MODEL_VERSION_NOT_FOUND")
+        existing = self._read(path)
+        if (
+            existing.experiment_artifact_id != experiment_artifact_id
+            or existing.model_version_id != model_version_id
+        ):
+            raise ValueError("MODEL_SAVE_BINDING_CONFLICT")
+        updated = ModelLibraryRecord(
+            schema_version=existing.schema_version,
+            experiment_artifact_id=existing.experiment_artifact_id,
+            model_version_id=existing.model_version_id,
+            display_name=display_name,
+            display_version=existing.display_version,
+            saved_at=existing.saved_at,
+        )
+        descriptor, temporary_name = mkstemp(prefix=".model-library-rename-", suffix=".json", dir=self.root)
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(updated.to_dict(), handle, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+            return updated
+        finally:
+            if temporary.exists():
+                temporary.unlink()
+
     @staticmethod
     def now() -> str:
         return datetime.now(UTC).isoformat()

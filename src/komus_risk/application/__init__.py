@@ -27,6 +27,7 @@ from .integration_workflow import (
 )
 from .model_library import ModelLibraryService, SavedModelResult
 from .model_library_errors import (
+    InvalidModelDisplayName,
     InvalidModelLibraryQuery,
     ModelLibraryError,
     ModelSourceResultUnavailable,
@@ -140,6 +141,7 @@ __all__ = [
     "NativeSessionStore",
     "ModelLibraryService",
     "ModelLibraryError",
+    "InvalidModelDisplayName",
     "InvalidModelLibraryQuery",
     "ModelSourceResultUnavailable",
     "ModelVersionIntegrityError",

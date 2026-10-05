@@ -139,7 +139,7 @@ export function App() {
   }, [])
 
   const page = route === routes.home
-    ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={() => beginNewAnalysis()} startingNewAnalysis={startingNewAnalysis} />
+    ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={() => beginNewAnalysis()} onOpenModels={openModels} startingNewAnalysis={startingNewAnalysis} />
     : route === routes.models
       ? <ModelsPage />
       : isModelDetailRoute(route)

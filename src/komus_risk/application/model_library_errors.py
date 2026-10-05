@@ -14,6 +14,10 @@ class InvalidModelLibraryQuery(ModelLibraryError):
     code = "INVALID_MODEL_LIBRARY_QUERY"
 
 
+class InvalidModelDisplayName(ModelLibraryError):
+    code = "INVALID_MODEL_DISPLAY_NAME"
+
+
 class ModelVersionNotFound(ModelLibraryError):
     code = "MODEL_VERSION_NOT_FOUND"
 
