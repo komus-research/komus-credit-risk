@@ -178,7 +178,7 @@ export function AlgorithmPage() {
             {Object.keys(data.user_overrides).length > 0 && <button className="text-action" disabled={busy} onClick={() => update(patchAlgorithmConfiguration('ADVANCED', {}))}>Восстановить рекомендуемые</button>}
           </>}
           <details><summary>Возможности</summary><ul>{[...new Set(selected.capabilities.filter(capability => capability.support === 'SUPPORTED').map(capability => capabilityLabels[capability.domain]).filter((label): label is string => Boolean(label)))].map(label => <li key={label}>{label}</li>)}</ul></details>
-          <details><summary>Технические сведения</summary><dl>{technicalRows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{compactValue(value)}</dd></div>)}</dl></details>
+          <details className="algorithm-technical-details"><summary>Технические сведения</summary><dl className="algorithm-technical-list">{technicalRows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{compactValue(value)}</dd></div>)}</dl></details>
         </section>}
 
         <footer className="feature-footer"><button className="back-action" onClick={() => navigate(routes.features)}>← Назад к признакам</button>

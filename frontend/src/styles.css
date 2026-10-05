@@ -1414,6 +1414,12 @@ body:has(.global-explanation-workspace) { min-width: 0; }
 .algorithm-workspace .algorithm-settings > details { margin-top: 7px; padding-top: 6px; }
 .algorithm-workspace .algorithm-settings > details > summary { min-height: 34px; padding: 5px 8px; }
 .algorithm-workspace .algorithm-settings dl { gap: 5px 10px; margin: 7px 0; }
+.algorithm-workspace .algorithm-technical-list { display: grid; grid-template-columns: 1fr; gap: 0; margin: 8px 0 2px; }
+.algorithm-workspace .algorithm-technical-list > div { display: grid; grid-template-columns: minmax(150px, 210px) minmax(0, 1fr); gap: 14px; align-items: start; padding: 7px 8px; border-bottom: 1px solid rgba(31, 73, 76, .55); }
+.algorithm-workspace .algorithm-technical-list > div:last-child { border-bottom: 0; }
+.algorithm-workspace .algorithm-technical-list dt { color: #8eabad; white-space: nowrap; }
+.algorithm-workspace .algorithm-technical-list dd { min-width: 0; margin: 0; color: #c9dada; overflow-wrap: anywhere; }
+@media (max-width: 900px) { .algorithm-workspace .algorithm-technical-list > div { grid-template-columns: 1fr; gap: 3px; } }
 
 .quality-workspace .quality-footer { align-items: center; gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #1b4548; }
 .quality-workspace .quality-footer .back-action { padding: 0 10px; border-color: transparent; background: transparent; }
