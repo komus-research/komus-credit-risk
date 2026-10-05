@@ -68,9 +68,9 @@ Capture/coverage view не определяет автоматически оп�
 
 ## 3. Экран «Исследование порога»
 
-Visual lock: `03_threshold_explorer_v1.png`.
+Visual lock: `03_threshold_explorer_v2.png`.
 
-Implementation status: **R2-UI2 — ACCEPTED / CLOSED**, source commit `8050a9c5761963555a1181bede2150305979cfee`.
+Implementation status: базовый Threshold Explorer принят; V2 visual/cost extension находится в текущем UI-проходе. Historical source commit R2-UI2: `8050a9c5761963555a1181bede2150305979cfee`.
 
 Threshold Explorer работает только с сохранёнными OOF scores текущего accepted run.
 Изменение threshold:
@@ -84,7 +84,8 @@ Threshold Explorer работает только с сохранёнными OOF
 - количество / доля объектов выше порога;
 - FN и FP;
 - зависимость Recall/Precision от threshold;
-- пояснение, что Gini / ROC-AUC / PR-AUC от threshold не зависят.
+- пояснение, что Gini / ROC-AUC / PR-AUC от threshold не зависят;
+- переключаемый блок `Ошибки / Цена ошибки`, где пользователь задаёт сценарные `C_FN` и `C_FP`, а UI показывает `C_FN × FN + C_FP × FP` для текущего threshold.
 
 Semantic accents:
 - основной interaction / neutral positive analytics — AXION cyan/teal;
@@ -96,11 +97,12 @@ Semantic accents:
 Не возвращаться к A/B/C вариантам без нового решения владельца.
 
 Threshold Explorer не выбирает «лучший» или business-optimal threshold автоматически.
+Стоимость FN/FP — runtime research scenario, не подтверждённая политика Комуса: demo-значения PNG не являются runtime truth и не должны hardcode-иться.
 Сохранение сценария возможно только через backend contract, если такой contract принят.
 
 В принятом R2-UI2 runtime один `result_v2_threshold` сохраняется в session state: Overview показывает компактную сводку для текущего значения без editable slider, а отдельный Threshold Explorer является единственной точкой изменения threshold. Все threshold-dependent значения приходят только из `OOFResultService.threshold()`; Gini / ROC-AUC / PR-AUC — из `summary()`.
 
-Visual reference содержит threshold-dependence curves, но public sweep DTO сейчас отсутствует. Поэтому R2-UI2 честно откладывает Recall/Precision curves: UI не читает OOF arrays, не реконструирует их локально и не выполняет скрытый grid вызовов `threshold()` только ради совпадения с PNG.
+Текущий native runtime имеет read-only threshold preview и bounded sweep public contracts. Recall/Precision curve строится из backend `OOFResultService.threshold_sweep()` по тем же immutable OOF evidence; UI не читает OOF arrays и не реконструирует threshold semantics локально.
 
 ## 4. Экран «Объекты оценки»
 

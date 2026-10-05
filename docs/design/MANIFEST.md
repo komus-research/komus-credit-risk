@@ -53,7 +53,8 @@ V2 применяется ко всем runtime-кнопкам, включая h
 | Новый анализ — проверка качества V2 | `screens/new-analysis/05_quality_v2.png` | VISUAL LOCK; основной pre-run reference, compact secondary controls и separation после `Готово к запуску` |
 | Результат V1 | `screens/result/01_result_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
 | Результат модели V2 | `screens/result/02_result_model_overview_v2.png` | VISUAL LOCK; основной обзор завершённого experiment result |
-| Исследование порога V1 | `screens/result/03_threshold_explorer_v1.png` | VISUAL LOCK; threshold exploration по OOF scores без переобучения |
+| Исследование порога V1 | `screens/result/03_threshold_explorer_v1.png` | PREVIOUS ACCEPTED VISUAL REFERENCE |
+| Исследование порога V2 | `screens/result/03_threshold_explorer_v2.png` | **CURRENT VISUAL LOCK**; threshold exploration по OOF scores + переключаемый блок оценки стоимости FN/FP, без переобучения |
 | Объекты оценки V1 | `screens/result/04_result_objects_v2.png` | VISUAL LOCK; аналитический список OOF-объектов и ошибок |
 | Объект оценки V1 | `screens/result/05_result_object_detail_v1.png` | VISUAL LOCK; basic detail одного OOF-объекта + Local Explanation foundation |
 | Объект оценки + LLM V1 | `screens/result/06_result_object_detail_llm_v1.png` | HISTORICAL / NON-CANONICAL; прежний четырёхколоночный Result Interpreter |
@@ -179,7 +180,8 @@ V2 применяется ко всем runtime-кнопкам, включая h
 
 Active visual locks:
 - `screens/result/02_result_model_overview_v2.png` — обзор результата;
-- `screens/result/03_threshold_explorer_v1.png` — threshold exploration по OOF;
+- `screens/result/03_threshold_explorer_v2.png` — current Threshold Explorer: OOF threshold exploration + research cost scenario FN/FP;
+- `screens/result/03_threshold_explorer_v1.png` — previous accepted Threshold Explorer reference;
 - `screens/result/04_result_objects_v2.png` — список OOF-объектов;
 - `screens/result/05_result_object_detail_v1.png` — basic Object Detail;
 - `screens/result/08_result_object_detail_explanation_loading_v1.png` — Local SHAP LOADING;
