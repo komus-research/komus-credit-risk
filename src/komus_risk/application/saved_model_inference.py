@@ -4,12 +4,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from math import isfinite
+from numbers import Real
 from threading import RLock
 from typing import Any, Callable
 from uuid import uuid4
 
 from komus_risk.artifacts import (
+    InferenceResultIntegrityError,
+    InferenceResultNotFoundError,
     InferenceResultPersistenceError,
+    InferenceViewConfigurationIntegrityError,
+    InferenceViewConfigurationPersistenceError,
+    SavedInferenceResultViewConfiguration,
+    SavedInferenceResultViewConfigurationStore,
     SavedModelInferenceResult,
     SavedModelInferenceResultStore,
 )
@@ -76,11 +83,18 @@ class SavedModelInferenceObjectPage:
     offset: int; limit: int; items: tuple[dict[str, Any], ...]
 
 
+@dataclass(frozen=True, slots=True)
+class SavedInferenceResultView:
+    saved: bool
+    configuration: dict[str, Any]
+
+
 class SavedModelInferenceService:
     def __init__(self, *, model_library_service: ModelLibraryService, model_inference_service: ModelInferenceService,
-                 result_store: SavedModelInferenceResultStore, cleanup_upload: Callable[[Any], None]) -> None:
+                 result_store: SavedModelInferenceResultStore, cleanup_upload: Callable[[Any], None],
+                 view_store: SavedInferenceResultViewConfigurationStore | None = None) -> None:
         self.model_library_service, self.model_inference_service = model_library_service, model_inference_service
-        self.result_store, self.cleanup_upload = result_store, cleanup_upload
+        self.result_store, self.cleanup_upload, self.view_store = result_store, cleanup_upload, view_store
         self._items: dict[str, InferencePreparation] = {}; self._lock = RLock()
 
     def preflight(self, *, session_owner: str, model_version_id: str, staged_upload: Any, snapshot: Any) -> InferencePreflight:
@@ -151,6 +165,129 @@ class SavedModelInferenceService:
         except Exception as e:
             self._failed(p); raise SavedModelInferenceError("INFERENCE_FAILED") from e
 
+    def summary(self, inference_result_id: str, threshold: float = 0.50) -> SavedModelInferenceSummary:
+        result = self._read_result(inference_result_id)
+        value = self._threshold(threshold, "INVALID_INFERENCE_RESULT_QUERY")
+        try:
+            detail = self.model_library_service.detail(result.model_version_id).value
+            if (
+                detail.get("model_version_id") != result.model_version_id
+                or detail.get("experiment_artifact_id") != result.experiment_artifact_id
+            ):
+                raise ValueError
+            display_name = detail["display_name"]
+            display_version = detail["display_version"]
+            model_display_name = detail["algorithm"]["model_display_name"]
+            if not all(isinstance(item, str) for item in (display_name, display_version, model_display_name)):
+                raise ValueError
+        except Exception as error:
+            raise SavedModelInferenceError("INFERENCE_RESULT_INTEGRITY_ERROR") from error
+        scores = tuple(row.probability for row in result.rows)
+        above = sum(score >= value for score in scores)
+        count = len(scores)
+        histogram = []
+        for index in range(20):
+            lower, upper = index / 20, (index + 1) / 20
+            histogram.append({
+                "lower_bound": lower, "upper_bound": upper,
+                "count": sum(lower <= score <= upper if index == 19 else lower <= score < upper for score in scores),
+            })
+        return SavedModelInferenceSummary(
+            result.inference_result_id, result.model_version_id, result.experiment_artifact_id,
+            display_name, display_version, model_display_name,
+            result.source_display_name, result.source_format, result.source_file_sha256, result.source_fingerprint,
+            result.created_at, result.row_count, result.column_count, result.identifier_column,
+            len(result.required_feature_columns), len(result.ignored_columns), min(scores), max(scores), value,
+            above, above / count, count - above, (count - above) / count, tuple(histogram),
+        )
+
+    def objects(
+        self, inference_result_id: str, *, threshold: float = 0.50, offset: int = 0, limit: int = 50,
+        search: str | None = None, min_score: float | None = None, max_score: float | None = None,
+        position_filter: str = "ALL", sort: str = "SCORE_DESC",
+    ) -> SavedModelInferenceObjectPage:
+        result = self._read_result(inference_result_id)
+        value = self._threshold(threshold, "INVALID_INFERENCE_RESULT_QUERY")
+        self._paging(offset, limit)
+        minimum = self._bound(min_score)
+        maximum = self._bound(max_score)
+        if minimum is not None and maximum is not None and minimum > maximum:
+            raise SavedModelInferenceError("INVALID_INFERENCE_RESULT_QUERY")
+        if not isinstance(search, str) and search is not None:
+            raise SavedModelInferenceError("INVALID_INFERENCE_RESULT_QUERY")
+        if (
+            not isinstance(position_filter, str)
+            or not isinstance(sort, str)
+            or position_filter not in {"ALL", "ABOVE", "BELOW"}
+            or sort not in {"SCORE_DESC", "SCORE_ASC", "SOURCE_ASC"}
+        ):
+            raise SavedModelInferenceError("INVALID_INFERENCE_RESULT_QUERY")
+        needle = (search or "").casefold()
+        selected = [
+            row for row in result.rows
+            if (not needle or needle in row.identifier_display.casefold())
+            and (minimum is None or row.probability >= minimum)
+            and (maximum is None or row.probability <= maximum)
+            and (position_filter == "ALL" or (row.probability >= value) == (position_filter == "ABOVE"))
+        ]
+        if sort == "SCORE_DESC":
+            selected.sort(key=lambda row: (-row.probability, row.source_row_position))
+        elif sort == "SCORE_ASC":
+            selected.sort(key=lambda row: (row.probability, row.source_row_position))
+        else:
+            selected.sort(key=lambda row: row.source_row_position)
+        page = selected[offset : offset + limit]
+        return SavedModelInferenceObjectPage(
+            result.inference_result_id, value, result.row_count, len(selected), offset, limit,
+            tuple({
+                "row_id": row.row_id, "source_row_position": row.source_row_position,
+                "identifier_display": row.identifier_display, "score": row.probability,
+                "above_threshold": row.probability >= value,
+            } for row in page),
+        )
+
+    def get_view_configuration(self, inference_result_id: str) -> SavedInferenceResultView:
+        result = self._read_result(inference_result_id)
+        store = self._view_store()
+        try:
+            stored = store.read(result.inference_result_id)
+        except InferenceViewConfigurationIntegrityError as error:
+            raise SavedModelInferenceError("INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR") from error
+        except InferenceViewConfigurationPersistenceError as error:
+            raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR") from error
+        return self._view(stored, result.inference_result_id)
+
+    def put_view_configuration(self, inference_result_id: str, *, threshold: object, min_score: object, max_score: object,
+                               position_filter: object, sort: object, search: object) -> SavedInferenceResultView:
+        result = self._read_result(inference_result_id)
+        try:
+            normalized = self._configuration(
+                result.inference_result_id, threshold, min_score, max_score, position_filter, sort, search
+            )
+        except ValueError as error:
+            raise SavedModelInferenceError("INVALID_INFERENCE_VIEW_CONFIGURATION") from error
+        store = self._view_store()
+        try:
+            existing = store.read(result.inference_result_id)
+            if existing is not None and self._configuration_values(existing) == self._configuration_values(normalized):
+                return self._view(existing, result.inference_result_id)
+            store.save(normalized)
+        except InferenceViewConfigurationIntegrityError as error:
+            raise SavedModelInferenceError("INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR") from error
+        except InferenceViewConfigurationPersistenceError as error:
+            raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR") from error
+        return self._view(normalized, result.inference_result_id)
+
+    def delete_view_configuration(self, inference_result_id: str) -> SavedInferenceResultView:
+        result = self._read_result(inference_result_id)
+        try:
+            self._view_store().delete(result.inference_result_id)
+        except InferenceViewConfigurationIntegrityError as error:
+            raise SavedModelInferenceError("INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR") from error
+        except InferenceViewConfigurationPersistenceError as error:
+            raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR") from error
+        return self._view(None, result.inference_result_id)
+
     def _owned(self, owner: str, model: str, key: str) -> InferencePreparation | None:
         p = self._items.get(key); return p if p and p.session_owner == owner and p.model_version_id == model else None
     def _failed(self, p: InferencePreparation) -> None:
@@ -162,3 +299,73 @@ class SavedModelInferenceService:
     @staticmethod
     def _response(state: str, result: SavedModelInferenceResult) -> InferenceRun:
         return InferenceRun(state, result.inference_result_id, result.model_version_id, result.source_display_name, result.created_at)
+
+    def _read_result(self, inference_result_id: str) -> SavedModelInferenceResult:
+        try:
+            return self.result_store.read(inference_result_id)
+        except InferenceResultNotFoundError as error:
+            raise SavedModelInferenceError("INFERENCE_RESULT_NOT_FOUND") from error
+        except InferenceResultIntegrityError as error:
+            raise SavedModelInferenceError("INFERENCE_RESULT_INTEGRITY_ERROR") from error
+
+    def _view_store(self) -> SavedInferenceResultViewConfigurationStore:
+        if self.view_store is None:
+            raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR")
+        return self.view_store
+
+    @staticmethod
+    def _threshold(value: object, code: str) -> float:
+        if isinstance(value, bool) or not isinstance(value, Real) or not isfinite(float(value)) or not 0 <= float(value) <= 1:
+            raise SavedModelInferenceError(code)
+        return float(value)
+
+    @staticmethod
+    def _bound(value: object | None) -> float | None:
+        if value is None:
+            return None
+        return SavedModelInferenceService._threshold(value, "INVALID_INFERENCE_RESULT_QUERY")
+
+    @staticmethod
+    def _paging(offset: object, limit: object) -> None:
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0 or isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1_000:
+            raise SavedModelInferenceError("INVALID_INFERENCE_RESULT_QUERY")
+
+    @staticmethod
+    def _configuration(inference_result_id: str, threshold: object, min_score: object, max_score: object,
+                       position_filter: object, sort: object, search: object) -> SavedInferenceResultViewConfiguration:
+        def number(value: object) -> float:
+            if isinstance(value, bool) or not isinstance(value, Real) or not isfinite(float(value)) or not 0 <= float(value) <= 1:
+                raise ValueError
+            return float(value)
+        minimum, maximum = number(min_score), number(max_score)
+        if (
+            minimum > maximum
+            or not isinstance(position_filter, str)
+            or not isinstance(sort, str)
+            or position_filter not in {"ALL", "ABOVE", "BELOW"}
+            or sort not in {"SCORE_DESC", "SCORE_ASC", "SOURCE_ASC"}
+            or not isinstance(search, str)
+        ):
+            raise ValueError
+        return SavedInferenceResultViewConfiguration(
+            1, inference_result_id, number(threshold), minimum, maximum, position_filter, sort, search,
+            datetime.now(UTC).isoformat(),
+        )
+
+    @staticmethod
+    def _configuration_values(value: SavedInferenceResultViewConfiguration) -> tuple[object, ...]:
+        return (value.threshold, value.min_score, value.max_score, value.position_filter, value.sort, value.search)
+
+    @staticmethod
+    def _view(value: SavedInferenceResultViewConfiguration | None, inference_result_id: str) -> SavedInferenceResultView:
+        if value is None:
+            return SavedInferenceResultView(False, {
+                "inference_result_id": inference_result_id, "threshold": 0.50, "min_score": 0.00, "max_score": 1.00,
+                "position_filter": "ALL", "sort": "SCORE_DESC", "search": "", "updated_at": None,
+            })
+        return SavedInferenceResultView(True, {
+            "inference_result_id": value.inference_result_id, "threshold": value.threshold,
+            "min_score": value.min_score, "max_score": value.max_score,
+            "position_filter": value.position_filter, "sort": value.sort, "search": value.search,
+            "updated_at": value.updated_at,
+        })

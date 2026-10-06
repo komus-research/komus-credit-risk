@@ -23,6 +23,7 @@ from komus_risk.application import (
     ModelSaveIncompatible,
     ModelSaveSourceChanged,
     ModelSaveSourceUnavailable,
+    SavedModelInferenceError,
 )
 from komus_risk.application.native_session import NativeSessionStore, QualityTrainingStatus
 from komus_risk.artifacts import ModelLibraryRecord
@@ -393,6 +394,7 @@ def _client(
     artifact_store: _ArtifactStore | None = None,
     integration_workflow_service: _IntegrationWorkflowService | None = None,
     model_library_service: _ModelLibraryService | None = None,
+    saved_model_inference_service: object | None = None,
 ):
     store = NativeSessionStore()
     authority = SimpleNamespace(resolve=lambda _context_id: object())
@@ -404,11 +406,86 @@ def _client(
         prepared_context_authority=authority,
         integration_workflow_service=integration_workflow_service,
         model_library_service=model_library_service,
+        saved_model_inference_service=saved_model_inference_service,
     ))
     assert client.get("/api/v1/session").status_code == 200
     session_id = client.cookies.get("axion_session")
     assert session_id
     return client, store, session_id
+
+
+class _SavedInferenceReadService:
+    def __init__(self) -> None:
+        self.result_id = "a" * 64
+        self.configuration = {
+            "inference_result_id": self.result_id, "threshold": .5, "min_score": 0., "max_score": 1.,
+            "position_filter": "ALL", "sort": "SCORE_DESC", "search": "", "updated_at": None,
+        }
+
+    def summary(self, inference_result_id: str, threshold: float):
+        assert inference_result_id == self.result_id
+        return SimpleNamespace(
+            inference_result_id=self.result_id, model_version_id="model", experiment_artifact_id="experiment",
+            display_name="Model", display_version="v1", model_display_name="Algorithm", source_display_name="input.csv",
+            source_format="csv", source_file_sha256="b" * 64, source_fingerprint="fingerprint", created_at="2026-01-01T00:00:00+00:00",
+            row_count=2, column_count=3, identifier_column="id", required_feature_count=2, ignored_column_count=0,
+            score_min=.2, score_max=.8, threshold=threshold, above_threshold_count=1, above_threshold_share=.5,
+            below_threshold_count=1, below_threshold_share=.5,
+            histogram=tuple({"lower_bound": index / 20, "upper_bound": (index + 1) / 20, "count": 0} for index in range(20)),
+        )
+
+    def objects(self, inference_result_id: str, **query):
+        assert inference_result_id == self.result_id
+        return SimpleNamespace(
+            inference_result_id=self.result_id, threshold=query["threshold"], total_count=2, filtered_count=1,
+            offset=query["offset"], limit=query["limit"], items=(
+                {"row_id": "row-1", "source_row_position": 1, "identifier_display": "Alpha", "score": .8, "above_threshold": True},
+            ),
+        )
+
+    def get_view_configuration(self, inference_result_id: str):
+        assert inference_result_id == self.result_id
+        return SimpleNamespace(saved=self.configuration["updated_at"] is not None, configuration=self.configuration)
+
+    def put_view_configuration(self, inference_result_id: str, **configuration):
+        assert inference_result_id == self.result_id
+        self.configuration = {"inference_result_id": self.result_id, **configuration, "updated_at": "2026-01-01T00:00:00+00:00"}
+        return SimpleNamespace(saved=True, configuration=self.configuration)
+
+    def delete_view_configuration(self, inference_result_id: str):
+        assert inference_result_id == self.result_id
+        self.configuration = {**self.configuration, "threshold": .5, "min_score": 0., "max_score": 1., "position_filter": "ALL", "sort": "SCORE_DESC", "search": "", "updated_at": None}
+        return SimpleNamespace(saved=False, configuration=self.configuration)
+
+
+def test_saved_inference_result_read_routes_validate_and_project_view_configuration() -> None:
+    service = _SavedInferenceReadService()
+    client, _store, _session_id = _client(_ResultService(), saved_model_inference_service=service)
+
+    summary = client.get(f"/api/v1/inference-results/{service.result_id}?threshold=0.7")
+    assert summary.status_code == 200 and summary.json()["status"] == "COMPLETED" and len(summary.json()["histogram"]) == 20
+    objects = client.get(f"/api/v1/inference-results/{service.result_id}/objects?limit=1&position_filter=ABOVE")
+    assert objects.status_code == 200 and objects.json()["returned_count"] == 1
+    assert client.get(f"/api/v1/inference-results/{service.result_id}/objects?limit=oops").json()["detail"]["code"] == "INVALID_INFERENCE_RESULT_QUERY"
+    assert client.put(f"/api/v1/inference-results/{service.result_id}/configuration", json={"threshold": .7, "min_score": .1, "max_score": .9, "position_filter": "ABOVE", "sort": "SCORE_ASC", "search": "Alpha"}).json()["saved"] is True
+    invalid = client.put(f"/api/v1/inference-results/{service.result_id}/configuration", json={"threshold": .7, "min_score": .1, "max_score": .9, "position_filter": "ABOVE", "sort": "SCORE_ASC", "search": "Alpha", "extra": 1})
+    assert invalid.status_code == 422 and invalid.json()["detail"]["code"] == "INVALID_INFERENCE_VIEW_CONFIGURATION"
+    assert client.delete(f"/api/v1/inference-results/{service.result_id}/configuration").json()["saved"] is False
+
+
+def test_saved_inference_corrupt_view_configuration_maps_to_409() -> None:
+    class CorruptViewService(_SavedInferenceReadService):
+        def get_view_configuration(self, inference_result_id: str):
+            assert inference_result_id == self.result_id
+            raise SavedModelInferenceError("INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR")
+
+    service = CorruptViewService()
+    client, _store, _session_id = _client(_ResultService(), saved_model_inference_service=service)
+
+    response = client.get(f"/api/v1/inference-results/{service.result_id}/configuration")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR"
 
 
 def test_model_save_is_empty_idempotent_and_projected_on_result() -> None:

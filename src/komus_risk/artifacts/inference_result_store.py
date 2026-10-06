@@ -24,6 +24,14 @@ class InferenceResultPersistenceError(RuntimeError):
     """Typed boundary for write, publish, and post-publish verification failures."""
 
 
+class InferenceResultNotFoundError(ValueError):
+    """Requested immutable inference result does not exist."""
+
+
+class InferenceResultIntegrityError(ValueError):
+    """Published immutable inference result failed trusted verification."""
+
+
 @dataclass(frozen=True, slots=True)
 class SavedInferenceRow:
     row_id: str
@@ -171,24 +179,22 @@ class SavedModelInferenceResultStore:
 
     def read(self, inference_result_id: str) -> SavedModelInferenceResult:
         if not self._valid_id(inference_result_id):
-            raise ValueError("INFERENCE_RESULT_NOT_FOUND")
+            raise InferenceResultNotFoundError()
         directory = self.root / inference_result_id
         if not directory.is_dir():
-            raise ValueError("INFERENCE_RESULT_NOT_FOUND")
+            raise InferenceResultNotFoundError()
         try:
             return self._verify_directory(directory, inference_result_id)
-        except ValueError as error:
-            if str(error) == "INFERENCE_RESULT_NOT_FOUND":
-                raise
-            raise ValueError("INFERENCE_RESULT_INTEGRITY_ERROR") from error
+        except InferenceResultNotFoundError:
+            raise
+        except (OSError, TypeError, ValueError) as error:
+            raise InferenceResultIntegrityError() from error
 
     def _read_if_present(self, inference_result_id: str) -> SavedModelInferenceResult | None:
         try:
             return self.read(inference_result_id)
-        except ValueError as error:
-            if str(error) == "INFERENCE_RESULT_NOT_FOUND":
-                return None
-            raise
+        except InferenceResultNotFoundError:
+            return None
 
     def _verify_directory(self, directory: Path, expected_id: str) -> SavedModelInferenceResult:
         manifest = self._read_json(directory / "manifest.json")

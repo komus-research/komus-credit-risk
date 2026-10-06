@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal
 from fastapi import Cookie, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from komus_risk.application import (
@@ -364,6 +364,86 @@ class SavedModelInferenceRunResponse(BaseModel):
     model_version_id: str
     source_display_name: str
     created_at: str
+
+
+class InferenceScoreHistogramBinResponse(BaseModel):
+    lower_bound: float
+    upper_bound: float
+    count: int
+
+
+class SavedModelInferenceSummaryResponse(BaseModel):
+    inference_result_id: str
+    model_version_id: str
+    experiment_artifact_id: str
+    display_name: str
+    display_version: str
+    model_display_name: str
+    source_display_name: str
+    source_format: str
+    source_file_sha256: str
+    source_fingerprint: str
+    created_at: str
+    status: Literal["COMPLETED"]
+    row_count: int
+    column_count: int
+    identifier_column: str
+    required_feature_count: int
+    ignored_column_count: int
+    score_min: float
+    score_max: float
+    threshold: float
+    above_threshold_count: int
+    above_threshold_share: float
+    below_threshold_count: int
+    below_threshold_share: float
+    histogram: list[InferenceScoreHistogramBinResponse]
+
+
+class SavedModelInferenceObjectItemResponse(BaseModel):
+    row_id: str
+    source_row_position: int
+    identifier_display: str
+    score: float
+    above_threshold: bool
+
+
+class SavedModelInferenceObjectListResponse(BaseModel):
+    inference_result_id: str
+    threshold: float
+    total_count: int
+    filtered_count: int
+    offset: int
+    limit: int
+    returned_count: int
+    items: list[SavedModelInferenceObjectItemResponse]
+
+
+class InferenceViewConfigurationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    threshold: float
+    min_score: float
+    max_score: float
+    position_filter: str
+    sort: str
+    search: str
+
+
+class InferenceViewConfigurationResponse(BaseModel):
+    inference_result_id: str
+    threshold: float
+    min_score: float
+    max_score: float
+    position_filter: Literal["ALL", "ABOVE", "BELOW"]
+    sort: Literal["SCORE_DESC", "SCORE_ASC", "SOURCE_ASC"]
+    search: str
+    updated_at: str | None
+
+
+class SavedInferenceViewResponse(BaseModel):
+    saved: bool
+    configuration: InferenceViewConfigurationResponse
 
 
 class ResultOverviewResponse(BaseModel):
@@ -770,6 +850,11 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             "MODEL_INFERENCE_UNSUPPORTED": 409,
             "INFERENCE_FAILED": 500,
             "INFERENCE_RESULT_PERSISTENCE_FAILED": 500,
+            "INFERENCE_RESULT_NOT_FOUND": 404,
+            "INFERENCE_RESULT_INTEGRITY_ERROR": 409,
+            "INVALID_INFERENCE_RESULT_QUERY": 400,
+            "INVALID_INFERENCE_VIEW_CONFIGURATION": 422,
+            "INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR": 409,
             "INFERENCE_INTERNAL_ERROR": 500,
         }
         messages = {
@@ -959,6 +1044,105 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         except SavedModelInferenceError as error:
             raise saved_inference_error(error) from None
         return Response(status_code=204)
+
+    def inference_view_response(value: Any) -> SavedInferenceViewResponse:
+        return SavedInferenceViewResponse(saved=value.saved, configuration=value.configuration)
+
+    def inference_query_number(value: str | None) -> float | None:
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError) as error:
+            raise SavedModelInferenceError("INVALID_INFERENCE_RESULT_QUERY") from error
+
+    def inference_query_integer(value: str) -> int:
+        try:
+            if not value or value.strip() != value:
+                raise ValueError
+            return int(value)
+        except (TypeError, ValueError) as error:
+            raise SavedModelInferenceError("INVALID_INFERENCE_RESULT_QUERY") from error
+
+    @api.get("/api/v1/inference-results/{inference_result_id}", response_model=SavedModelInferenceSummaryResponse)
+    def get_saved_inference_result(
+        inference_result_id: str, threshold: str = "0.50",
+    ) -> SavedModelInferenceSummaryResponse:
+        try:
+            value = saved_inference.summary(inference_result_id, inference_query_number(threshold))
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError()) from None
+        return SavedModelInferenceSummaryResponse(
+            inference_result_id=value.inference_result_id, model_version_id=value.model_version_id,
+            experiment_artifact_id=value.experiment_artifact_id, display_name=value.display_name,
+            display_version=value.display_version, model_display_name=value.model_display_name,
+            source_display_name=value.source_display_name, source_format=value.source_format,
+            source_file_sha256=value.source_file_sha256, source_fingerprint=value.source_fingerprint,
+            created_at=value.created_at, status="COMPLETED", row_count=value.row_count,
+            column_count=value.column_count, identifier_column=value.identifier_column,
+            required_feature_count=value.required_feature_count, ignored_column_count=value.ignored_column_count,
+            score_min=value.score_min, score_max=value.score_max, threshold=value.threshold,
+            above_threshold_count=value.above_threshold_count, above_threshold_share=value.above_threshold_share,
+            below_threshold_count=value.below_threshold_count, below_threshold_share=value.below_threshold_share,
+            histogram=[InferenceScoreHistogramBinResponse(**item) for item in value.histogram],
+        )
+
+    @api.get("/api/v1/inference-results/{inference_result_id}/objects", response_model=SavedModelInferenceObjectListResponse)
+    def get_saved_inference_objects(
+        inference_result_id: str, threshold: str = "0.50", offset: str = "0", limit: str = "50",
+        search: str | None = None, min_score: str | None = None, max_score: str | None = None,
+        position_filter: str = "ALL", sort: str = "SCORE_DESC",
+    ) -> SavedModelInferenceObjectListResponse:
+        try:
+            value = saved_inference.objects(
+                inference_result_id, threshold=inference_query_number(threshold),
+                offset=inference_query_integer(offset), limit=inference_query_integer(limit), search=search,
+                min_score=inference_query_number(min_score), max_score=inference_query_number(max_score),
+                position_filter=position_filter, sort=sort,
+            )
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError()) from None
+        return SavedModelInferenceObjectListResponse(
+            inference_result_id=value.inference_result_id, threshold=value.threshold,
+            total_count=value.total_count, filtered_count=value.filtered_count,
+            offset=value.offset, limit=value.limit, returned_count=len(value.items),
+            items=[SavedModelInferenceObjectItemResponse(**item) for item in value.items],
+        )
+
+    @api.get("/api/v1/inference-results/{inference_result_id}/configuration", response_model=SavedInferenceViewResponse)
+    def get_saved_inference_configuration(inference_result_id: str) -> SavedInferenceViewResponse:
+        try:
+            return inference_view_response(saved_inference.get_view_configuration(inference_result_id))
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError()) from None
+
+    @api.put("/api/v1/inference-results/{inference_result_id}/configuration", response_model=SavedInferenceViewResponse)
+    async def put_saved_inference_configuration(inference_result_id: str, request: Request) -> SavedInferenceViewResponse:
+        try:
+            body = InferenceViewConfigurationRequest.model_validate(await request.json())
+        except (ValidationError, ValueError, TypeError):
+            raise saved_inference_error(SavedModelInferenceError("INVALID_INFERENCE_VIEW_CONFIGURATION")) from None
+        try:
+            return inference_view_response(saved_inference.put_view_configuration(inference_result_id, **body.model_dump()))
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError()) from None
+
+    @api.delete("/api/v1/inference-results/{inference_result_id}/configuration", response_model=SavedInferenceViewResponse)
+    def delete_saved_inference_configuration(inference_result_id: str) -> SavedInferenceViewResponse:
+        try:
+            return inference_view_response(saved_inference.delete_view_configuration(inference_result_id))
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError()) from None
 
     @api.get("/api/v1/result/objects", response_model=ResultObjectListResponse)
     def get_current_result_objects(

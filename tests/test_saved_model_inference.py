@@ -11,7 +11,7 @@ import pytest
 
 from app.upload_staging import StagedUpload
 from komus_risk.application import ModelInferenceService, SavedModelInferenceError, SavedModelInferenceService
-from komus_risk.artifacts import LoadedModelVersion, ModelLibraryRecord, ModelVersionSummary, SavedModelInferenceResultStore
+from komus_risk.artifacts import LoadedModelVersion, ModelLibraryRecord, ModelVersionSummary, SavedInferenceResultViewConfigurationStore, SavedModelInferenceResultStore
 from komus_risk.data import TabularSnapshot
 from komus_risk.hashing import stable_hash
 
@@ -31,7 +31,11 @@ class _Library:
     def detail(self, identifier):
         if self.fail_detail:
             raise RuntimeError("detail failed")
-        return SimpleNamespace(value={"algorithm": {"model_display_name": "M"}, "dataset": {"dataset_name": "train"}})
+        return SimpleNamespace(value={
+            "model_version_id": "model", "experiment_artifact_id": "exp",
+            "display_name": "Model", "display_version": "v1",
+            "algorithm": {"model_display_name": "M"}, "dataset": {"dataset_name": "train"},
+        })
 
 
 def test_preflight_never_predicts_and_deduplicated_retry_uses_exact_prepared_matrix():
@@ -142,3 +146,58 @@ def test_unsupported_predictor_is_rejected_by_preflight_without_prediction():
         with pytest.raises(Exception) as captured:
             service.preflight(session_owner="one", model_version_id="model", staged_upload=staged, snapshot=snapshot)
         assert getattr(captured.value, "code", None) == "MODEL_INFERENCE_UNSUPPORTED"
+
+
+def test_result_read_and_view_configuration_survive_restart_without_prediction():
+    with TemporaryDirectory() as temp:
+        root = Path(temp)
+        predictor = _Predictor(); library = _Library(predictor)
+        results = SavedModelInferenceResultStore(root / "inference_results")
+        views = SavedInferenceResultViewConfigurationStore(root / "inference_view_configurations")
+        service = SavedModelInferenceService(
+            model_library_service=library, model_inference_service=ModelInferenceService(), result_store=results,
+            view_store=views, cleanup_upload=lambda _: None,
+        )
+        frame = pd.DataFrame({"id": ["Alpha", "beta"], "a": [3, 4], "b": [10, 20]})
+        snapshot = TabularSnapshot(Path("input.csv"), "csv", {}, "a" * 64, "fp", 2, 3, frame, tuple(frame.columns))
+        staged = StagedUpload(root / "input.csv", "input.csv", "a" * 64, root)
+        run = service.run(session_owner="owner", model_version_id="model", preparation_id=service.preflight(session_owner="owner", model_version_id="model", staged_upload=staged, snapshot=snapshot).preparation_id)
+        before = (root / "inference_results" / run.inference_result_id / "manifest.json").read_bytes()
+        assert predictor.calls == 1
+
+        summary = service.summary(run.inference_result_id, threshold=.5)
+        assert summary.above_threshold_count == 1 and len(summary.histogram) == 20
+        objects = service.objects(run.inference_result_id, threshold=.5, offset=0, limit=1, search="BETA", sort="SCORE_DESC")
+        assert objects.total_count == 2 and objects.filtered_count == 1 and objects.items[0]["identifier_display"] == "beta"
+        defaults = service.get_view_configuration(run.inference_result_id)
+        assert defaults.saved is False and defaults.configuration["inference_result_id"] == run.inference_result_id
+        saved = service.put_view_configuration(run.inference_result_id, threshold=.4, min_score=.1, max_score=.9, position_filter="ALL", sort="SOURCE_ASC", search="beta")
+        repeated = service.put_view_configuration(run.inference_result_id, threshold=.4, min_score=.1, max_score=.9, position_filter="ALL", sort="SOURCE_ASC", search="beta")
+        assert saved.saved is True and repeated.configuration["updated_at"] == saved.configuration["updated_at"]
+
+        restarted = SavedModelInferenceService(
+            model_library_service=library, model_inference_service=ModelInferenceService(),
+            result_store=SavedModelInferenceResultStore(root / "inference_results"),
+            view_store=SavedInferenceResultViewConfigurationStore(root / "inference_view_configurations"), cleanup_upload=lambda _: None,
+        )
+        assert restarted.summary(run.inference_result_id).score_max == .8
+        assert restarted.get_view_configuration(run.inference_result_id).configuration["search"] == "beta"
+        assert predictor.calls == 1
+
+        config_path = root / "inference_view_configurations" / f"{run.inference_result_id}.json"
+        config_path.write_text("{not json", encoding="utf-8")
+        with pytest.raises(SavedModelInferenceError, match="INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR"):
+            restarted.get_view_configuration(run.inference_result_id)
+        assert restarted.delete_view_configuration(run.inference_result_id).saved is False
+        assert not config_path.exists()
+
+        restarted.put_view_configuration(
+            run.inference_result_id, threshold=.4, min_score=.1, max_score=.9,
+            position_filter="ALL", sort="SOURCE_ASC", search="beta",
+        )
+        config_path.write_bytes(b"\xff\xfe\xfd")
+        with pytest.raises(SavedModelInferenceError, match="INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR"):
+            restarted.get_view_configuration(run.inference_result_id)
+        assert restarted.delete_view_configuration(run.inference_result_id).saved is False
+        assert not config_path.exists()
+        assert (root / "inference_results" / run.inference_result_id / "manifest.json").read_bytes() == before
