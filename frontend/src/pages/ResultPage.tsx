@@ -5,7 +5,6 @@ import {
   getCurrentGlobalOOFStatus,
   getCurrentResult,
   GlobalOOFAPIError,
-  ModelVersionSaveAPIError,
   saveCurrentResultModel,
   type GlobalOOFOperation,
   runCurrentGlobalOOF,
@@ -220,14 +219,14 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
       .then(value => {
         if (cancelled) return
         setResult(value)
-        setModelSaveStatus(value.saved_model?.decision_threshold_state === 'USER_APPLIED' ? 'SAVED' : 'NOT_SAVED')
+        setModelSaveStatus(value.saved_model ? 'SAVED' : 'NOT_SAVED')
       })
       .catch(reason => { if (!cancelled) setError(reason instanceof Error ? reason.message : 'Не удалось загрузить результат обучения.') })
     return () => { cancelled = true }
   }, [])
 
   const saveModel = async () => {
-    if (!result || result.saved_model?.decision_threshold_state === 'USER_APPLIED' || modelSaveStatus === 'SAVING') return
+    if (!result || result.saved_model || modelSaveStatus === 'SAVING') return
     setModelSaveStatus('SAVING')
     setModelSaveError(null)
     try {
@@ -247,10 +246,6 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
       setModelNameDialogOpen(false)
     } catch (reason) {
       setModelSaveStatus('ERROR')
-      if (reason instanceof ModelVersionSaveAPIError && reason.code === 'MODEL_DECISION_THRESHOLD_REQUIRED') {
-        setModelSaveError('Сначала выберите и примените рабочий порог классификации.')
-        return
-      }
       setModelSaveError(reason instanceof Error ? reason.message : 'Не удалось сохранить модель.')
     }
   }
@@ -265,11 +260,11 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
   const threshold = result?.threshold
   const capture = result?.capture
   const savedModel = result?.saved_model
-  const modelIsSaved = savedModel?.decision_threshold_state === 'USER_APPLIED'
+  const modelIsSaved = Boolean(savedModel)
   const saveButtonLabelBase = modelSaveStatus === 'SAVING'
     ? 'Сохраняем модель…'
     : modelIsSaved ? 'Модель сохранена' : 'Сохранить модель'
-  const saveButtonLabel = savedModel && !modelIsSaved ? 'Сохранить рабочий порог' : saveButtonLabelBase
+  const saveButtonLabel = saveButtonLabelBase
   const saveButtonTitle = modelIsSaved && savedModel
     ? `Сохранено: ${savedModel.display_name} — ${savedModel.display_version}`
     : undefined

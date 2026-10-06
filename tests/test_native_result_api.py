@@ -342,11 +342,12 @@ class _ModelLibraryService:
     def find_for_experiment(self, artifact_id: str):
         return self.record if self.record is not None and self.record.experiment_artifact_id == artifact_id else None
 
-    def ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context, decision_threshold: float):
+    def ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context, decision_threshold: float | None):
         self.ensure_calls.append((experiment_artifact_id, prepared_dataset_context, decision_threshold))
         if self.error is not None:
             raise self.error
         if self.record is None:
+            self.final_fit_calls += 1
             self.record = ModelLibraryRecord(
                 1, experiment_artifact_id, "model-version-exact",
                 "CatBoost — Trusted dataset — v1", "v1", "2026-10-05T10:00:00+00:00",
@@ -355,10 +356,11 @@ class _ModelLibraryService:
                 schema_version=2, experiment_artifact_id=self.record.experiment_artifact_id,
                 model_version_id=self.record.model_version_id, display_name=self.record.display_name,
                 display_version=self.record.display_version, saved_at=self.record.saved_at,
-                decision_threshold=decision_threshold, decision_threshold_state="USER_APPLIED",
+                decision_threshold=decision_threshold,
+                decision_threshold_state="USER_APPLIED" if decision_threshold is not None else "NOT_SET",
             )
             return SimpleNamespace(save_state="CREATED", record=self.record)
-        if self.record.decision_threshold_state == "NOT_SET":
+        if self.record.decision_threshold_state == "NOT_SET" and decision_threshold is not None:
             self.record = ModelLibraryRecord(
                 schema_version=2, experiment_artifact_id=self.record.experiment_artifact_id,
                 model_version_id=self.record.model_version_id, display_name=self.record.display_name,
@@ -671,14 +673,14 @@ def test_model_save_is_empty_idempotent_and_projected_on_result() -> None:
     client.cookies.set("axion_session", session_id)
 
     assert client.get("/api/v1/result").json()["saved_model"] is None
-    _apply_threshold(client)
+    _apply_threshold(client, .37)
     first = client.post("/api/v1/result/model-version")
     second = client.post("/api/v1/result/model-version")
     invalid = client.post("/api/v1/result/model-version", json={"artifact_id": "untrusted"})
 
     assert first.status_code == 200
     payload = first.json()
-    assert payload["decision_threshold"] == .5
+    assert payload["decision_threshold"] == .37
     assert payload["decision_threshold_state"] == "USER_APPLIED"
     assert {key: value for key, value in payload.items() if key not in {"decision_threshold", "decision_threshold_state"}} == {
         "save_state": "CREATED", "artifact_id": "artifact-exact",
@@ -689,8 +691,9 @@ def test_model_save_is_empty_idempotent_and_projected_on_result() -> None:
     assert second.json()["save_state"] == "ALREADY_SAVED"
     assert invalid.status_code == 422
     assert len(library.ensure_calls) == 2
+    assert library.final_fit_calls == 1
     saved_payload = client.get("/api/v1/result").json()["saved_model"]
-    assert saved_payload["decision_threshold"] == .5
+    assert saved_payload["decision_threshold"] == .37
     assert saved_payload["decision_threshold_state"] == "USER_APPLIED"
     assert {key: value for key, value in saved_payload.items() if key not in {"decision_threshold", "decision_threshold_state"}} == {
         "model_version_id": "model-version-exact",
@@ -699,7 +702,7 @@ def test_model_save_is_empty_idempotent_and_projected_on_result() -> None:
     }
 
 
-def test_model_save_requires_explicit_apply_even_at_technical_default() -> None:
+def test_model_save_uses_not_set_for_technical_default_without_refit() -> None:
     library = _ModelLibraryService()
     store = NativeSessionStore()
     session_id, _ = store.get_or_create(None)
@@ -712,15 +715,22 @@ def test_model_save_requires_explicit_apply_even_at_technical_default() -> None:
     ))
     client.cookies.set("axion_session", session_id)
 
-    required = client.post("/api/v1/result/model-version")
-    assert required.status_code == 409
-    assert required.json()["detail"]["code"] == "MODEL_DECISION_THRESHOLD_REQUIRED"
-    assert library.ensure_calls == []
+    first = client.post("/api/v1/result/model-version")
+    second = client.post("/api/v1/result/model-version")
 
-    _apply_threshold(client, .50)
-    allowed = client.post("/api/v1/result/model-version")
-    assert allowed.status_code == 200
-    assert library.ensure_calls[-1][-1] == .50
+    assert first.status_code == 200
+    assert first.json()["decision_threshold"] is None
+    assert first.json()["decision_threshold_state"] == "NOT_SET"
+    assert second.status_code == 200
+    assert second.json()["save_state"] == "ALREADY_SAVED"
+    assert [call[2] for call in library.ensure_calls] == [None, None]
+    assert library.final_fit_calls == 1
+    binding = store.current_result_save_binding(session_id)
+    assert binding.threshold == .50
+    assert binding.threshold_state is ResultThresholdState.TECHNICAL_DEFAULT
+    saved = client.get("/api/v1/result").json()["saved_model"]
+    assert saved["decision_threshold"] is None
+    assert saved["decision_threshold_state"] == "NOT_SET"
 
 
 def test_legacy_saved_model_is_completed_from_applied_result_threshold() -> None:
@@ -740,7 +750,10 @@ def test_legacy_saved_model_is_completed_from_applied_result_threshold() -> None
     legacy = client.get("/api/v1/result").json()["saved_model"]
     assert legacy["decision_threshold"] is None
     assert legacy["decision_threshold_state"] == "NOT_SET"
-    assert client.post("/api/v1/result/model-version").json()["detail"]["code"] == "MODEL_DECISION_THRESHOLD_REQUIRED"
+    unconfigured = client.post("/api/v1/result/model-version")
+    assert unconfigured.status_code == 200
+    assert unconfigured.json()["decision_threshold"] is None
+    assert unconfigured.json()["decision_threshold_state"] == "NOT_SET"
 
     _apply_threshold(client, .37)
     completed = client.post("/api/v1/result/model-version")

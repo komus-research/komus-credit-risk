@@ -30,10 +30,6 @@ class ModelSaveIncompatible(ModelSaveError):
     code = "MODEL_SAVE_INCOMPATIBLE"
 
 
-class ModelDecisionThresholdRequired(ModelSaveError):
-    code = "MODEL_DECISION_THRESHOLD_REQUIRED"
-
-
 class ModelDecisionThresholdConflict(ModelSaveError):
     code = "MODEL_DECISION_THRESHOLD_CONFLICT"
 

@@ -124,6 +124,48 @@ def test_first_save_repeat_and_recomposition_are_idempotent() -> None:
         assert workflow.calls == 1
 
 
+def test_first_save_without_business_threshold_is_not_set_and_idempotent() -> None:
+    with TemporaryDirectory() as temporary:
+        versions = _ModelVersions()
+        workflow = _Workflow(versions)
+        service = _service(Path(temporary), versions, workflow)
+        artifact_id = "u" * 64
+
+        first = service.ensure_saved(
+            experiment_artifact_id=artifact_id,
+            prepared_dataset_context=_context(),
+            decision_threshold=None,
+        )
+        repeated = service.ensure_saved(
+            experiment_artifact_id=artifact_id,
+            prepared_dataset_context=_context(),
+            decision_threshold=None,
+        )
+
+        assert first.save_state == "CREATED"
+        assert first.record.decision_threshold is None
+        assert first.record.decision_threshold_state == "NOT_SET"
+        assert repeated.save_state == "ALREADY_SAVED"
+        assert repeated.record == first.record
+        assert workflow.calls == 1
+
+
+def test_explicit_technical_default_is_preserved_as_user_applied() -> None:
+    with TemporaryDirectory() as temporary:
+        versions = _ModelVersions()
+        workflow = _Workflow(versions)
+
+        saved = _service(Path(temporary), versions, workflow).ensure_saved(
+            experiment_artifact_id="v" * 64,
+            prepared_dataset_context=_context(),
+            decision_threshold=.50,
+        )
+
+        assert saved.record.decision_threshold == .50
+        assert saved.record.decision_threshold_state == "USER_APPLIED"
+        assert workflow.calls == 1
+
+
 def test_first_save_accepts_user_display_name_before_persistence() -> None:
     with TemporaryDirectory() as temporary:
         versions = _ModelVersions()

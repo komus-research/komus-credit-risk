@@ -343,16 +343,22 @@ class ModelLibraryService:
             raise ModelVersionIntegrityError()
         return value
 
-    def ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context: Any, decision_threshold: float, display_name: str | None = None) -> SavedModelResult:
+    def ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context: Any, decision_threshold: float | None, display_name: str | None = None) -> SavedModelResult:
         if prepared_dataset_context is None:
             raise ModelSaveContextNotReady()
-        if isinstance(decision_threshold, bool) or not isinstance(decision_threshold, (int, float)) or not isfinite(float(decision_threshold)) or not 0 <= float(decision_threshold) <= 1:
+        if decision_threshold is not None and (
+            isinstance(decision_threshold, bool)
+            or not isinstance(decision_threshold, (int, float))
+            or not isfinite(float(decision_threshold))
+            or not 0 <= float(decision_threshold) <= 1
+        ):
             raise ModelDecisionThresholdIntegrityError()
         try:
             return self._ensure_saved(
                 experiment_artifact_id=experiment_artifact_id,
                 prepared_dataset_context=prepared_dataset_context,
-                decision_threshold=float(decision_threshold), display_name=self._optional_display_name(display_name),
+                decision_threshold=(None if decision_threshold is None else float(decision_threshold)),
+                display_name=self._optional_display_name(display_name),
             )
         except ModelSaveError:
             raise
@@ -363,7 +369,7 @@ class ModelLibraryService:
         except ValueError as error:
             raise ModelSaveBindingConflict() from error
 
-    def _ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context: Any, decision_threshold: float, display_name: str | None) -> SavedModelResult:
+    def _ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context: Any, decision_threshold: float | None, display_name: str | None) -> SavedModelResult:
         with self._lock_for(experiment_artifact_id):
             record = self.record_store.find_by_experiment_artifact_id(experiment_artifact_id)
             if record is not None:
@@ -372,18 +378,19 @@ class ModelLibraryService:
                     if record.decision_threshold != decision_threshold:
                         raise ModelDecisionThresholdConflict()
                 elif record.decision_threshold_state == "NOT_SET":
-                    try:
-                        record = self.record_store.complete_decision_threshold(
-                            experiment_artifact_id=record.experiment_artifact_id,
-                            model_version_id=record.model_version_id,
-                            threshold=decision_threshold,
-                        )
-                    except ModelDecisionThresholdRecordConflict as error:
-                        raise ModelDecisionThresholdConflict() from error
-                    except ModelDecisionThresholdRecordIntegrityError as error:
-                        raise ModelDecisionThresholdIntegrityError() from error
-                    except ModelLibraryRecordBindingConflict as error:
-                        raise ModelSaveBindingConflict() from error
+                    if decision_threshold is not None:
+                        try:
+                            record = self.record_store.complete_decision_threshold(
+                                experiment_artifact_id=record.experiment_artifact_id,
+                                model_version_id=record.model_version_id,
+                                threshold=decision_threshold,
+                            )
+                        except ModelDecisionThresholdRecordConflict as error:
+                            raise ModelDecisionThresholdConflict() from error
+                        except ModelDecisionThresholdRecordIntegrityError as error:
+                            raise ModelDecisionThresholdIntegrityError() from error
+                        except ModelLibraryRecordBindingConflict as error:
+                            raise ModelSaveBindingConflict() from error
                 else:
                     raise ModelDecisionThresholdIntegrityError()
                 return SavedModelResult("ALREADY_SAVED", record)
@@ -416,7 +423,7 @@ class ModelLibraryService:
                 self._allocate_and_save_record(loaded, prepared_dataset_context, decision_threshold, display_name),
             )
 
-    def _allocate_and_save_record(self, loaded: Any, context: Any, decision_threshold: float, display_name: str | None) -> ModelLibraryRecord:
+    def _allocate_and_save_record(self, loaded: Any, context: Any, decision_threshold: float | None, display_name: str | None) -> ModelLibraryRecord:
         """Allocate and persist vN as one critical section per library/model."""
         with self._model_lock_for(loaded.summary.model_id):
             return self._save_record(self._new_record(loaded, context, decision_threshold, display_name))
@@ -444,7 +451,7 @@ class ModelLibraryService:
             raise ModelSaveBindingConflict()
         return loaded
 
-    def _new_record(self, loaded: Any, context: Any, decision_threshold: float, display_name: str | None) -> ModelLibraryRecord:
+    def _new_record(self, loaded: Any, context: Any, decision_threshold: float | None, display_name: str | None) -> ModelLibraryRecord:
         try:
             dataset_name = context.display_name
             if not isinstance(dataset_name, str) or not dataset_name.strip():
@@ -465,7 +472,7 @@ class ModelLibraryService:
                 display_version=display_version,
                 saved_at=self.record_store.now(),
                 decision_threshold=decision_threshold,
-                decision_threshold_state="USER_APPLIED",
+                decision_threshold_state="USER_APPLIED" if decision_threshold is not None else "NOT_SET",
             )
         return ModelLibraryRecord(
             schema_version=2,
@@ -475,7 +482,7 @@ class ModelLibraryService:
             display_version=display_version,
             saved_at=self.record_store.now(),
             decision_threshold=decision_threshold,
-            decision_threshold_state="USER_APPLIED",
+            decision_threshold_state="USER_APPLIED" if decision_threshold is not None else "NOT_SET",
         )
 
     def _next_display_version(self, model_id: str) -> str:

@@ -960,11 +960,6 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 "code": "MODEL_SAVE_CONTEXT_NOT_READY",
                 "message": "Контекст текущего результата недоступен для сохранения модели.",
             })
-        if binding.threshold_state is not ResultThresholdState.USER_APPLIED:
-            raise HTTPException(status_code=409, detail={
-                "code": "MODEL_DECISION_THRESHOLD_REQUIRED",
-                "message": "Сначала выберите и примените рабочий порог классификации.",
-            })
         try:
             try:
                 context = context_authority.resolve(binding.prepared_context_id)
@@ -976,7 +971,11 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 model_library.ensure_saved,
                 experiment_artifact_id=binding.artifact_id,
                 prepared_dataset_context=context,
-                decision_threshold=binding.threshold,
+                decision_threshold=(
+                    binding.threshold
+                    if binding.threshold_state is ResultThresholdState.USER_APPLIED
+                    else None
+                ),
                 **({"display_name": payload.display_name} if payload else {}),
             )
         except ModelSaveError as error:
