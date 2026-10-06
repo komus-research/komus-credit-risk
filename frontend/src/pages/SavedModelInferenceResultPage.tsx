@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { deleteSavedInferenceConfiguration, getSavedInferenceConfiguration, getSavedInferenceObjects, getSavedInferenceResult, putSavedInferenceConfiguration, type SavedInferenceConfigurationResponse, type SavedInferenceObjects, type SavedInferenceViewConfiguration, type SavedInferenceResult } from '../api/inference'
-import { buildModelDetailRoute, buildSavedInferenceObjectDetailRoute, navigate } from '../routing'
+import { buildModelDetailRoute, navigate } from '../routing'
 import { Icon } from '../components/Icon'
+import { SavedInferenceObjectDetailPage } from './SavedInferenceObjectDetailPage'
 
 const numberFormat = new Intl.NumberFormat('ru-RU')
 const percentFormat = new Intl.NumberFormat('ru-RU', { style: 'percent', maximumFractionDigits: 1 })
@@ -29,19 +30,28 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
+  const [listExpanded, setListExpanded] = useState(false)
   const latest = useRef(0)
 
   const applyResponse = useCallback((response: SavedInferenceConfigurationResponse) => {
     setSaved(response.saved); setView(response.configuration); setModelThreshold(response.model_decision_threshold); setConfigError(null)
     return response.configuration
   }, [])
-  const load = useCallback(async (configuration: SavedInferenceViewConfiguration, offset = 0) => {
+  const load = useCallback(async (configuration: SavedInferenceViewConfiguration, offset = 0, append = false) => {
     const token = ++latest.current
     setObjectsLoading(true); setResultError(null); setObjectsError(null)
     try {
-      const [nextSummary, nextObjects] = await requestView(inferenceResultId, configuration, offset)
+      const [nextSummary, nextObjects] = append
+        ? [null, await getSavedInferenceObjects(inferenceResultId, { ...configuration, offset, limit: PAGE_SIZE })] as const
+        : await requestView(inferenceResultId, configuration, offset)
       if (token !== latest.current) return
-      setSummary(nextSummary); setObjects(nextObjects)
+      if (nextSummary) setSummary(nextSummary)
+      setObjects(current => {
+        if (!append || !current) return nextObjects
+        const items = [...current.items, ...nextObjects.items.filter(item => !current.items.some(existing => existing.row_id === item.row_id))]
+        return { ...nextObjects, offset: 0, returned_count: items.length, items }
+      })
     } catch (reason) {
       if (token !== latest.current) return
       setResultError(message(reason)); setObjectsError(message(reason))
@@ -50,7 +60,7 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
 
   useEffect(() => {
     let active = true
-    setLoading(true); setView(null); setSummary(null); setObjects(null); setModelThreshold(null); setConfigError(null); setResultError(null); setObjectsError(null); setSaveSuccess(false)
+    setLoading(true); setView(null); setSummary(null); setObjects(null); setSelectedRowId(null); setModelThreshold(null); setConfigError(null); setResultError(null); setObjectsError(null); setSaveSuccess(false)
     void getSavedInferenceConfiguration(inferenceResultId).then(async response => {
       if (!active) return
       const configuration = applyResponse(response)
@@ -62,9 +72,12 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
   const updateView = (patch: Partial<SavedInferenceViewConfiguration>) => {
     if (!view) return
     const next = { ...view, ...patch }
-    setView(next); void load(next)
+    setSelectedRowId(null); setView(next); void load(next)
   }
-  const goPage = (offset: number) => { if (view) void load(view, Math.max(0, offset)) }
+  const loadMore = () => {
+    if (!view || !objects || objectsLoading || objects.returned_count >= objects.filtered_count) return
+    void load(view, objects.items.length, true)
+  }
   const save = async () => {
     if (!view || saveBusy) return
     setSaveBusy(true); setSaveError(null); setSaveSuccess(false)
@@ -75,7 +88,7 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
   const reset = async () => {
     if (saveBusy) return
     setSaveBusy(true); setSaveError(null); setSaveSuccess(false)
-    try { const next = applyResponse(await deleteSavedInferenceConfiguration(inferenceResultId)); await load(next) }
+    try { setSelectedRowId(null); const next = applyResponse(await deleteSavedInferenceConfiguration(inferenceResultId)); await load(next) }
     catch (reason) { setSaveError(message(reason)) }
     finally { setSaveBusy(false) }
   }
@@ -89,16 +102,18 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
   return <main className="workspace inference-result-workspace">
     <header className="inference-result-header"><div><button className="back-action inference-back" onClick={() => summary && navigate(buildModelDetailRoute(summary.model_version_id))}>← Назад к модели</button><p className="eyebrow">Модели / Анализ / Результат</p><h1>Результат анализа</h1><p>Оценки сохранённой модели для новых данных.</p></div><div className="inference-result-actions"><button className="secondary-action" disabled={saveBusy} onClick={() => void save()}><Icon name="file" />{saveBusy ? 'Сохраняем…' : 'Сохранить настройки просмотра'}</button><button className="secondary-action" disabled title="Экспорт пока не подключён"><Icon name="download" />Экспорт</button><button className="secondary-action" disabled={!summary} onClick={() => summary && navigate(buildModelDetailRoute(summary.model_version_id))}><Icon name="folder" />Открыть модель</button><div className="inference-more"><button className="inference-more-action" type="button" aria-label="Дополнительные действия" aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>⋯</button>{moreOpen && <div className="inference-more-menu"><button type="button" disabled={saveBusy} onClick={() => { setMoreOpen(false); void reset() }}>Сбросить настройки</button></div>}</div></div></header>
     {saveError && <p className="inference-inline-error" role="alert"><Icon name="warning" />{saveError}</p>}
-    {saveSuccess && <p className="inference-inline-status">✓ Настройки просмотра сохранены. Сам результат расчёта сохраняется автоматически.</p>}
+    {saveSuccess && <p className="inference-inline-status">✓ Настройки просмотра сохранены и будут восстановлены при повторном открытии этого результата. Сам результат расчёта сохраняется автоматически.</p>}
     {summary && <><section className="panel inference-result-context"><div className="inference-card-icon"><Icon name="box" size={31} /></div><div><small>Модель</small><strong>{summary.display_name}</strong><span>Сохранённая модель</span></div><div><small>Алгоритм</small><strong>{summary.model_display_name}</strong></div><div><small>Рабочий порог модели</small><strong>{modelThreshold === null ? 'Не задан' : thresholdFormat.format(modelThreshold)}</strong></div><div><small>Данные</small><strong>{summary.source_display_name}</strong></div><div><small>Объектов</small><strong>{numberFormat.format(summary.row_count)}</strong></div><div><small>Признаков модели</small><strong>{summary.required_feature_count}</strong></div><div><small>Статус</small><strong className="inference-completed">● Расчёт завершён</strong></div></section>
       <section className="panel inference-summary"><div><h2>Оценки модели</h2><div className="inference-metrics"><article><small>Объектов</small><strong>{numberFormat.format(summary.row_count)}</strong></article><article><small>Выше порога</small><strong>{numberFormat.format(summary.above_threshold_count)}</strong><span>{percentFormat.format(summary.above_threshold_share)}</span></article><article><small>Ниже порога</small><strong>{numberFormat.format(summary.below_threshold_count)}</strong><span>{percentFormat.format(summary.below_threshold_share)}</span></article><article><small>Диапазон оценок</small><strong>{scoreFormat.format(summary.score_min)}–{scoreFormat.format(summary.score_max)}</strong></article></div></div><div className="inference-histogram"><h3>Распределение оценок</h3><p className="inference-histogram-hint"><Icon name="info" size={17} />График показывает, сколько объектов попало в каждый диапазон скора модели. Слева — низкие оценки, справа — высокие; высокий столбец означает много объектов в этом диапазоне. Форма распределения сама по себе не означает хорошее или плохое качество модели.</p><div className="histogram-bars">{summary.histogram.map(bin => <span key={bin.lower_bound} title={`${scoreFormat.format(bin.lower_bound)}–${scoreFormat.format(bin.upper_bound)}: ${bin.count}`} style={{ height: `${Math.max(2, (bin.count / maximum) * 100)}%` }} />)}<i className="histogram-threshold-marker" style={{ left: `${view.threshold * 100}%` }} /></div><div className="histogram-axis"><span>0,00</span><span>0,50</span><span>1,00</span></div><p className="inference-histogram-caption">Пунктир — текущий порог просмотра: {scoreFormat.format(view.threshold)}</p></div></section>
       <section className="panel inference-threshold-note"><Icon name="info" size={28} /><div><strong>Текущий порог просмотра: {scoreFormat.format(view.threshold)}</strong><p>Порог используется только для аналитического разделения объектов на группы «Выше порога» и «Ниже порога». Он не изменяет оценки и не переобучает модель.</p>{modelThreshold !== null && thresholdChanged && <p>Рабочий порог модели: {thresholdFormat.format(modelThreshold)}</p>}{modelThreshold !== null && <button className="text-action" onClick={() => updateView({ threshold: modelThreshold })}>Вернуть рабочий порог модели</button>}</div><label>Порог просмотра<input type="number" min="0" max="1" step="0.01" value={view.threshold} onChange={event => { const value = Number(event.target.value); if (Number.isFinite(value) && value >= 0 && value <= 1) updateView({ threshold: value }) }} /></label></section>
     </>}
+    <div className={`inference-analysis-split ${selectedRowId ? 'has-explanation' : ''}`}>
     <section className="panel inference-objects"><h2>Объекты</h2><div className="inference-object-controls"><label className="inference-search"><Icon name="search" /><input value={view.search} onChange={event => updateView({ search: event.target.value })} placeholder="Найти по идентификатору" /></label><label>От <input type="number" min="0" max="1" step="0.01" value={view.min_score} onChange={event => { const value = Number(event.target.value); if (Number.isFinite(value) && value >= 0 && value <= view.max_score) updateView({ min_score: value }) }} /></label><label>До <input type="number" min="0" max="1" step="0.01" value={view.max_score} onChange={event => { const value = Number(event.target.value); if (Number.isFinite(value) && value >= view.min_score && value <= 1) updateView({ max_score: value }) }} /></label><div className="inference-filter-buttons">{([['ALL', 'Все'], ['ABOVE', '↑ Выше порога'], ['BELOW', '↓ Ниже порога']] as const).map(([value, label]) => <button key={value} className={view.position_filter === value ? 'active' : ''} onClick={() => updateView({ position_filter: value })}>{label}</button>)}</div><select value={view.sort} onChange={event => updateView({ sort: event.target.value as SavedInferenceViewConfiguration['sort'] })}><option value="SCORE_DESC">Оценка по убыванию</option><option value="SCORE_ASC">Оценка по возрастанию</option><option value="SOURCE_ASC">Порядок источника</option></select></div>
       {objectsError && <p className="inference-inline-error" role="alert"><Icon name="warning" />{objectsError}</p>}
-      <div className="inference-table-wrap"><table><thead><tr><th>Объект</th><th>Оценка модели</th><th>Относительно порога</th></tr></thead><tbody>{objectsLoading && <tr><td colSpan={3} className="inference-table-state">Загружаем объекты…</td></tr>}{!objectsLoading && objects?.items.map(item => <tr key={item.row_id} className="inference-object-row" tabIndex={0} role="link" onClick={() => navigate(buildSavedInferenceObjectDetailRoute(inferenceResultId, item.row_id, view.threshold))} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigate(buildSavedInferenceObjectDetailRoute(inferenceResultId, item.row_id, view.threshold)) } }}><td>{item.identifier_display}</td><td><span className="inference-score"><b>{scoreFormat.format(item.score)}</b><i><em style={{ width: `${item.score * 100}%` }} /></i></span></td><td className={item.above_threshold ? 'above' : 'below'}>{item.above_threshold ? '↑ Выше порога' : '↓ Ниже порога'}</td></tr>)}{!objectsLoading && objects && objects.items.length === 0 && <tr><td colSpan={3} className="inference-table-state">Объекты по текущему фильтру не найдены.</td></tr>}</tbody></table></div>
-      {objects && <footer className="inference-pagination"><span>Показано {objects.returned_count} из {numberFormat.format(objects.filtered_count)} объектов</span><div><button className="secondary-action" disabled={objects.offset === 0 || objectsLoading} onClick={() => goPage(objects.offset - PAGE_SIZE)}>← Назад</button><button className="secondary-action" disabled={objects.offset + objects.returned_count >= objects.filtered_count || objectsLoading} onClick={() => goPage(objects.offset + PAGE_SIZE)}>Вперёд →</button></div></footer>}
+      <div className={`inference-table-wrap inference-table-scroll ${listExpanded ? 'expanded' : 'compact'}`} onScroll={event => { const target = event.currentTarget; if (target.scrollHeight - target.scrollTop - target.clientHeight < 72) loadMore() }}><table><thead><tr><th>№</th><th>Объект</th><th>Оценка модели</th><th>Относительно порога</th></tr></thead><tbody>{objectsLoading && !objects && <tr><td colSpan={4} className="inference-table-state">Загружаем объекты…</td></tr>}{objects?.items.map((item, index) => <tr key={item.row_id} className={`inference-object-row ${selectedRowId === item.row_id ? 'selected' : ''}`} tabIndex={0} role="button" aria-pressed={selectedRowId === item.row_id} onClick={() => setSelectedRowId(item.row_id)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedRowId(item.row_id) } }}><td>{index + 1}</td><td>{item.identifier_display}</td><td><span className="inference-score"><b>{scoreFormat.format(item.score)}</b><i><em style={{ width: `${item.score * 100}%` }} /></i></span></td><td className={item.above_threshold ? 'above' : 'below'}>{item.above_threshold ? '↑ Выше порога' : '↓ Ниже порога'}</td></tr>)}{!objectsLoading && objects && objects.items.length === 0 && <tr><td colSpan={4} className="inference-table-state">Объекты по текущему фильтру не найдены.</td></tr>}{objectsLoading && objects && <tr><td colSpan={4} className="inference-table-loading">Загружаем ещё…</td></tr>}</tbody></table></div>
+      {objects && <footer className="inference-pagination"><span>Показано {objects.returned_count} из {numberFormat.format(objects.filtered_count)} объектов</span><button className="secondary-action" onClick={() => setListExpanded(value => !value)}>{listExpanded ? 'Свернуть список' : 'Развернуть список'}</button></footer>}
     </section>
-    <section className="panel inference-explanation-strip"><div><Icon name="info" size={26} /><h2>Объяснение результатов</h2></div><span><Icon name="check" />Local Explanation / SHAP</span><span><Icon name="check" />Result Interpreter</span><p>После выбора объекта можно будет открыть объяснение оценки модели.</p></section>
+    {selectedRowId && <section className="panel inference-inline-explanation-panel"><header><div><Icon name="info" size={26} /><div><h2>Объяснение объекта</h2><p>Local SHAP и Result Interpreter используют сохранённые данные выбранного объекта.</p></div></div><button className="inference-explanation-close" type="button" aria-label="Закрыть объяснение" onClick={() => setSelectedRowId(null)}>×</button></header><SavedInferenceObjectDetailPage embedded inferenceResultId={inferenceResultId} rowId={selectedRowId} threshold={view.threshold} /></section>}
+    </div>
   </main>
 }
