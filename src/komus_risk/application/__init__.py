@@ -72,6 +72,12 @@ from .saved_model_inference import (
     SavedModelInferenceError,
     SavedModelInferenceService,
 )
+from .saved_inference_explanation import (
+    SavedInferenceExplanation,
+    SavedInferenceExplanationService,
+    SavedInferenceFeature,
+    SavedInferenceObjectDetail,
+)
 from .oof_explanation import (
     GlobalOOFExplanation,
     GlobalOOFFeatureImportance,
@@ -158,6 +164,10 @@ __all__ = [
     "SavedModelInferenceObjectPage",
     "SavedModelInferenceSummary",
     "SavedModelInferenceService",
+    "SavedInferenceExplanation",
+    "SavedInferenceExplanationService",
+    "SavedInferenceFeature",
+    "SavedInferenceObjectDetail",
     "OOFExplanationError",
     "OOFExplanationService",
     "GlobalOOFExplanation",

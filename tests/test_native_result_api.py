@@ -395,6 +395,7 @@ def _client(
     integration_workflow_service: _IntegrationWorkflowService | None = None,
     model_library_service: _ModelLibraryService | None = None,
     saved_model_inference_service: object | None = None,
+    saved_inference_explanation_service: object | None = None,
 ):
     store = NativeSessionStore()
     authority = SimpleNamespace(resolve=lambda _context_id: object())
@@ -407,6 +408,7 @@ def _client(
         integration_workflow_service=integration_workflow_service,
         model_library_service=model_library_service,
         saved_model_inference_service=saved_model_inference_service,
+        saved_inference_explanation_service=saved_inference_explanation_service,
     ))
     assert client.get("/api/v1/session").status_code == 200
     session_id = client.cookies.get("axion_session")
@@ -458,6 +460,31 @@ class _SavedInferenceReadService:
         return SimpleNamespace(saved=False, configuration=self.configuration)
 
 
+class _SavedInferenceExplanationService:
+    def __init__(self, result_id: str) -> None:
+        self.result_id = result_id
+        self.calls: list[tuple[str, str]] = []
+
+    def explain(self, inference_result_id: str, row_id: str):
+        assert inference_result_id == self.result_id
+        self.calls.append((inference_result_id, row_id))
+        return SimpleNamespace(
+            inference_result_id=inference_result_id, model_version_id="model", row_id=row_id,
+            explanation_id="explanation", evidence_hash="evidence", prediction_probability=.8,
+            base_value=.1, explained_output_value=.8, output_space="raw_margin",
+            explanation_method_id="provider", explanation_method_version="1",
+            explanation_provider_id="provider", explanation_provider_version="1",
+            # Equal absolute SHAP values deliberately preserve this trusted
+            # original feature order.  FastAPI must only project it.
+            features=(
+                SimpleNamespace(feature_id="feature-first", column_name="first", display_name_ru="First", description_ru="d1", raw_value=2., shap_value=.3, abs_rank=1, direction="increases_output"),
+                SimpleNamespace(feature_id="feature-second", column_name="second", display_name_ru="Second", description_ru="d2", raw_value=9., shap_value=-.3, abs_rank=2, direction="decreases_output"),
+            ),
+            remainder=None,
+            result_interpretation_capability=SimpleNamespace(state="DISABLED", reason_code="EXTERNAL_DATA_POLICY_DISABLED"),
+        )
+
+
 def test_saved_inference_result_read_routes_validate_and_project_view_configuration() -> None:
     service = _SavedInferenceReadService()
     client, _store, _session_id = _client(_ResultService(), saved_model_inference_service=service)
@@ -471,6 +498,26 @@ def test_saved_inference_result_read_routes_validate_and_project_view_configurat
     invalid = client.put(f"/api/v1/inference-results/{service.result_id}/configuration", json={"threshold": .7, "min_score": .1, "max_score": .9, "position_filter": "ABOVE", "sort": "SCORE_ASC", "search": "Alpha", "extra": 1})
     assert invalid.status_code == 422 and invalid.json()["detail"]["code"] == "INVALID_INFERENCE_VIEW_CONFIGURATION"
     assert client.delete(f"/api/v1/inference-results/{service.result_id}/configuration").json()["saved"] is False
+
+
+def test_saved_inference_explanation_projects_public_rank_without_exposing_internal_abs_rank() -> None:
+    saved_inference = _SavedInferenceReadService()
+    explanation = _SavedInferenceExplanationService(saved_inference.result_id)
+    client, _store, _session_id = _client(
+        _ResultService(), saved_model_inference_service=saved_inference,
+        saved_inference_explanation_service=explanation,
+    )
+
+    response = client.get(
+        f"/api/v1/inference-results/{saved_inference.result_id}/objects/row-tie/explanation"
+    )
+
+    assert response.status_code == 200, response.text
+    assert explanation.calls == [(saved_inference.result_id, "row-tie")]
+    features = response.json()["features"]
+    assert [item["column_name"] for item in features] == ["first", "second"]
+    assert [item["rank"] for item in features] == [1, 2]
+    assert all("abs_rank" not in item for item in features)
 
 
 def test_saved_inference_corrupt_view_configuration_maps_to_409() -> None:

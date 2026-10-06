@@ -65,6 +65,24 @@ class SavedModelInferenceResult:
     scores_hash: str
 
 
+@dataclass(frozen=True, slots=True)
+class SavedInferenceObjectEvidence:
+    """One validated immutable row, read only from saved inference evidence."""
+
+    inference_result_id: str
+    model_version_id: str
+    experiment_artifact_id: str
+    source_file_sha256: str
+    row_id: str
+    source_row_position: int
+    identifier_column: str
+    identifier_display: str
+    probability: float
+    required_feature_columns: tuple[str, ...]
+    feature_values: tuple[float, ...]
+    feature_binding_hash: str
+
+
 class SavedModelInferenceResultStore:
     """Directory-per-result evidence store; only validated published directories read."""
 
@@ -190,6 +208,54 @@ class SavedModelInferenceResultStore:
         except (OSError, TypeError, ValueError) as error:
             raise InferenceResultIntegrityError() from error
 
+    def read_object_evidence(
+        self, inference_result_id: str, row_id: str,
+    ) -> SavedInferenceObjectEvidence:
+        """Return exactly one row after validating the complete published Result.
+
+        The full Result validation is intentionally retained before the mmap row
+        slice: a row can never be trusted independently of its content-addressed
+        Result and feature binding.
+        """
+        result = self.read(inference_result_id)
+        matches = [index for index, row in enumerate(result.rows) if row.row_id == row_id]
+        if len(matches) != 1:
+            raise InferenceResultNotFoundError()
+        index = matches[0]
+        try:
+            directory = self.root / result.inference_result_id / "evidence"
+            matrix = np.load(directory / "model_input.npy", allow_pickle=False, mmap_mode="r")
+            scores = np.load(directory / "scores.npy", allow_pickle=False, mmap_mode="r")
+            positions = np.load(directory / "source_row_positions.npy", allow_pickle=False, mmap_mode="r")
+            row = result.rows[index]
+            values = np.asarray(matrix[index], dtype=np.float64)
+            score = float(scores[index])
+            position = int(positions[index])
+            if (
+                matrix.shape != (result.row_count, len(result.required_feature_columns))
+                or scores.shape != (result.row_count,) or positions.shape != (result.row_count,)
+                or values.shape != (len(result.required_feature_columns),)
+                or not np.isfinite(values).all() or not np.isfinite(score)
+                or position != row.source_row_position or score != row.probability
+            ):
+                raise ValueError("Saved inference row evidence is invalid.")
+        except (OSError, TypeError, ValueError, IndexError) as error:
+            raise InferenceResultIntegrityError() from error
+        return SavedInferenceObjectEvidence(
+            inference_result_id=result.inference_result_id,
+            model_version_id=result.model_version_id,
+            experiment_artifact_id=result.experiment_artifact_id,
+            source_file_sha256=result.source_file_sha256,
+            row_id=row.row_id,
+            source_row_position=row.source_row_position,
+            identifier_column=result.identifier_column,
+            identifier_display=row.identifier_display,
+            probability=row.probability,
+            required_feature_columns=result.required_feature_columns,
+            feature_values=tuple(float(value) for value in values),
+            feature_binding_hash=result.feature_binding_hash,
+        )
+
     def _read_if_present(self, inference_result_id: str) -> SavedModelInferenceResult | None:
         try:
             return self.read(inference_result_id)
@@ -217,9 +283,9 @@ class SavedModelInferenceResultStore:
         result = self._from_payload(payload)
         if result.inference_result_id != expected_id:
             raise ValueError("Inference result identity mismatch.")
-        matrix = np.load(directory / "evidence" / "model_input.npy", allow_pickle=False)
-        scores = np.load(directory / "evidence" / "scores.npy", allow_pickle=False)
-        positions = np.load(directory / "evidence" / "source_row_positions.npy", allow_pickle=False)
+        matrix = np.load(directory / "evidence" / "model_input.npy", allow_pickle=False, mmap_mode="r")
+        scores = np.load(directory / "evidence" / "scores.npy", allow_pickle=False, mmap_mode="r")
+        positions = np.load(directory / "evidence" / "source_row_positions.npy", allow_pickle=False, mmap_mode="r")
         expected_positions = [row.source_row_position for row in result.rows]
         row_scores = np.asarray([row.probability for row in result.rows], dtype=np.float64)
         feature_binding_hash = stable_hash({
@@ -251,6 +317,7 @@ class SavedModelInferenceResultStore:
             matrix.shape != (result.row_count, len(result.required_feature_columns))
             or scores.shape != (result.row_count,)
             or positions.tolist() != expected_positions
+            or len({row.row_id for row in result.rows}) != result.row_count
             or not np.isfinite(scores).all()
             or (scores < 0).any() or (scores > 1).any()
             or not np.array_equal(scores, row_scores)

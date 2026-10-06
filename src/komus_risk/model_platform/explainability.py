@@ -68,6 +68,30 @@ class TrustedExplanationContext:
         validation_positions = tuple(position for position, fold in zip(row_positions, fold_assignments, strict=True) if fold == validation_fold)
         return cls("oof_fold", source_artifact_id, model_binding_id, tuple(feature_columns), tuple(values for values, _ in selected), tuple(position for _, position in selected), background_policy_id, validation_row_position, validation_positions, final_test, str(validation_fold))
 
+    @classmethod
+    def from_model_version_evidence(
+        cls, *, source_artifact_id: str, model_binding_id: str,
+        feature_columns: Sequence[str], model_input_values: Sequence[Sequence[float]],
+        row_positions: Sequence[int],
+        background_policy_id: str = "model_version_training_hash_top128_v1",
+    ) -> "TrustedExplanationContext":
+        """Build a deterministic final-model background without OOF semantics."""
+        if len(model_input_values) != len(row_positions) or not model_input_values:
+            raise ValueError("ModelVersion explanation evidence is not canonically aligned.")
+        candidates = tuple((tuple(values), int(position)) for values, position in zip(model_input_values, row_positions, strict=True))
+        ranked = sorted(candidates, key=lambda item: stable_hash({
+            "policy_id": background_policy_id,
+            "source_artifact_id": source_artifact_id,
+            "model_binding_id": model_binding_id,
+            "row_position": item[1],
+        }))
+        selected = tuple(ranked[:_MAX_BACKGROUND_ROWS])
+        return cls(
+            "model_version", source_artifact_id, model_binding_id,
+            tuple(feature_columns), tuple(values for values, _ in selected),
+            tuple(position for _, position in selected), background_policy_id,
+        )
+
 
 class ModelExplanationProvider(Protocol):
     descriptor: ProviderDescriptor
@@ -190,6 +214,24 @@ def _validate_oof_context_binding(
         or any(row.source_row_position not in context.validation_row_positions for row in selected_rows)
     ):
         raise ValueError("Trusted OOF context does not match the exact artifact, fold model, feature binding, or validation rows.")
+
+
+def _validate_model_version_context_binding(
+    *, metadata: Mapping[str, Any], context: TrustedExplanationContext,
+    prediction_batch: Any, expected_model_version_id: str,
+) -> None:
+    """Validate final-ModelVersion background; it deliberately has no OOF rule."""
+    columns = tuple(metadata.get("feature_columns", ()))
+    artifact_id = metadata.get("experiment_artifact_id")
+    if (
+        context.source_kind != "model_version" or context.source_artifact_id != artifact_id
+        or context.model_binding_id != expected_model_version_id
+        or context.feature_columns != columns
+        or tuple(prediction_batch.required_feature_columns) != columns
+        or prediction_batch.model_version_id != expected_model_version_id
+        or context.validation_row_positions or context.fold_id is not None
+    ):
+        raise ValueError("Trusted ModelVersion context does not match final model evidence.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -374,13 +416,19 @@ class GBDTMeanProbabilityExplanationProvider:
         if len(records) != len(prediction_batch.rows) or set(row_ids) - set(records):
             raise ValueError("Explanation batch row IDs do not match the prediction batch.")
         selected = tuple(records[row_id] for row_id in row_ids)
-        _validate_oof_context_binding(
-            metadata=metadata,
-            context=explanation_context,
-            prediction_batch=prediction_batch,
-            selected_rows=tuple(row for row, _ in selected),
-            expected_model_version_id=summary.model_version_id,
-        )
+        if explanation_context.source_kind == "oof_fold":
+            _validate_oof_context_binding(
+                metadata=metadata, context=explanation_context,
+                prediction_batch=prediction_batch,
+                selected_rows=tuple(row for row, _ in selected),
+                expected_model_version_id=summary.model_version_id,
+            )
+        else:
+            _validate_model_version_context_binding(
+                metadata=metadata, context=explanation_context,
+                prediction_batch=prediction_batch,
+                expected_model_version_id=summary.model_version_id,
+            )
         x = np.asarray([values for _, values in selected], dtype=float)
         background = np.asarray(explanation_context.background_values, dtype=float)
         if x.shape != (len(selected), len(columns)) or background.shape != (len(explanation_context.background_values), len(columns)) or not np.isfinite(x).all() or not np.isfinite(background).all():

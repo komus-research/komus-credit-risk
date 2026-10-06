@@ -16,6 +16,7 @@ from komus_risk.application import (
     ModelLibraryService,
     ModelInferenceService,
     SavedModelInferenceService,
+    SavedInferenceExplanationService,
     ResultInterpreterPromptLoader,
     ResultInterpreterService,
 )
@@ -48,6 +49,7 @@ class NativeExperimentRuntime:
     integration_workflow_service: IntegrationWorkflowService
     model_library_service: ModelLibraryService
     saved_model_inference_service: SavedModelInferenceService
+    saved_inference_explanation_service: SavedInferenceExplanationService
     supported_protocol: SupportedProtocol
     prepared_context_authority: PreparedDatasetContextAuthority
 
@@ -108,6 +110,12 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         view_store=SavedInferenceResultViewConfigurationStore(store_root / "inference_view_configurations"),
         cleanup_upload=cleanup_staged_upload,
     )
+    saved_inference_explanation_service = SavedInferenceExplanationService(
+        result_store=SavedModelInferenceResultStore(store_root / "inference_results"),
+        model_library_service=model_library_service,
+        integration_workflow_service=integration_workflow_service,
+        experiment_artifact_store=artifact_store,
+    )
     return NativeExperimentRuntime(
         planning_service=ExperimentPlanningService(
             model_plugin_registry=plugins,
@@ -130,6 +138,7 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         integration_workflow_service=integration_workflow_service,
         model_library_service=model_library_service,
         saved_model_inference_service=saved_model_inference_service,
+        saved_inference_explanation_service=saved_inference_explanation_service,
         supported_protocol=SUPPORTED_PROTOCOL,
         prepared_context_authority=authority,
     )

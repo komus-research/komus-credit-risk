@@ -31,6 +31,7 @@ from komus_risk.application import (
     InferenceInputError,
     InferencePreparationError,
     SavedModelInferenceError,
+    SavedInferenceExplanationService,
 )
 from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.oof_explanation import OOFExplanationError
@@ -419,6 +420,63 @@ class SavedModelInferenceObjectListResponse(BaseModel):
     items: list[SavedModelInferenceObjectItemResponse]
 
 
+class SavedInferenceObjectFeatureResponse(BaseModel):
+    feature_id: str
+    column_name: str
+    display_name_ru: str | None
+    description_ru: str | None
+    raw_value: float
+
+
+class CapabilityResponse(BaseModel):
+    state: Literal["AVAILABLE", "WAITING_FOR_INPUT", "UNSUPPORTED", "DISABLED", "MISCONFIGURED"]
+    reason_code: str
+
+
+class SavedInferenceObjectDetailResponse(BaseModel):
+    inference_result_id: str
+    model_version_id: str
+    row_id: str
+    source_row_position: int
+    identifier_column: str
+    identifier_display: str
+    score: float
+    threshold: float
+    position: Literal["ABOVE", "BELOW"]
+    features: list[SavedInferenceObjectFeatureResponse]
+    capabilities: dict[str, CapabilityResponse]
+
+
+class SavedInferenceExplanationFeatureResponse(BaseModel):
+    feature_id: str
+    column_name: str
+    display_name_ru: str | None
+    description_ru: str | None
+    raw_value: float
+    shap_value: float
+    rank: int
+    direction: Literal["increases_output", "decreases_output", "neutral"]
+
+
+class SavedInferenceExplanationResponse(BaseModel):
+    inference_result_id: str
+    model_version_id: str
+    row_id: str
+    explanation_id: str
+    evidence_hash: str
+    prediction_probability: float
+    base_value: float
+    explained_output_value: float
+    output_space: str
+    explanation_method_id: str
+    explanation_method_version: str
+    explanation_provider_id: str
+    explanation_provider_version: str
+    features: list[SavedInferenceExplanationFeatureResponse]
+    remainder: LocalExplanationRemainderResponse | None
+    result_interpretation_capability: CapabilityResponse
+
+
 class InferenceViewConfigurationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -606,7 +664,7 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None, saved_model_inference_service: Any | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None, saved_model_inference_service: Any | None = None, saved_inference_explanation_service: SavedInferenceExplanationService | None = None) -> FastAPI:
     """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
@@ -628,6 +686,11 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         saved_model_inference_service
         if saved_model_inference_service is not None
         else runtime.saved_model_inference_service
+    )
+    saved_explanation = (
+        saved_inference_explanation_service
+        if saved_inference_explanation_service is not None
+        else runtime.saved_inference_explanation_service
     )
     artifact_store = experiment_artifact_store or runtime.artifact_store
     context_authority = prepared_context_authority or runtime.prepared_context_authority
@@ -845,6 +908,7 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             "INFERENCE_VALUES_INVALID": 422,
             "INFERENCE_PREPARATION_STALE": 409,
             "INFERENCE_RUN_IN_PROGRESS": 409,
+            "MODEL_VERSION_NOT_FOUND": 404,
             "MODEL_VERSION_INTEGRITY_ERROR": 409,
             "MODEL_SOURCE_RESULT_UNAVAILABLE": 409,
             "MODEL_INFERENCE_UNSUPPORTED": 409,
@@ -852,6 +916,12 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             "INFERENCE_RESULT_PERSISTENCE_FAILED": 500,
             "INFERENCE_RESULT_NOT_FOUND": 404,
             "INFERENCE_RESULT_INTEGRITY_ERROR": 409,
+            "INFERENCE_OBJECT_NOT_FOUND": 404,
+            "INFERENCE_LOCAL_EXPLANATION_UNSUPPORTED": 409,
+            "INFERENCE_EXPLANATION_EVIDENCE_MISMATCH": 409,
+            "INFERENCE_EXPLANATION_BACKGROUND_UNAVAILABLE": 409,
+            "INFERENCE_LOCAL_EXPLANATION_FAILED": 500,
+            "INFERENCE_EXPLANATION_INTERNAL_ERROR": 500,
             "INVALID_INFERENCE_RESULT_QUERY": 400,
             "INVALID_INFERENCE_VIEW_CONFIGURATION": 422,
             "INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR": 409,
@@ -873,8 +943,22 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             "MODEL_INFERENCE_UNSUPPORTED": "Эту сохранённую модель нельзя безопасно использовать для прогноза.",
             "INFERENCE_FAILED": "Не удалось выполнить прогноз сохранённой моделью.",
             "INFERENCE_RESULT_PERSISTENCE_FAILED": "Не удалось безопасно сохранить результат прогноза.",
+            "INFERENCE_OBJECT_NOT_FOUND": "Объект не найден; исходный результат прогноза остаётся доступен.",
+            "INFERENCE_LOCAL_EXPLANATION_UNSUPPORTED": "Локальное объяснение недоступно; исходный результат прогноза остаётся доступен.",
+            "INFERENCE_EXPLANATION_EVIDENCE_MISMATCH": "Проверка доказательств объяснения не пройдена; исходный результат прогноза остаётся доступен.",
+            "INFERENCE_EXPLANATION_BACKGROUND_UNAVAILABLE": "Фон объяснения недоступен; исходный результат прогноза остаётся доступен.",
+            "INFERENCE_LOCAL_EXPLANATION_FAILED": "Не удалось построить локальное объяснение; исходный результат прогноза остаётся доступен.",
+            "INFERENCE_EXPLANATION_INTERNAL_ERROR": "Внутренняя ошибка объяснения; исходный результат прогноза остаётся доступен.",
             "INFERENCE_INTERNAL_ERROR": "Не удалось безопасно выполнить прогноз сохранённой моделью.",
         }
+        messages.update({
+            "INFERENCE_RESULT_NOT_FOUND": "Inference Result was not found.",
+            "INFERENCE_RESULT_INTEGRITY_ERROR": "Result integrity could not be verified; the original prediction Result remains available.",
+            "INFERENCE_OBJECT_NOT_FOUND": "Object was not found; the original prediction Result remains available.",
+            "MODEL_VERSION_NOT_FOUND": "Saved ModelVersion was not found; the original prediction Result remains available.",
+            "MODEL_VERSION_INTEGRITY_ERROR": "ModelVersion integrity could not be verified; the original prediction Result remains available.",
+            "MODEL_SOURCE_RESULT_UNAVAILABLE": "Model source evidence is unavailable; the original prediction Result remains available.",
+        })
         return HTTPException(
             status_code=status_by_code.get(exc.code, 500),
             detail={
@@ -1111,6 +1195,47 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             total_count=value.total_count, filtered_count=value.filtered_count,
             offset=value.offset, limit=value.limit, returned_count=len(value.items),
             items=[SavedModelInferenceObjectItemResponse(**item) for item in value.items],
+        )
+
+    @api.get("/api/v1/inference-results/{inference_result_id}/objects/{row_id}", response_model=SavedInferenceObjectDetailResponse)
+    def get_saved_inference_object_detail(
+        inference_result_id: str, row_id: str, threshold: str = "0.50",
+    ) -> SavedInferenceObjectDetailResponse:
+        try:
+            value = saved_explanation.detail(inference_result_id, row_id, threshold=inference_query_number(threshold))
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError("INFERENCE_EXPLANATION_INTERNAL_ERROR")) from None
+        return SavedInferenceObjectDetailResponse(
+            inference_result_id=value.inference_result_id, model_version_id=value.model_version_id,
+            row_id=value.row_id, source_row_position=value.source_row_position,
+            identifier_column=value.identifier_column, identifier_display=value.identifier_display,
+            score=value.score, threshold=value.threshold, position=value.position,
+            features=[SavedInferenceObjectFeatureResponse(**item.__dict__) if hasattr(item, "__dict__") else SavedInferenceObjectFeatureResponse(feature_id=item.feature_id, column_name=item.column_name, display_name_ru=item.display_name_ru, description_ru=item.description_ru, raw_value=item.raw_value) for item in value.features],
+            capabilities={key: CapabilityResponse(state=item.state, reason_code=item.reason_code) for key, item in value.capabilities.items()},
+        )
+
+    @api.get("/api/v1/inference-results/{inference_result_id}/objects/{row_id}/explanation", response_model=SavedInferenceExplanationResponse)
+    def get_saved_inference_object_explanation(
+        inference_result_id: str, row_id: str,
+    ) -> SavedInferenceExplanationResponse:
+        try:
+            value = saved_explanation.explain(inference_result_id, row_id)
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError("INFERENCE_EXPLANATION_INTERNAL_ERROR")) from None
+        return SavedInferenceExplanationResponse(
+            inference_result_id=value.inference_result_id, model_version_id=value.model_version_id,
+            row_id=value.row_id, explanation_id=value.explanation_id, evidence_hash=value.evidence_hash,
+            prediction_probability=value.prediction_probability, base_value=value.base_value,
+            explained_output_value=value.explained_output_value, output_space=value.output_space,
+            explanation_method_id=value.explanation_method_id, explanation_method_version=value.explanation_method_version,
+            explanation_provider_id=value.explanation_provider_id, explanation_provider_version=value.explanation_provider_version,
+            features=[SavedInferenceExplanationFeatureResponse(feature_id=item.feature_id, column_name=item.column_name, display_name_ru=item.display_name_ru, description_ru=item.description_ru, raw_value=item.raw_value, shap_value=item.shap_value, rank=item.abs_rank, direction=item.direction) for item in value.features],
+            remainder=value.remainder,
+            result_interpretation_capability=CapabilityResponse(state=value.result_interpretation_capability.state, reason_code=value.result_interpretation_capability.reason_code),
         )
 
     @api.get("/api/v1/inference-results/{inference_result_id}/configuration", response_model=SavedInferenceViewResponse)
