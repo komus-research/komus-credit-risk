@@ -34,7 +34,7 @@ result_interpreter:
   generation:
     # Максимум output tokens на одно объяснение.
     # Увеличивайте только если промпты действительно требуют более длинный ответ.
-    max_output_tokens: 2400
+    max_output_tokens: 3000
 
   transport:
     # Сколько секунд ждать ответ провайдера до сетевого timeout.
