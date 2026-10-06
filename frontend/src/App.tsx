@@ -14,10 +14,10 @@ import { GlobalExplanationPage } from './pages/GlobalExplanationPage'
 import { ModelsPage } from './pages/ModelsPage'
 import { ModelVersionDetailPage } from './pages/ModelVersionDetailPage'
 import { SavedModelInferencePage } from './pages/SavedModelInferencePage'
-import { SavedModelInferenceResultPage } from './pages/SavedModelInferenceResultPage'
+import { SavedInferenceReportDraftPage, SavedModelInferenceResultPage } from './pages/SavedModelInferenceResultPage'
 import { SavedInferenceObjectDetailPage } from './pages/SavedInferenceObjectDetailPage'
 import { UtilityPlaceholderPage } from './pages/UtilityPlaceholderPage'
-import { buildInferenceResultRoute, currentRoute, guardedRoute, inferenceResultIdFromRoute, isInferenceResultRoute, isModelDetailRoute, isModelInferenceRoute, isObjectDetailRoute, isSavedInferenceObjectDetailRoute, modelVersionIdFromInferenceRoute, modelVersionIdFromRoute, navigate, navigateObjects, objectIdFromRoute, parseObjectsQuery, replaceRoute, routes, savedInferenceObjectDetailFromRoute, type AppRoute } from './routing'
+import { buildInferenceResultRoute, currentRoute, guardedRoute, inferenceResultIdFromRoute, isInferenceResultRoute, isModelDetailRoute, isModelInferenceRoute, isObjectDetailRoute, isSavedInferenceObjectDetailRoute, isSavedInferenceReportDraftRoute, modelVersionIdFromInferenceRoute, modelVersionIdFromRoute, navigate, navigateObjects, objectIdFromRoute, parseObjectsQuery, replaceRoute, routes, savedInferenceObjectDetailFromRoute, savedInferenceReportDraftResultIdFromRoute, type AppRoute } from './routing'
 
 const recoveryText = 'Сессия подготовки была сброшена. Загрузите файл повторно.'
 
@@ -34,7 +34,7 @@ export function App() {
 
   const sync = useCallback(async (requested: AppRoute, stale = false) => {
     requestedRoute.current = requested
-    if (requested === routes.models || isModelDetailRoute(requested) || isModelInferenceRoute(requested) || isInferenceResultRoute(requested) || isSavedInferenceObjectDetailRoute(requested)) {
+    if (requested === routes.models || isModelDetailRoute(requested) || isModelInferenceRoute(requested) || isInferenceResultRoute(requested) || isSavedInferenceObjectDetailRoute(requested) || isSavedInferenceReportDraftRoute(requested)) {
       setSessionReady(true)
       return
     }
@@ -149,6 +149,8 @@ export function App() {
         ? <SavedModelInferencePage modelVersionId={modelVersionIdFromInferenceRoute(route)!} />
       : isSavedInferenceObjectDetailRoute(route)
         ? <SavedInferenceObjectDetailPage {...savedInferenceObjectDetailFromRoute(window.location.hash)!} onBack={() => navigate(buildInferenceResultRoute(savedInferenceObjectDetailFromRoute(window.location.hash)!.inferenceResultId))} />
+      : isSavedInferenceReportDraftRoute(route)
+        ? <SavedInferenceReportDraftPage inferenceResultId={savedInferenceReportDraftResultIdFromRoute(route)!} />
       : isInferenceResultRoute(route)
         ? <SavedModelInferenceResultPage inferenceResultId={inferenceResultIdFromRoute(route)!} />
       : isModelDetailRoute(route)
@@ -178,7 +180,7 @@ export function App() {
                     : <DataPage route={route} sessionReady={sessionReady} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
   const shellClass = route === routes.home || route === routes.documentation || route === routes.hotkeys || route === routes.about
     ? 'home-shell'
-    : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route)
+    : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route)
       ? 'models-shell'
     : route === routes.file || route === routes.roles || route === routes.confirmation
       ? 'workflow-shell data-shell'
@@ -189,7 +191,7 @@ export function App() {
   return <>
     <div className={`app-shell ${shellClass}`}>
       <Sidebar
-        active={route === routes.home ? 'home' : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) ? 'models' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
+        active={route === routes.home ? 'home' : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route) ? 'models' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
         onHome={openHome}
         onNewAnalysis={() => beginNewAnalysis()}
         onModels={openModels}

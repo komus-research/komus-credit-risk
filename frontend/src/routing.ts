@@ -25,7 +25,8 @@ export type ModelDetailRoute = `${typeof routes.models}/${string}`
 export type ModelInferenceRoute = `${typeof routes.models}/${string}/inference`
 export type InferenceResultRoute = `#/inference-results/${string}`
 export type SavedInferenceObjectDetailRoute = `#/inference-results/${string}/objects/${string}`
-export type AppRoute = CanonicalRoute | ObjectDetailRoute | ModelDetailRoute | ModelInferenceRoute | InferenceResultRoute | SavedInferenceObjectDetailRoute
+export type SavedInferenceReportDraftRoute = `#/inference-results/${string}/report-draft`
+export type AppRoute = CanonicalRoute | ObjectDetailRoute | ModelDetailRoute | ModelInferenceRoute | InferenceResultRoute | SavedInferenceObjectDetailRoute | SavedInferenceReportDraftRoute
 
 type ObjectsOutcome = 'TP' | 'TN' | 'FP' | 'FN'
 type ObjectsTarget = 'ANY' | 'POSITIVE' | 'NEGATIVE'
@@ -171,6 +172,22 @@ export function buildSavedInferenceObjectDetailRoute(inferenceResultId: string, 
   return `${inferenceResultPrefix}${encodeURIComponent(inferenceResultId)}/objects/${encodeURIComponent(rowId)}?threshold=${encodeURIComponent(String(threshold))}` as SavedInferenceObjectDetailRoute
 }
 
+export function buildSavedInferenceReportDraftRoute(inferenceResultId: string): SavedInferenceReportDraftRoute {
+  return `${inferenceResultPrefix}${encodeURIComponent(inferenceResultId)}/report-draft` as SavedInferenceReportDraftRoute
+}
+
+export function savedInferenceReportDraftResultIdFromRoute(route: string): string | null {
+  const path = route.split('?', 1)[0]
+  if (!path.startsWith(inferenceResultPrefix) || !path.endsWith('/report-draft')) return null
+  const encoded = path.slice(inferenceResultPrefix.length, -'/report-draft'.length)
+  if (!encoded || encoded.includes('/')) return null
+  try { return decodeURIComponent(encoded) || null } catch { return null }
+}
+
+export function isSavedInferenceReportDraftRoute(route: string): route is SavedInferenceReportDraftRoute {
+  return savedInferenceReportDraftResultIdFromRoute(route) !== null
+}
+
 export function savedInferenceObjectDetailFromRoute(route: string): { inferenceResultId: string; rowId: string; threshold: number } | null {
   const path = route.split('?', 1)[0]
   if (!path.startsWith(inferenceResultPrefix)) return null
@@ -203,6 +220,7 @@ export function isInferenceResultRoute(route: string): route is InferenceResultR
 export function currentRoute(): AppRoute | null {
   const path = hashPath()
   if (knownRoutes.has(path)) return path as CanonicalRoute
+  if (isSavedInferenceReportDraftRoute(window.location.hash)) return path as SavedInferenceReportDraftRoute
   if (isSavedInferenceObjectDetailRoute(window.location.hash)) return path as SavedInferenceObjectDetailRoute
   return isObjectDetailRoute(path) || isModelInferenceRoute(path) || isInferenceResultRoute(path) || isModelDetailRoute(path) ? path : null
 }
@@ -279,7 +297,7 @@ export function replaceObjects(state: ObjectsQueryState) {
 }
 
 export function guardedRoute(route: AppRoute, session: NativeSession, allowResultThreshold = false, allowResultObjects = false): AppRoute {
-  if (route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route)) return route
+  if (route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route)) return route
   if (isObjectDetailRoute(route)) {
     return session.resume_route === routes.result ? route : session.resume_route
   }

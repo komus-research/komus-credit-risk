@@ -526,6 +526,25 @@ class SavedInferenceViewResponse(BaseModel):
     default_threshold_source: Literal["MODEL_DECISION", "TECHNICAL_DEFAULT"] = "TECHNICAL_DEFAULT"
 
 
+class SavedInferenceReportDraftItemResponse(BaseModel):
+    row_id: str
+    source_row_position: int
+    identifier_display: str
+    score: float
+    threshold: float
+    position: Literal["ABOVE", "BELOW"]
+
+
+class SavedInferenceReportDraftResponse(BaseModel):
+    schema_version: Literal[1]
+    inference_result_id: str
+    selected_row_ids: list[str]
+    created_at: str | None
+    updated_at: str | None
+    threshold: float
+    items: list[SavedInferenceReportDraftItemResponse]
+
+
 class ResultOverviewResponse(BaseModel):
     summary: ResultSummaryResponse
     threshold: ResultThresholdResponse
@@ -959,6 +978,8 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             "INVALID_INFERENCE_RESULT_QUERY": 400,
             "INVALID_INFERENCE_VIEW_CONFIGURATION": 422,
             "INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR": 409,
+            "INFERENCE_REPORT_DRAFT_INTEGRITY_ERROR": 409,
+            "INFERENCE_RESULT_ROW_NOT_FOUND": 404,
             "INFERENCE_INTERNAL_ERROR": 500,
         }
         messages = {
@@ -985,6 +1006,8 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             "INFERENCE_EXPLANATION_INTERNAL_ERROR": "Внутренняя ошибка объяснения; исходный результат прогноза остаётся доступен.",
             "RESULT_INTERPRETER_ERROR": "Не удалось сформировать интерпретацию. Результат модели и SHAP остаются доступными.",
             "INFERENCE_INTERNAL_ERROR": "Не удалось безопасно выполнить прогноз сохранённой моделью.",
+            "INFERENCE_REPORT_DRAFT_INTEGRITY_ERROR": "Черновик отчёта не прошёл проверку целостности.",
+            "INFERENCE_RESULT_ROW_NOT_FOUND": "Объект не найден в сохранённом результате прогноза.",
         }
         messages.update({
             "INFERENCE_RESULT_NOT_FOUND": "Inference Result was not found.",
@@ -1173,6 +1196,17 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             default_threshold_source=getattr(value, "default_threshold_source", "TECHNICAL_DEFAULT"),
         )
 
+    def inference_report_draft_response(value: Any) -> SavedInferenceReportDraftResponse:
+        return SavedInferenceReportDraftResponse(
+            schema_version=value.schema_version,
+            inference_result_id=value.inference_result_id,
+            selected_row_ids=list(value.selected_row_ids),
+            created_at=value.created_at,
+            updated_at=value.updated_at,
+            threshold=value.threshold,
+            items=[SavedInferenceReportDraftItemResponse(**item) for item in value.items],
+        )
+
     def inference_query_number(value: str | None) -> float | None:
         if value is None:
             return None
@@ -1343,6 +1377,33 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
     def delete_saved_inference_configuration(inference_result_id: str) -> SavedInferenceViewResponse:
         try:
             return inference_view_response(saved_inference.delete_view_configuration(inference_result_id))
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError()) from None
+
+    @api.get("/api/v1/inference-results/{inference_result_id}/report-draft", response_model=SavedInferenceReportDraftResponse)
+    def get_saved_inference_report_draft(inference_result_id: str) -> SavedInferenceReportDraftResponse:
+        try:
+            return inference_report_draft_response(saved_inference.get_report_draft(inference_result_id))
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError()) from None
+
+    @api.post("/api/v1/inference-results/{inference_result_id}/report-draft/rows/{row_id}", response_model=SavedInferenceReportDraftResponse)
+    def add_saved_inference_report_row(inference_result_id: str, row_id: str) -> SavedInferenceReportDraftResponse:
+        try:
+            return inference_report_draft_response(saved_inference.add_report_row(inference_result_id, row_id))
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError()) from None
+
+    @api.delete("/api/v1/inference-results/{inference_result_id}/report-draft/rows/{row_id}", response_model=SavedInferenceReportDraftResponse)
+    def remove_saved_inference_report_row(inference_result_id: str, row_id: str) -> SavedInferenceReportDraftResponse:
+        try:
+            return inference_report_draft_response(saved_inference.remove_report_row(inference_result_id, row_id))
         except SavedModelInferenceError as error:
             raise saved_inference_error(error) from None
         except Exception:

@@ -20,6 +20,12 @@ from komus_risk.artifacts import (
     SavedModelInferenceResult,
     SavedModelInferenceResultStore,
 )
+from komus_risk.artifacts.inference_view_store import (
+    InferenceReportDraftIntegrityError,
+    InferenceReportDraftPersistenceError,
+    SavedInferenceReportDraft,
+    SavedInferenceReportDraftStore,
+)
 from .model_inference import InferenceInputError, ModelInferenceService, PreparedInferenceInput
 from .model_library import ModelLibraryService
 
@@ -92,12 +98,25 @@ class SavedInferenceResultView:
     default_threshold_source: str
 
 
+@dataclass(frozen=True, slots=True)
+class SavedInferenceReportDraftView:
+    schema_version: int
+    inference_result_id: str
+    selected_row_ids: tuple[str, ...]
+    created_at: str | None
+    updated_at: str | None
+    threshold: float
+    items: tuple[dict[str, Any], ...]
+
+
 class SavedModelInferenceService:
     def __init__(self, *, model_library_service: ModelLibraryService, model_inference_service: ModelInferenceService,
                  result_store: SavedModelInferenceResultStore, cleanup_upload: Callable[[Any], None],
-                 view_store: SavedInferenceResultViewConfigurationStore | None = None) -> None:
+                 view_store: SavedInferenceResultViewConfigurationStore | None = None,
+                 report_draft_store: SavedInferenceReportDraftStore | None = None) -> None:
         self.model_library_service, self.model_inference_service = model_library_service, model_inference_service
         self.result_store, self.cleanup_upload, self.view_store = result_store, cleanup_upload, view_store
+        self.report_draft_store = report_draft_store
         self._items: dict[str, InferencePreparation] = {}; self._lock = RLock()
 
     def preflight(self, *, session_owner: str, model_version_id: str, staged_upload: Any, snapshot: Any) -> InferencePreflight:
@@ -291,6 +310,62 @@ class SavedModelInferenceService:
             raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR") from error
         return self._view(None, result)
 
+    def get_report_draft(self, inference_result_id: str) -> SavedInferenceReportDraftView:
+        result = self._read_result(inference_result_id)
+        try:
+            stored = self._report_draft_store().read(result.inference_result_id)
+        except InferenceReportDraftIntegrityError as error:
+            raise SavedModelInferenceError("INFERENCE_REPORT_DRAFT_INTEGRITY_ERROR") from error
+        except InferenceReportDraftPersistenceError as error:
+            raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR") from error
+        return self._report_draft_view(result, stored)
+
+    def add_report_row(self, inference_result_id: str, row_id: str) -> SavedInferenceReportDraftView:
+        result = self._read_result(inference_result_id)
+        if not any(row.row_id == row_id for row in result.rows):
+            raise SavedModelInferenceError("INFERENCE_RESULT_ROW_NOT_FOUND")
+        store = self._report_draft_store()
+        try:
+            stored = store.read(result.inference_result_id)
+            if stored is None:
+                now = datetime.now(UTC).isoformat()
+                stored = SavedInferenceReportDraft(1, result.inference_result_id, (row_id,), now, now)
+                store.save(stored)
+            elif row_id not in stored.selected_row_ids:
+                updated = SavedInferenceReportDraft(
+                    stored.schema_version, stored.inference_result_id, (*stored.selected_row_ids, row_id),
+                    stored.created_at, datetime.now(UTC).isoformat(),
+                )
+                store.save(updated)
+                stored = updated
+        except InferenceReportDraftIntegrityError as error:
+            raise SavedModelInferenceError("INFERENCE_REPORT_DRAFT_INTEGRITY_ERROR") from error
+        except InferenceReportDraftPersistenceError as error:
+            raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR") from error
+        return self._report_draft_view(result, stored)
+
+    def remove_report_row(self, inference_result_id: str, row_id: str) -> SavedInferenceReportDraftView:
+        result = self._read_result(inference_result_id)
+        store = self._report_draft_store()
+        try:
+            stored = store.read(result.inference_result_id)
+            if stored is not None and row_id in stored.selected_row_ids:
+                selected = tuple(selected_id for selected_id in stored.selected_row_ids if selected_id != row_id)
+                if selected:
+                    stored = SavedInferenceReportDraft(
+                        stored.schema_version, stored.inference_result_id, selected,
+                        stored.created_at, datetime.now(UTC).isoformat(),
+                    )
+                    store.save(stored)
+                else:
+                    store.delete(result.inference_result_id)
+                    stored = None
+        except InferenceReportDraftIntegrityError as error:
+            raise SavedModelInferenceError("INFERENCE_REPORT_DRAFT_INTEGRITY_ERROR") from error
+        except InferenceReportDraftPersistenceError as error:
+            raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR") from error
+        return self._report_draft_view(result, stored)
+
     def _owned(self, owner: str, model: str, key: str) -> InferencePreparation | None:
         p = self._items.get(key); return p if p and p.session_owner == owner and p.model_version_id == model else None
     def _failed(self, p: InferencePreparation) -> None:
@@ -315,6 +390,11 @@ class SavedModelInferenceService:
         if self.view_store is None:
             raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR")
         return self.view_store
+
+    def _report_draft_store(self) -> SavedInferenceReportDraftStore:
+        if self.report_draft_store is None:
+            raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR")
+        return self.report_draft_store
 
     @staticmethod
     def _threshold(value: object, code: str) -> float:
@@ -358,6 +438,32 @@ class SavedModelInferenceService:
     @staticmethod
     def _configuration_values(value: SavedInferenceResultViewConfiguration) -> tuple[object, ...]:
         return (value.threshold, value.min_score, value.max_score, value.position_filter, value.sort, value.search)
+
+    def _report_draft_view(
+        self, result: SavedModelInferenceResult, stored: SavedInferenceReportDraft | None,
+    ) -> SavedInferenceReportDraftView:
+        view = self.get_view_configuration(result.inference_result_id)
+        threshold = float(view.configuration["threshold"])
+        selected_row_ids = stored.selected_row_ids if stored is not None else ()
+        rows = {row.row_id: row for row in result.rows}
+        try:
+            selected = tuple(rows[row_id] for row_id in selected_row_ids)
+        except KeyError as error:
+            raise SavedModelInferenceError("INFERENCE_REPORT_DRAFT_INTEGRITY_ERROR") from error
+        return SavedInferenceReportDraftView(
+            1, result.inference_result_id, selected_row_ids,
+            stored.created_at if stored is not None else None,
+            stored.updated_at if stored is not None else None,
+            threshold,
+            tuple({
+                "row_id": row.row_id,
+                "source_row_position": row.source_row_position,
+                "identifier_display": row.identifier_display,
+                "score": row.probability,
+                "threshold": threshold,
+                "position": "ABOVE" if row.probability >= threshold else "BELOW",
+            } for row in selected),
+        )
 
     def _view(self, value: SavedInferenceResultViewConfiguration | None, result: SavedModelInferenceResult) -> SavedInferenceResultView:
         model_threshold = self._model_decision_threshold(result)

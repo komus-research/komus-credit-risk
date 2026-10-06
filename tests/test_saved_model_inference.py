@@ -12,6 +12,7 @@ import pytest
 from app.upload_staging import StagedUpload
 from komus_risk.application import ModelInferenceService, SavedModelInferenceError, SavedModelInferenceService
 from komus_risk.artifacts import LoadedModelVersion, ModelLibraryRecord, ModelVersionSummary, SavedInferenceResultViewConfigurationStore, SavedModelInferenceResultStore
+from komus_risk.artifacts.inference_view_store import InferenceReportDraftIntegrityError, SavedInferenceReportDraftStore
 from komus_risk.data import TabularSnapshot
 from komus_risk.hashing import stable_hash
 
@@ -211,3 +212,59 @@ def test_result_read_and_view_configuration_survive_restart_without_prediction()
         assert legacy.configuration["threshold"] == .50
         assert legacy.model_decision_threshold is None and legacy.default_threshold_source == "TECHNICAL_DEFAULT"
         assert (root / "inference_results" / run.inference_result_id / "manifest.json").read_bytes() == before
+
+
+def test_report_draft_persists_selected_result_rows_and_is_idempotent():
+    with TemporaryDirectory() as temp:
+        root = Path(temp); predictor = _Predictor(); library = _Library(predictor)
+        results = SavedModelInferenceResultStore(root / "inference_results")
+        reports = SavedInferenceReportDraftStore(root / "inference_report_drafts")
+        service = SavedModelInferenceService(
+            model_library_service=library, model_inference_service=ModelInferenceService(), result_store=results,
+            view_store=SavedInferenceResultViewConfigurationStore(root / "inference_view_configurations"),
+            report_draft_store=reports, cleanup_upload=lambda _: None,
+        )
+        frame = pd.DataFrame({"id": ["Alpha", "beta"], "a": [3, 4], "b": [10, 20]})
+        snapshot = TabularSnapshot(Path("input.csv"), "csv", {}, "a" * 64, "fp", 2, 3, frame, tuple(frame.columns))
+        staged = StagedUpload(root / "input.csv", "input.csv", "a" * 64, root)
+        run = service.run(session_owner="owner", model_version_id="model", preparation_id=service.preflight(session_owner="owner", model_version_id="model", staged_upload=staged, snapshot=snapshot).preparation_id)
+        rows = service.objects(run.inference_result_id, threshold=.5, offset=0, limit=2).items
+        first, second = rows[0]["row_id"], rows[1]["row_id"]
+
+        added = service.add_report_row(run.inference_result_id, first)
+        repeated = service.add_report_row(run.inference_result_id, first)
+        assert added.selected_row_ids == (first,) and repeated.selected_row_ids == (first,)
+        assert repeated.items[0]["identifier_display"] in {"Alpha", "beta"}
+        both = service.add_report_row(run.inference_result_id, second)
+        assert both.selected_row_ids == (first, second) and len(both.items) == 2
+        with pytest.raises(SavedModelInferenceError, match="INFERENCE_RESULT_ROW_NOT_FOUND"):
+            service.add_report_row(run.inference_result_id, "missing")
+        removed = service.remove_report_row(run.inference_result_id, first)
+        assert removed.selected_row_ids == (second,) and removed.items[0]["row_id"] == second
+
+        restarted = SavedModelInferenceService(
+            model_library_service=library, model_inference_service=ModelInferenceService(),
+            result_store=SavedModelInferenceResultStore(root / "inference_results"),
+            view_store=SavedInferenceResultViewConfigurationStore(root / "inference_view_configurations"),
+            report_draft_store=SavedInferenceReportDraftStore(root / "inference_report_drafts"), cleanup_upload=lambda _: None,
+        )
+        restored = restarted.get_report_draft(run.inference_result_id)
+        assert restored.selected_row_ids == (second,) and restored.items[0]["row_id"] == second
+        assert restarted.remove_report_row(run.inference_result_id, first).selected_row_ids == (second,)
+
+
+@pytest.mark.parametrize("selected_row_ids", [{"row": "id"}, "row-id"])
+def test_report_draft_rejects_non_list_selected_row_ids(selected_row_ids):
+    with TemporaryDirectory() as temp:
+        root = Path(temp); inference_result_id = "a" * 64
+        store = SavedInferenceReportDraftStore(root)
+        (root / f"{inference_result_id}.json").write_text(json.dumps({
+            "schema_version": 1,
+            "inference_result_id": inference_result_id,
+            "selected_row_ids": selected_row_ids,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+        }), encoding="utf-8")
+
+        with pytest.raises(InferenceReportDraftIntegrityError):
+            store.read(inference_result_id)

@@ -118,6 +118,13 @@ export type SavedInferenceInterpretation = {
   inference_result_id: string; model_version_id: string; row_id: string; explanation_id: string; evidence_hash: string
   role: string; text: string; created_at: string; response_hash: string
 }
+export type SavedInferenceReportDraftItem = {
+  row_id: string; source_row_position: number; identifier_display: string; score: number; threshold: number; position: 'ABOVE' | 'BELOW'
+}
+export type SavedInferenceReportDraft = {
+  schema_version: 1; inference_result_id: string; selected_row_ids: string[]; created_at: string | null; updated_at: string | null; threshold: number
+  items: SavedInferenceReportDraftItem[]
+}
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const fallback = 'Не удалось безопасно выполнить запрос к результату прогноза.'
@@ -193,4 +200,16 @@ export function getSavedInferenceExplanation(inferenceResultId: string, rowId: s
 
 export function createSavedInferenceInterpretation(inferenceResultId: string, rowId: string, role: string) {
   return request<SavedInferenceInterpretation>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/objects/${encodeURIComponent(rowId)}/interpretations/${encodeURIComponent(role)}`, { method: 'POST' })
+}
+
+export function getSavedInferenceReportDraft(inferenceResultId: string) {
+  return request<SavedInferenceReportDraft>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/report-draft`)
+}
+
+export function addSavedInferenceReportRow(inferenceResultId: string, rowId: string) {
+  return request<SavedInferenceReportDraft>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/report-draft/rows/${encodeURIComponent(rowId)}`, { method: 'POST' })
+}
+
+export function removeSavedInferenceReportRow(inferenceResultId: string, rowId: string) {
+  return request<SavedInferenceReportDraft>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/report-draft/rows/${encodeURIComponent(rowId)}`, { method: 'DELETE' })
 }

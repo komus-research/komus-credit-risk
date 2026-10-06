@@ -27,6 +27,7 @@ from komus_risk.artifacts import (
     SavedModelInferenceResultStore,
     SavedInferenceResultViewConfigurationStore,
 )
+from komus_risk.artifacts.inference_view_store import SavedInferenceReportDraftStore
 from komus_risk.application.history import AnalysisHistoryService
 from komus_risk.application.oof_explanation import OOFExplanationService
 from komus_risk.application.global_oof_operation import GlobalOOFDerivedStore, GlobalOOFOperationService
@@ -108,6 +109,7 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         model_inference_service=integration_workflow_service.model_inference_service,
         result_store=SavedModelInferenceResultStore(store_root / "inference_results"),
         view_store=SavedInferenceResultViewConfigurationStore(store_root / "inference_view_configurations"),
+        report_draft_store=SavedInferenceReportDraftStore(store_root / "inference_report_drafts"),
         cleanup_upload=cleanup_staged_upload,
     )
     saved_inference_explanation_service = SavedInferenceExplanationService(

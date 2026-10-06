@@ -479,6 +479,46 @@ class _SavedInferenceReadService:
         return SimpleNamespace(saved=False, configuration=self.configuration)
 
 
+class _SavedInferenceReportDraftService(_SavedInferenceReadService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.selected: list[str] = []
+
+    def _draft(self):
+        rows = {
+            "row-a": (1, "Alpha", .8),
+            "row-b": (2, "Beta", .2),
+        }
+        return SimpleNamespace(
+            schema_version=1, inference_result_id=self.result_id, selected_row_ids=tuple(self.selected),
+            created_at="2026-01-01T00:00:00+00:00" if self.selected else None,
+            updated_at="2026-01-01T00:00:00+00:00" if self.selected else None,
+            threshold=.5,
+            items=tuple({
+                "row_id": row_id, "source_row_position": rows[row_id][0], "identifier_display": rows[row_id][1],
+                "score": rows[row_id][2], "threshold": .5,
+                "position": "ABOVE" if rows[row_id][2] >= .5 else "BELOW",
+            } for row_id in self.selected),
+        )
+
+    def get_report_draft(self, inference_result_id: str):
+        assert inference_result_id == self.result_id
+        return self._draft()
+
+    def add_report_row(self, inference_result_id: str, row_id: str):
+        assert inference_result_id == self.result_id
+        if row_id not in {"row-a", "row-b"}:
+            raise SavedModelInferenceError("INFERENCE_RESULT_ROW_NOT_FOUND")
+        if row_id not in self.selected:
+            self.selected.append(row_id)
+        return self._draft()
+
+    def remove_report_row(self, inference_result_id: str, row_id: str):
+        assert inference_result_id == self.result_id
+        self.selected = [selected for selected in self.selected if selected != row_id]
+        return self._draft()
+
+
 class _SavedInferenceExplanationService:
     def __init__(self, result_id: str) -> None:
         self.result_id = result_id
@@ -531,6 +571,36 @@ def test_saved_inference_result_read_routes_validate_and_project_view_configurat
     invalid = client.put(f"/api/v1/inference-results/{service.result_id}/configuration", json={"threshold": .7, "min_score": .1, "max_score": .9, "position_filter": "ABOVE", "sort": "SCORE_ASC", "search": "Alpha", "extra": 1})
     assert invalid.status_code == 422 and invalid.json()["detail"]["code"] == "INVALID_INFERENCE_VIEW_CONFIGURATION"
     assert client.delete(f"/api/v1/inference-results/{service.result_id}/configuration").json()["saved"] is False
+
+
+def test_saved_inference_report_draft_routes_add_remove_and_project_selected_rows() -> None:
+    service = _SavedInferenceReportDraftService()
+    client, _store, _session_id = _client(_ResultService(), saved_model_inference_service=service)
+    base = f"/api/v1/inference-results/{service.result_id}/report-draft"
+
+    assert client.get(base).json()["selected_row_ids"] == []
+    assert client.post(f"{base}/rows/row-a").json()["selected_row_ids"] == ["row-a"]
+    second = client.post(f"{base}/rows/row-b").json()
+    assert second["selected_row_ids"] == ["row-a", "row-b"]
+    assert [item["identifier_display"] for item in second["items"]] == ["Alpha", "Beta"]
+    assert client.post(f"{base}/rows/row-a").json()["selected_row_ids"] == ["row-a", "row-b"]
+    assert client.delete(f"{base}/rows/row-a").json()["selected_row_ids"] == ["row-b"]
+    assert client.post(f"{base}/rows/missing").status_code == 404
+
+
+def test_saved_inference_report_draft_integrity_error_maps_to_409() -> None:
+    class CorruptDraftService(_SavedInferenceReadService):
+        def get_report_draft(self, inference_result_id: str):
+            assert inference_result_id == self.result_id
+            raise SavedModelInferenceError("INFERENCE_REPORT_DRAFT_INTEGRITY_ERROR")
+
+    service = CorruptDraftService()
+    client, _store, _session_id = _client(_ResultService(), saved_model_inference_service=service)
+
+    response = client.get(f"/api/v1/inference-results/{service.result_id}/report-draft")
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "INFERENCE_REPORT_DRAFT_INTEGRITY_ERROR"
 
 
 def test_saved_inference_explanation_projects_public_rank_without_exposing_internal_abs_rank() -> None:
