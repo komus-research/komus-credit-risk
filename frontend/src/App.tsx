@@ -13,8 +13,10 @@ import { ThresholdPage } from './pages/ThresholdPage'
 import { GlobalExplanationPage } from './pages/GlobalExplanationPage'
 import { ModelsPage } from './pages/ModelsPage'
 import { ModelVersionDetailPage } from './pages/ModelVersionDetailPage'
+import { SavedModelInferencePage } from './pages/SavedModelInferencePage'
+import { SavedModelInferenceResultPage } from './pages/SavedModelInferenceResultPage'
 import { UtilityPlaceholderPage } from './pages/UtilityPlaceholderPage'
-import { currentRoute, guardedRoute, isModelDetailRoute, isObjectDetailRoute, modelVersionIdFromRoute, navigate, navigateObjects, objectIdFromRoute, parseObjectsQuery, replaceRoute, routes, type AppRoute } from './routing'
+import { currentRoute, guardedRoute, inferenceResultIdFromRoute, isInferenceResultRoute, isModelDetailRoute, isModelInferenceRoute, isObjectDetailRoute, modelVersionIdFromInferenceRoute, modelVersionIdFromRoute, navigate, navigateObjects, objectIdFromRoute, parseObjectsQuery, replaceRoute, routes, type AppRoute } from './routing'
 
 const recoveryText = 'Сессия подготовки была сброшена. Загрузите файл повторно.'
 
@@ -31,7 +33,7 @@ export function App() {
 
   const sync = useCallback(async (requested: AppRoute, stale = false) => {
     requestedRoute.current = requested
-    if (requested === routes.models || isModelDetailRoute(requested)) {
+    if (requested === routes.models || isModelDetailRoute(requested) || isModelInferenceRoute(requested) || isInferenceResultRoute(requested)) {
       setSessionReady(true)
       return
     }
@@ -142,6 +144,10 @@ export function App() {
     ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={() => beginNewAnalysis()} onOpenModels={openModels} startingNewAnalysis={startingNewAnalysis} />
     : route === routes.models
       ? <ModelsPage />
+      : isModelInferenceRoute(route)
+        ? <SavedModelInferencePage modelVersionId={modelVersionIdFromInferenceRoute(route)!} />
+      : isInferenceResultRoute(route)
+        ? <SavedModelInferenceResultPage inferenceResultId={inferenceResultIdFromRoute(route)!} />
       : isModelDetailRoute(route)
         ? <ModelVersionDetailPage modelVersionId={modelVersionIdFromRoute(route)!} />
     : route === routes.documentation
@@ -169,7 +175,7 @@ export function App() {
                     : <DataPage route={route} sessionReady={sessionReady} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
   const shellClass = route === routes.home || route === routes.documentation || route === routes.hotkeys || route === routes.about
     ? 'home-shell'
-    : route === routes.models || isModelDetailRoute(route)
+    : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route)
       ? 'models-shell'
     : route === routes.file || route === routes.roles || route === routes.confirmation
       ? 'workflow-shell data-shell'
@@ -180,7 +186,7 @@ export function App() {
   return <>
     <div className={`app-shell ${shellClass}`}>
       <Sidebar
-        active={route === routes.home ? 'home' : route === routes.models || isModelDetailRoute(route) ? 'models' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
+        active={route === routes.home ? 'home' : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) ? 'models' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
         onHome={openHome}
         onNewAnalysis={() => beginNewAnalysis()}
         onModels={openModels}
