@@ -80,6 +80,8 @@ from .saved_inference_explanation import (
     SavedInferenceExplanation,
     SavedInferenceExplanationService,
     SavedInferenceFeature,
+    SavedInferenceInterpretation,
+    SavedInferenceInterpretationUnavailable,
     SavedInferenceObjectDetail,
 )
 from .oof_explanation import (
@@ -171,6 +173,8 @@ __all__ = [
     "SavedInferenceExplanation",
     "SavedInferenceExplanationService",
     "SavedInferenceFeature",
+    "SavedInferenceInterpretation",
+    "SavedInferenceInterpretationUnavailable",
     "SavedInferenceObjectDetail",
     "OOFExplanationError",
     "OOFExplanationService",

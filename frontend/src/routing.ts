@@ -24,7 +24,8 @@ export type ObjectDetailRoute = `${typeof routes.resultObjects}/${string}`
 export type ModelDetailRoute = `${typeof routes.models}/${string}`
 export type ModelInferenceRoute = `${typeof routes.models}/${string}/inference`
 export type InferenceResultRoute = `#/inference-results/${string}`
-export type AppRoute = CanonicalRoute | ObjectDetailRoute | ModelDetailRoute | ModelInferenceRoute | InferenceResultRoute
+export type SavedInferenceObjectDetailRoute = `#/inference-results/${string}/objects/${string}`
+export type AppRoute = CanonicalRoute | ObjectDetailRoute | ModelDetailRoute | ModelInferenceRoute | InferenceResultRoute | SavedInferenceObjectDetailRoute
 
 type ObjectsOutcome = 'TP' | 'TN' | 'FP' | 'FN'
 type ObjectsTarget = 'ANY' | 'POSITIVE' | 'NEGATIVE'
@@ -166,6 +167,27 @@ export function buildInferenceResultRoute(inferenceResultId: string): InferenceR
   return `${inferenceResultPrefix}${encodeURIComponent(inferenceResultId)}` as InferenceResultRoute
 }
 
+export function buildSavedInferenceObjectDetailRoute(inferenceResultId: string, rowId: string, threshold: number): SavedInferenceObjectDetailRoute {
+  return `${inferenceResultPrefix}${encodeURIComponent(inferenceResultId)}/objects/${encodeURIComponent(rowId)}?threshold=${encodeURIComponent(String(threshold))}` as SavedInferenceObjectDetailRoute
+}
+
+export function savedInferenceObjectDetailFromRoute(route: string): { inferenceResultId: string; rowId: string; threshold: number } | null {
+  const path = route.split('?', 1)[0]
+  if (!path.startsWith(inferenceResultPrefix)) return null
+  const parts = path.slice(inferenceResultPrefix.length).split('/')
+  if (parts.length !== 3 || parts[1] !== 'objects' || !parts[0] || !parts[2]) return null
+  try {
+    const inferenceResultId = decodeURIComponent(parts[0]); const rowId = decodeURIComponent(parts[2])
+    const thresholdText = new URLSearchParams(hashQuery(route)).get('threshold')
+    const threshold = thresholdText === null ? 0.5 : Number(thresholdText)
+    return inferenceResultId && rowId && Number.isFinite(threshold) && threshold >= 0 && threshold <= 1 ? { inferenceResultId, rowId, threshold } : null
+  } catch { return null }
+}
+
+export function isSavedInferenceObjectDetailRoute(route: string): route is SavedInferenceObjectDetailRoute {
+  return savedInferenceObjectDetailFromRoute(route) !== null
+}
+
 export function inferenceResultIdFromRoute(route: string): string | null {
   const path = route.split('?', 1)[0]
   if (!path.startsWith(inferenceResultPrefix)) return null
@@ -175,12 +197,13 @@ export function inferenceResultIdFromRoute(route: string): string | null {
 }
 
 export function isInferenceResultRoute(route: string): route is InferenceResultRoute {
-  return inferenceResultIdFromRoute(route) !== null
+  return !isSavedInferenceObjectDetailRoute(route) && inferenceResultIdFromRoute(route) !== null
 }
 
 export function currentRoute(): AppRoute | null {
   const path = hashPath()
   if (knownRoutes.has(path)) return path as CanonicalRoute
+  if (isSavedInferenceObjectDetailRoute(window.location.hash)) return path as SavedInferenceObjectDetailRoute
   return isObjectDetailRoute(path) || isModelInferenceRoute(path) || isInferenceResultRoute(path) || isModelDetailRoute(path) ? path : null
 }
 
@@ -256,7 +279,7 @@ export function replaceObjects(state: ObjectsQueryState) {
 }
 
 export function guardedRoute(route: AppRoute, session: NativeSession, allowResultThreshold = false, allowResultObjects = false): AppRoute {
-  if (route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route)) return route
+  if (route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route)) return route
   if (isObjectDetailRoute(route)) {
     return session.resume_route === routes.result ? route : session.resume_route
   }

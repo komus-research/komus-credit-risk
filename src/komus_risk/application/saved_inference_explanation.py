@@ -79,6 +79,27 @@ class SavedInferenceExplanation:
     result_interpretation_capability: Any
 
 
+class SavedInferenceInterpretationUnavailable(SavedModelInferenceError):
+    """The trusted interpreter capability is not available for this evidence."""
+
+    def __init__(self, reason_code: str) -> None:
+        super().__init__(reason_code)
+        self.reason_code = reason_code
+
+
+@dataclass(frozen=True, slots=True)
+class SavedInferenceInterpretation:
+    inference_result_id: str
+    model_version_id: str
+    row_id: str
+    explanation_id: str
+    evidence_hash: str
+    role: str
+    text: str
+    created_at: str
+    response_hash: str
+
+
 class SavedInferenceExplanationService:
     """One-row orchestrator; it neither predicts a new Result nor reads uploads."""
 
@@ -118,34 +139,7 @@ class SavedInferenceExplanationService:
         )
 
     def explain(self, inference_result_id: str, row_id: str) -> SavedInferenceExplanation:
-        evidence, loaded = self._trusted_row_and_model(inference_result_id, row_id)
-        batch = self._batch(evidence)
-        self._verify_score_replay(loaded, evidence)
-        context = self._context(loaded, evidence)
-        try:
-            explanation_capability = self.integration_workflow_service.capabilities(
-                loaded_model_version=loaded, prediction_batch=batch, selected_row_id=evidence.row_id,
-            )["local_explanation"]
-        except Exception as error:
-            raise SavedModelInferenceError("INFERENCE_EXPLANATION_INTERNAL_ERROR") from error
-        if explanation_capability.state == "UNSUPPORTED":
-            raise SavedModelInferenceError("INFERENCE_LOCAL_EXPLANATION_UNSUPPORTED")
-        provider_identity = self._provider_identity(loaded)
-        cached = self._cached(evidence, provider_identity, context)
-        if cached is None:
-            try:
-                local = self.integration_workflow_service.explain(
-                    loaded_model_version=loaded, prediction_batch=batch, row_id=evidence.row_id,
-                    explanation_context=context,
-                )
-            except ValueError as error:
-                raise SavedModelInferenceError("INFERENCE_LOCAL_EXPLANATION_FAILED") from error
-            except Exception as error:
-                raise SavedModelInferenceError("INFERENCE_LOCAL_EXPLANATION_FAILED") from error
-            self._validate_explanation(local, evidence, loaded)
-            self._put_cached(evidence, local, provider_identity, context)
-        else:
-            local = cached
+        evidence, loaded, batch, local = self._trusted_local_evidence(inference_result_id, row_id)
         try:
             capability = self.integration_workflow_service.capabilities(
                 loaded_model_version=loaded, prediction_batch=batch,
@@ -176,6 +170,79 @@ class SavedInferenceExplanationService:
             remainder=getattr(local, "remainder", None),
             result_interpretation_capability=capability,
         )
+
+    def interpret(self, inference_result_id: str, row_id: str, *, role: str) -> SavedInferenceInterpretation:
+        """Interpret the same trusted local evidence returned by ``explain``.
+
+        This is deliberately the only saved-inference path that can dispatch an
+        interpreter request.  It never accepts scientific evidence from callers.
+        """
+        evidence, loaded, batch, local = self._trusted_local_evidence(inference_result_id, row_id)
+        try:
+            capability = self.integration_workflow_service.capabilities(
+                loaded_model_version=loaded, prediction_batch=batch,
+                selected_row_id=evidence.row_id, local_explanation_evidence=local,
+            )["result_interpretation"]
+        except Exception as error:
+            raise SavedModelInferenceError("INFERENCE_EXPLANATION_INTERNAL_ERROR") from error
+        if capability.state != "AVAILABLE":
+            raise SavedInferenceInterpretationUnavailable(capability.reason_code)
+        try:
+            request = self.integration_workflow_service.prepare_interpretation(
+                evidence=local, loaded_model_version=loaded, recipient_role=role,
+            )
+            outcome = self.integration_workflow_service.interpret(request=request)
+        except Exception as error:
+            raise SavedModelInferenceError("RESULT_INTERPRETER_ERROR") from error
+        result = outcome.response
+        return SavedInferenceInterpretation(
+            inference_result_id=evidence.inference_result_id,
+            model_version_id=evidence.model_version_id,
+            row_id=evidence.row_id,
+            explanation_id=self._explanation_id(evidence, local),
+            evidence_hash=local.evidence_hash,
+            role=role,
+            text=result.text,
+            created_at=result.created_at,
+            response_hash=result.response_hash,
+        )
+
+    def _trusted_local_evidence(self, inference_result_id: str, row_id: str) -> tuple[Any, Any, PredictionBatch, Any]:
+        """Build or retrieve LocalExplanationEvidence from immutable evidence only."""
+        evidence, loaded = self._trusted_row_and_model(inference_result_id, row_id)
+        batch = self._batch(evidence)
+        self._verify_score_replay(loaded, evidence)
+        context = self._context(loaded, evidence)
+        try:
+            explanation_capability = self.integration_workflow_service.capabilities(
+                loaded_model_version=loaded, prediction_batch=batch, selected_row_id=evidence.row_id,
+            )["local_explanation"]
+        except Exception as error:
+            raise SavedModelInferenceError("INFERENCE_EXPLANATION_INTERNAL_ERROR") from error
+        if explanation_capability.state == "UNSUPPORTED":
+            raise SavedModelInferenceError("INFERENCE_LOCAL_EXPLANATION_UNSUPPORTED")
+        provider_identity = self._provider_identity(loaded)
+        local = self._cached(evidence, provider_identity, context)
+        if local is None:
+            try:
+                local = self.integration_workflow_service.explain(
+                    loaded_model_version=loaded, prediction_batch=batch, row_id=evidence.row_id,
+                    explanation_context=context,
+                )
+            except Exception as error:
+                raise SavedModelInferenceError("INFERENCE_LOCAL_EXPLANATION_FAILED") from error
+            self._validate_explanation(local, evidence, loaded)
+            self._put_cached(evidence, local, provider_identity, context)
+        return evidence, loaded, batch, local
+
+    @staticmethod
+    def _explanation_id(evidence: Any, local: Any) -> str:
+        return stable_hash({
+            "inference_result_id": evidence.inference_result_id,
+            "model_version_id": evidence.model_version_id,
+            "row_id": evidence.row_id,
+            "evidence_hash": local.evidence_hash,
+        })
 
     def _trusted_row_and_model(
         self, inference_result_id: str, row_id: str,

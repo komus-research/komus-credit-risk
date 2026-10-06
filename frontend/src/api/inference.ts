@@ -99,6 +99,25 @@ export type SavedInferenceObjects = {
   returned_count: number
   items: SavedInferenceObject[]
 }
+export type SavedInferenceObjectFeature = { feature_id: string; column_name: string; display_name_ru: string | null; description_ru: string | null; raw_value: number }
+export type SavedInferenceCapability = { state: 'AVAILABLE' | 'WAITING_FOR_INPUT' | 'UNSUPPORTED' | 'DISABLED' | 'MISCONFIGURED'; reason_code: string }
+export type SavedInferenceObjectDetail = {
+  inference_result_id: string; model_version_id: string; row_id: string; source_row_position: number
+  identifier_column: string; identifier_display: string; score: number; threshold: number; position: 'ABOVE' | 'BELOW'
+  features: SavedInferenceObjectFeature[]; capabilities: Record<string, SavedInferenceCapability>
+}
+export type SavedInferenceExplanationFeature = SavedInferenceObjectFeature & { shap_value: number; rank: number; direction: 'increases_output' | 'decreases_output' | 'neutral' }
+export type SavedInferenceExplanation = {
+  inference_result_id: string; model_version_id: string; row_id: string; explanation_id: string; evidence_hash: string
+  prediction_probability: number; base_value: number; explained_output_value: number; output_space: string
+  explanation_method_id: string; explanation_method_version: string; explanation_provider_id: string; explanation_provider_version: string
+  features: SavedInferenceExplanationFeature[]; remainder: { feature_count: number; shap_value: number; direction: string } | null
+  result_interpretation_capability: SavedInferenceCapability
+}
+export type SavedInferenceInterpretation = {
+  inference_result_id: string; model_version_id: string; row_id: string; explanation_id: string; evidence_hash: string
+  role: string; text: string; created_at: string; response_hash: string
+}
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const fallback = 'Не удалось безопасно выполнить запрос к результату прогноза.'
@@ -162,4 +181,16 @@ export function putSavedInferenceConfiguration(inferenceResultId: string, config
 
 export function deleteSavedInferenceConfiguration(inferenceResultId: string) {
   return request<SavedInferenceConfigurationResponse>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/configuration`, { method: 'DELETE' })
+}
+
+export function getSavedInferenceObjectDetail(inferenceResultId: string, rowId: string, threshold: number) {
+  return request<SavedInferenceObjectDetail>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/objects/${encodeURIComponent(rowId)}?threshold=${encodeURIComponent(String(threshold))}`)
+}
+
+export function getSavedInferenceExplanation(inferenceResultId: string, rowId: string) {
+  return request<SavedInferenceExplanation>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/objects/${encodeURIComponent(rowId)}/explanation`)
+}
+
+export function createSavedInferenceInterpretation(inferenceResultId: string, rowId: string, role: string) {
+  return request<SavedInferenceInterpretation>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/objects/${encodeURIComponent(rowId)}/interpretations/${encodeURIComponent(role)}`, { method: 'POST' })
 }

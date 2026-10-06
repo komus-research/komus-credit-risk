@@ -84,6 +84,36 @@ class _Workflow:
         return LocalExplanationEvidence(**payload, created_at="2026-01-01T00:00:00+00:00", evidence_hash=stable_hash(payload))
 
 
+class _InterpreterWorkflow(_Workflow):
+    def __init__(self, *, available: bool = True, fails: bool = False):
+        super().__init__()
+        self.available = available
+        self.fails = fails
+        self.prepare_calls = 0
+        self.interpret_calls = 0
+
+    def capabilities(self, **kwargs):
+        local = super().capabilities(**kwargs)["local_explanation"]
+        return {
+            "local_explanation": local,
+            "result_interpretation": type("Capability", (), {
+                "state": "AVAILABLE" if self.available else "DISABLED",
+                "reason_code": "INTERPRETER_READY" if self.available else "EXTERNAL_DATA_POLICY_DISABLED",
+            })(),
+        }
+
+    def prepare_interpretation(self, *, evidence, loaded_model_version, recipient_role):
+        self.prepare_calls += 1
+        assert evidence.row_id and loaded_model_version.summary.model_version_id == evidence.model_version_id
+        return recipient_role
+
+    def interpret(self, *, request):
+        self.interpret_calls += 1
+        if self.fails:
+            raise RuntimeError("provider text must not leak")
+        return SimpleNamespace(response=SimpleNamespace(text=f"for {request}", created_at="2026-01-02T00:00:00+00:00", response_hash="response-hash"))
+
+
 def _service(root: Path):
     store = SavedModelInferenceResultStore(root / "results")
     values = ((2.0, 9.0),)
@@ -128,6 +158,40 @@ def test_saved_explanation_fails_closed_for_a_foreign_row_id():
         service, result, _workflow = _service(Path(temp))
         with pytest.raises(SavedModelInferenceError, match="INFERENCE_OBJECT_NOT_FOUND"):
             service.explain(result.inference_result_id, "foreign-row")
+
+
+def test_saved_interpretation_reuses_trusted_local_evidence_and_isolates_failures():
+    from komus_risk.application.saved_inference_explanation import SavedInferenceInterpretationUnavailable
+
+    with TemporaryDirectory() as temp:
+        service, result, _workflow = _service(Path(temp))
+        workflow = _InterpreterWorkflow()
+        service.integration_workflow_service = workflow
+        row_id = result.rows[0].row_id
+
+        # GET-equivalent local explanation never invokes the interpreter.
+        explanation = service.explain(result.inference_result_id, row_id)
+        assert workflow.interpret_calls == 0
+        interpretation = service.interpret(result.inference_result_id, row_id, role="lawyer")
+        assert interpretation.inference_result_id == result.inference_result_id
+        assert interpretation.model_version_id == "model-v1"
+        assert interpretation.row_id == row_id
+        assert interpretation.evidence_hash == explanation.evidence_hash
+        assert interpretation.role == "lawyer"
+        assert workflow.prepare_calls == workflow.interpret_calls == 1
+        assert workflow.explain_calls == 1  # bounded trusted SHAP cache is shared
+
+        workflow.available = False
+        with pytest.raises(SavedInferenceInterpretationUnavailable, match="EXTERNAL_DATA_POLICY_DISABLED"):
+            service.interpret(result.inference_result_id, row_id, role="lawyer")
+        assert workflow.interpret_calls == 1
+
+        workflow.available = True
+        workflow.fails = True
+        with pytest.raises(SavedModelInferenceError, match="RESULT_INTERPRETER_ERROR"):
+            service.interpret(result.inference_result_id, row_id, role="lawyer")
+        # A provider failure cannot invalidate cached/local SHAP evidence.
+        assert service.explain(result.inference_result_id, row_id).evidence_hash == explanation.evidence_hash
 
 
 @pytest.mark.parametrize("evidence_file", ["scores.npy", "model_input.npy"])

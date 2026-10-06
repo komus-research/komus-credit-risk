@@ -33,6 +33,7 @@ from komus_risk.application import (
     InferencePreparationError,
     SavedModelInferenceError,
     SavedInferenceExplanationService,
+    SavedInferenceInterpretationUnavailable,
 )
 from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.oof_explanation import OOFExplanationError
@@ -481,6 +482,18 @@ class SavedInferenceExplanationResponse(BaseModel):
     features: list[SavedInferenceExplanationFeatureResponse]
     remainder: LocalExplanationRemainderResponse | None
     result_interpretation_capability: CapabilityResponse
+
+
+class SavedInferenceInterpretationResponse(BaseModel):
+    inference_result_id: str
+    model_version_id: str
+    row_id: str
+    explanation_id: str
+    evidence_hash: str
+    role: str
+    text: str
+    created_at: str
+    response_hash: str
 
 
 class InferenceViewConfigurationRequest(BaseModel):
@@ -942,6 +955,7 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             "INFERENCE_EXPLANATION_BACKGROUND_UNAVAILABLE": 409,
             "INFERENCE_LOCAL_EXPLANATION_FAILED": 500,
             "INFERENCE_EXPLANATION_INTERNAL_ERROR": 500,
+            "RESULT_INTERPRETER_ERROR": 502,
             "INVALID_INFERENCE_RESULT_QUERY": 400,
             "INVALID_INFERENCE_VIEW_CONFIGURATION": 422,
             "INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR": 409,
@@ -969,6 +983,7 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             "INFERENCE_EXPLANATION_BACKGROUND_UNAVAILABLE": "Фон объяснения недоступен; исходный результат прогноза остаётся доступен.",
             "INFERENCE_LOCAL_EXPLANATION_FAILED": "Не удалось построить локальное объяснение; исходный результат прогноза остаётся доступен.",
             "INFERENCE_EXPLANATION_INTERNAL_ERROR": "Внутренняя ошибка объяснения; исходный результат прогноза остаётся доступен.",
+            "RESULT_INTERPRETER_ERROR": "Не удалось сформировать интерпретацию. Результат модели и SHAP остаются доступными.",
             "INFERENCE_INTERNAL_ERROR": "Не удалось безопасно выполнить прогноз сохранённой моделью.",
         }
         messages.update({
@@ -1262,6 +1277,44 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             features=[SavedInferenceExplanationFeatureResponse(feature_id=item.feature_id, column_name=item.column_name, display_name_ru=item.display_name_ru, description_ru=item.description_ru, raw_value=item.raw_value, shap_value=item.shap_value, rank=item.abs_rank, direction=item.direction) for item in value.features],
             remainder=value.remainder,
             result_interpretation_capability=CapabilityResponse(state=value.result_interpretation_capability.state, reason_code=value.result_interpretation_capability.reason_code),
+        )
+
+    @api.post(
+        "/api/v1/inference-results/{inference_result_id}/objects/{row_id}/interpretations/{role}",
+        response_model=SavedInferenceInterpretationResponse,
+    )
+    def create_saved_inference_interpretation(
+        inference_result_id: str, row_id: str, role: str,
+    ) -> SavedInferenceInterpretationResponse:
+        allowed_roles = {"sales_manager", "credit_controller", "lawyer", "information_security"}
+        if role not in allowed_roles:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_INTERPRETER_ROLE", "message": "Роль интерпретации не поддерживается."},
+            )
+        try:
+            value = saved_explanation.interpret(inference_result_id, row_id, role=role)
+        except SavedInferenceInterpretationUnavailable as error:
+            # Capability is recomputed from trusted evidence here; the UI hint
+            # in GET /explanation is never an authorization mechanism.
+            raise HTTPException(
+                status_code=409,
+                detail={"code": error.reason_code, "message": "Интерпретация результата сейчас недоступна."},
+            ) from None
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError("RESULT_INTERPRETER_ERROR")) from None
+        return SavedInferenceInterpretationResponse(
+            inference_result_id=value.inference_result_id,
+            model_version_id=value.model_version_id,
+            row_id=value.row_id,
+            explanation_id=value.explanation_id,
+            evidence_hash=value.evidence_hash,
+            role=value.role,
+            text=value.text,
+            created_at=value.created_at,
+            response_hash=value.response_hash,
         )
 
     @api.get("/api/v1/inference-results/{inference_result_id}/configuration", response_model=SavedInferenceViewResponse)

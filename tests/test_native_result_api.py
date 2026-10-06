@@ -504,6 +504,20 @@ class _SavedInferenceExplanationService:
         )
 
 
+class _SavedInferenceInterpreterService(_SavedInferenceExplanationService):
+    def __init__(self, result_id: str) -> None:
+        super().__init__(result_id)
+        self.interpret_calls: list[tuple[str, str, str]] = []
+
+    def interpret(self, inference_result_id: str, row_id: str, *, role: str):
+        self.interpret_calls.append((inference_result_id, row_id, role))
+        return SimpleNamespace(
+            inference_result_id=inference_result_id, model_version_id="model", row_id=row_id,
+            explanation_id="explanation", evidence_hash="evidence", role=role,
+            text="trusted text", created_at="2026-01-01T00:00:00+00:00", response_hash="response",
+        )
+
+
 def test_saved_inference_result_read_routes_validate_and_project_view_configuration() -> None:
     service = _SavedInferenceReadService()
     client, _store, _session_id = _client(_ResultService(), saved_model_inference_service=service)
@@ -537,6 +551,24 @@ def test_saved_inference_explanation_projects_public_rank_without_exposing_inter
     assert [item["column_name"] for item in features] == ["first", "second"]
     assert [item["rank"] for item in features] == [1, 2]
     assert all("abs_rank" not in item for item in features)
+
+
+def test_saved_inference_interpretation_route_accepts_only_roles_and_no_browser_evidence():
+    saved_inference = _SavedInferenceReadService()
+    explanation = _SavedInferenceInterpreterService(saved_inference.result_id)
+    client, _store, _session_id = _client(
+        _ResultService(), saved_model_inference_service=saved_inference,
+        saved_inference_explanation_service=explanation,
+    )
+    base = f"/api/v1/inference-results/{saved_inference.result_id}/objects/row-tie/interpretations"
+    for role in ("sales_manager", "credit_controller", "lawyer", "information_security"):
+        response = client.post(f"{base}/{role}", json={"score": 0.1, "prompt": "untrusted"})
+        assert response.status_code == 200, response.text
+        assert response.json()["evidence_hash"] == "evidence"
+    invalid = client.post(f"{base}/untrusted_role")
+    assert invalid.status_code == 422
+    assert invalid.json()["detail"]["code"] == "INVALID_INTERPRETER_ROLE"
+    assert [call[2] for call in explanation.interpret_calls] == ["sales_manager", "credit_controller", "lawyer", "information_security"]
 
 
 def test_saved_inference_corrupt_view_configuration_maps_to_409() -> None:
