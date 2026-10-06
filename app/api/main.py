@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from fastapi import Cookie, FastAPI, File, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator
 from starlette.concurrency import run_in_threadpool
 
 from komus_risk.application import (
@@ -61,6 +62,7 @@ from app.upload_staging import (
     stage_upload_bytes,
 )
 from app.native_runtime import create_native_experiment_runtime
+from app.settings import ResultInterpreterSettingsService
 
 SESSION_COOKIE_NAME = "axion_session"
 ASSETS_DIRECTORY = Path(__file__).resolve().parent.parent / "assets"
@@ -92,6 +94,67 @@ class NewAnalysisResponse(SessionResponse):
 
 class HealthResponse(BaseModel):
     status: Literal["ok"]
+
+
+class InterpreterProviderResponse(BaseModel):
+    provider_id: str
+    display_name: str
+
+
+class SupportedInterpreterModelResponse(BaseModel):
+    model_id: str
+    display_name: str
+    provider_id: str
+    status: Literal["SUPPORTED"]
+
+
+class CredentialStateResponse(BaseModel):
+    configured: bool
+    managed_by_system: bool
+    secure_store_available: bool
+
+
+class InterpreterRuntimeStateResponse(BaseModel):
+    available: bool
+    reason: str
+
+
+class SettingsStateResponse(BaseModel):
+    technical_details_expanded: bool
+    interpreter_enabled: bool
+    interpreter_toggle_editable: bool
+    default_role: Literal["credit_controller", "sales_manager", "lawyer", "information_security"]
+    roles: list[Literal["credit_controller", "sales_manager", "lawyer", "information_security"]]
+    providers: list[InterpreterProviderResponse]
+    selected_provider_id: str | None
+    models: list[SupportedInterpreterModelResponse]
+    selected_model_id: str | None
+    external_data_policy: str
+    credential: CredentialStateResponse
+    runtime: InterpreterRuntimeStateResponse
+
+
+class SettingsPreferencesPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    technical_details_expanded: StrictBool | None = None
+    interpreter_enabled: StrictBool | None = None
+    default_role: Literal["credit_controller", "sales_manager", "lawyer", "information_security"] | None = None
+
+
+class CredentialSetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    credential: str = Field(min_length=1, max_length=4096)
+
+    @field_validator("credential")
+    @classmethod
+    def credential_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Credential is required.")
+        return value
+
+
+class ConnectionCheckResponse(BaseModel):
+    status: Literal["CONNECTED"]
 
 
 class DatasetSourceResponse(BaseModel):
@@ -769,7 +832,7 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None, saved_model_inference_service: Any | None = None, saved_inference_explanation_service: SavedInferenceExplanationService | None = None, analyst_report_service: Any | None = None, project_workspace_service: Any | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None, saved_model_inference_service: Any | None = None, saved_inference_explanation_service: SavedInferenceExplanationService | None = None, analyst_report_service: Any | None = None, project_workspace_service: Any | None = None, settings_service: ResultInterpreterSettingsService | None = None) -> FastAPI:
     """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
@@ -810,6 +873,8 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         prepared_context_authority=context_authority,
         supported_protocol=runtime.supported_protocol,
     )
+    settings_service = settings_service or ResultInterpreterSettingsService(Path(__file__).resolve().parents[2] / ".axion-artifacts")
+    settings_service.apply_to(workflow)
     api = FastAPI(title="AXION Native API", version="0.0.1")
     api.mount("/native-assets", StaticFiles(directory=ASSETS_DIRECTORY), name="native-assets")
 
@@ -833,6 +898,61 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
     @api.get("/api/v1/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         return HealthResponse(status="ok")
+
+    @api.get("/api/v1/settings", response_model=SettingsStateResponse)
+    def get_settings() -> SettingsStateResponse:
+        settings_service.apply_to(workflow)
+        return SettingsStateResponse.model_validate(settings_service.state())
+
+    @api.patch("/api/v1/settings/preferences", response_model=SettingsStateResponse)
+    def update_settings_preferences(patch: SettingsPreferencesPatch) -> SettingsStateResponse:
+        if not patch.model_fields_set:
+            raise HTTPException(status_code=422, detail={"code": "SETTINGS_PATCH_EMPTY", "message": "Не переданы настройки для обновления."})
+        try:
+            state = settings_service.update_preferences(**patch.model_dump(exclude_none=True))
+            settings_service.apply_to(workflow)
+            return SettingsStateResponse.model_validate(state)
+        except ValueError:
+            raise HTTPException(status_code=422, detail={"code": "SETTINGS_VALUE_INVALID", "message": "Недопустимое значение настройки."}) from None
+
+    @api.put("/api/v1/settings/credential", response_model=SettingsStateResponse)
+    async def set_settings_credential(request: Request) -> SettingsStateResponse:
+        try:
+            payload = await request.json()
+            credential_request = CredentialSetRequest.model_validate(payload)
+        except (JSONDecodeError, TypeError, ValidationError, ValueError):
+            # Do not surface Pydantic's raw input: it can contain the submitted secret.
+            raise HTTPException(status_code=422, detail={"code": "CREDENTIAL_INVALID", "message": "Недопустимые учётные данные."}) from None
+        try:
+            settings_service.set_credential(credential_request.credential)
+            settings_service.apply_to(workflow)
+            return SettingsStateResponse.model_validate(settings_service.state())
+        except PermissionError:
+            raise HTTPException(status_code=409, detail={"code": "CREDENTIAL_MANAGED_BY_SYSTEM", "message": "Учётные данные управляются системой."}) from None
+        except (ValueError, RuntimeError):
+            raise HTTPException(status_code=503, detail={"code": "SECURE_CREDENTIAL_STORE_UNAVAILABLE", "message": "Защищённое хранилище учётных данных недоступно."}) from None
+
+    @api.delete("/api/v1/settings/credential", response_model=SettingsStateResponse)
+    def delete_settings_credential() -> SettingsStateResponse:
+        try:
+            settings_service.delete_credential()
+            settings_service.apply_to(workflow)
+            return SettingsStateResponse.model_validate(settings_service.state())
+        except PermissionError:
+            raise HTTPException(status_code=409, detail={"code": "CREDENTIAL_MANAGED_BY_SYSTEM", "message": "Учётные данные управляются системой."}) from None
+        except RuntimeError:
+            raise HTTPException(status_code=503, detail={"code": "SECURE_CREDENTIAL_STORE_UNAVAILABLE", "message": "Защищённое хранилище учётных данных недоступно."}) from None
+
+    @api.post("/api/v1/settings/connection-check", response_model=ConnectionCheckResponse)
+    def check_settings_connection() -> ConnectionCheckResponse:
+        try:
+            settings_service.check_connection()
+        except RuntimeError as error:
+            code = str(error) if str(error).isupper() else "RESULT_INTERPRETER_CONNECTION_FAILED"
+            raise HTTPException(status_code=409, detail={"code": code, "message": "Не удалось безопасно проверить подключение."}) from None
+        except Exception:
+            raise HTTPException(status_code=502, detail={"code": "RESULT_INTERPRETER_CONNECTION_FAILED", "message": "Не удалось безопасно проверить подключение."}) from None
+        return ConnectionCheckResponse(status="CONNECTED")
 
     @api.get("/api/v1/session", response_model=SessionResponse)
     def get_session(

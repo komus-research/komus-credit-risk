@@ -52,6 +52,7 @@ class ResultInterpreterRuntimeConfiguration:
     credentials_configured: bool = False
     prompts_configured: bool = True
     configuration_error: str | None = None
+    local_enabled: bool = True
 
     @classmethod
     def disabled(cls) -> "ResultInterpreterRuntimeConfiguration":
@@ -66,6 +67,7 @@ class ResultInterpreterRuntimeConfiguration:
             and self.model_configured
             and self.credentials_configured
             and self.prompts_configured
+            and self.local_enabled
         )
 
 
@@ -376,6 +378,8 @@ class IntegrationWorkflowService:
             return CapabilityStatus("MISCONFIGURED", "CONFIG_CONFLICT")
         if runtime.policy_mode == "DISABLED":
             return CapabilityStatus("DISABLED", "EXTERNAL_DATA_POLICY_DISABLED")
+        if not runtime.local_enabled:
+            return CapabilityStatus("DISABLED", "LOCAL_PREFERENCE_DISABLED")
         if runtime.policy_mode != "REDACTED_V1":
             return CapabilityStatus("MISCONFIGURED", "EXTERNAL_DATA_POLICY_INVALID")
         if not runtime.provider_configured:
@@ -463,6 +467,8 @@ class IntegrationWorkflowService:
             return CapabilityStatus("MISCONFIGURED", "CONFIG_CONFLICT")
         if runtime.policy_mode == "DISABLED":
             return CapabilityStatus("DISABLED", "EXTERNAL_DATA_POLICY_DISABLED")
+        if not runtime.local_enabled:
+            return CapabilityStatus("DISABLED", "LOCAL_PREFERENCE_DISABLED")
         if runtime.policy_mode != "REDACTED_V1":
             return CapabilityStatus("MISCONFIGURED", "EXTERNAL_DATA_POLICY_INVALID")
         if not runtime.provider_configured:

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentGlobalOOFExplanation, getCurrentGlobalOOFStatus, getCurrentResult, GlobalOOFAPIError, runCurrentGlobalOOF, type GlobalOOFExplanation, type GlobalOOFOperation } from '../api/result'
 import { Icon } from '../components/Icon'
+import { TechnicalDetails } from '../components/TechnicalDetails'
 import { navigate, routes } from '../routing'
 
 type PageState = 'IDLE' | 'LOADING' | 'RUNNING' | 'READY' | 'FAILED' | 'ERROR' | 'STALE'
@@ -204,7 +205,7 @@ export function GlobalExplanationPage() {
         </tbody></table></div>
       </section>
 
-      <details className="global-technical panel"><summary><Icon name="file" size={19} /><strong>Технические сведения</strong><span>Метод: OOF mean(abs(SHAP))</span><span>Выходное пространство: {explanation.output_space}</span><span>Объясняющий метод: SHAP</span><span>OOF строк: {integerFormat.format(explanation.row_count)}</span><span>Фолды: {integerFormat.format(explanation.folds)}</span><b>⌄</b></summary><dl><dt>Метод</dt><dd>OOF mean(abs(SHAP))</dd><dt>Выходное пространство</dt><dd>{explanation.output_space}</dd><dt>Объясняющий метод</dt><dd>SHAP</dd><dt>OOF строк</dt><dd>{integerFormat.format(explanation.row_count)}</dd><dt>Фолды</dt><dd>{integerFormat.format(explanation.folds)}</dd></dl></details>
+      <TechnicalDetails className="global-technical panel"><summary><Icon name="file" size={19} /><strong>Технические сведения</strong><span>Метод: OOF mean(abs(SHAP))</span><span>Выходное пространство: {explanation.output_space}</span><span>Объясняющий метод: SHAP</span><span>OOF строк: {integerFormat.format(explanation.row_count)}</span><span>Фолды: {integerFormat.format(explanation.folds)}</span><b>⌄</b></summary><dl><dt>Метод</dt><dd>OOF mean(abs(SHAP))</dd><dt>Выходное пространство</dt><dd>{explanation.output_space}</dd><dt>Объясняющий метод</dt><dd>SHAP</dd><dt>OOF строк</dt><dd>{integerFormat.format(explanation.row_count)}</dd><dt>Фолды</dt><dd>{integerFormat.format(explanation.folds)}</dd></dl></TechnicalDetails>
     </>}
   </main>
 }

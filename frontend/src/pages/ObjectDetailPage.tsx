@@ -10,6 +10,8 @@ import {
   type ResultInterpreterRole,
   type ResultObjectDetail,
 } from '../api/result'
+import { getSettings } from '../api/settings'
+import { TechnicalDetails } from '../components/TechnicalDetails'
 
 const scoreFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 
@@ -129,6 +131,12 @@ export function ObjectDetailPage({ objectId, onBack }: { objectId: string; onBac
     setCopiedRole(null)
     Object.values(interpretationControllers.current).forEach(controller => controller?.abort())
     interpretationControllers.current = {}
+  }, [objectId])
+
+  useEffect(() => {
+    let active = true
+    void getSettings().then(settings => { if (active) setSelectedRole(settings.default_role) }).catch(() => undefined)
+    return () => { active = false }
   }, [objectId])
 
   useEffect(() => () => {
@@ -362,11 +370,11 @@ function ExplanationReady({ explanation, mode }: { explanation: LocalExplanation
       <div className="local-explanation-feature-list detailed">
         {explanation.features.map(feature => <ExplanationFeatureRow key={feature.feature_id} feature={feature} width={barWidth(feature.shap_value)} rank={feature.abs_rank} />)}
       </div>
-      <details className="local-explanation-technical"><summary>Технические сведения</summary><dl>
+      <TechnicalDetails className="local-explanation-technical"><summary>Технические сведения</summary><dl>
         <dt>Метод объяснения</dt><dd>{explanation.explanation_method_id}</dd><dt>Версия метода</dt><dd>{explanation.explanation_method_version}</dd>
         <dt>Провайдер объяснения</dt><dd>{explanation.explanation_provider_id}</dd><dt>Версия провайдера</dt><dd>{explanation.explanation_provider_version}</dd>
         <dt>Версия evidence</dt><dd>{explanation.evidence_version}</dd><dt>Хеш evidence</dt><dd>{explanation.evidence_hash}</dd>
-      </dl></details>
+      </dl></TechnicalDetails>
     </>}
   </div>
 }

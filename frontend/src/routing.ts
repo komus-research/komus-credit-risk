@@ -7,6 +7,7 @@ export const routes = {
   about: '#/help/about',
   models: '#/models',
   history: '#/history',
+  settings: '#/settings',
   file: '#/analysis/data/file',
   roles: '#/analysis/data/roles',
   confirmation: '#/analysis/data/confirmation',
@@ -317,7 +318,7 @@ export function replaceObjects(state: ObjectsQueryState) {
 }
 
 export function guardedRoute(route: AppRoute, session: NativeSession, allowResultThreshold = false, allowResultObjects = false): AppRoute {
-  if (route === routes.models || route === routes.history || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route) || isAnalystReportRoute(route)) return route
+  if (route === routes.models || route === routes.history || route === routes.settings || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route) || isAnalystReportRoute(route)) return route
   if (isObjectDetailRoute(route)) {
     return session.resume_route === routes.result ? route : session.resume_route
   }

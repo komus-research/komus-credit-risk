@@ -15,6 +15,8 @@ import {
   type ResultOverview,
 } from '../api/result'
 import { Icon } from '../components/Icon'
+import { getSettings } from '../api/settings'
+import { TechnicalDetails } from '../components/TechnicalDetails'
 import { navigate, routes } from '../routing'
 
 const numberFormat = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 3 })
@@ -80,6 +82,12 @@ function GlobalResultInterpreterPanel({ globalStatus, artifactId }: { globalStat
     setCopiedRole(null)
     Object.values(controllers.current).forEach(controller => controller?.abort())
     controllers.current = {}
+  }, [artifactId])
+
+  useEffect(() => {
+    let active = true
+    void getSettings().then(settings => { if (active) setSelectedRole(settings.default_role) }).catch(() => undefined)
+    return () => { active = false }
   }, [artifactId])
 
   useEffect(() => () => {
@@ -443,9 +451,9 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
       <details className="result-collapsible panel"><summary><Icon name="warning" size={22} /><span>Ограничения и предупреждения</span><small>Важная информация об интерпретации результата модели</small></summary>
         {summary.limitations.length ? <ul className="result-limitations">{summary.limitations.map((limitation, index) => <li key={`${index}-${limitation}`}>{limitation}</li>)}</ul> : <p className="result-muted">Backend не передал ограничений для этого результата.</p>}
       </details>
-      <details className="result-collapsible result-technical panel"><summary><Icon name="file" size={22} /><span>Технические сведения</span><small>Детальная информация о модели, данных и процессе обучения</small></summary>
+      <TechnicalDetails className="result-collapsible result-technical panel"><summary><Icon name="file" size={22} /><span>Технические сведения</span><small>Детальная информация о модели, данных и процессе обучения</small></summary>
         <dl><div><dt>Artifact ID</dt><dd>{summary.artifact_id}</dd></div><div><dt>Result ID</dt><dd>{summary.result_id}</dd></div><div><dt>Уровень оценки</dt><dd>{summary.evaluation_level}</dd></div><div><dt>Время выполнения</dt><dd>{summary.runtime_seconds === null ? '—' : `${numberFormat.format(summary.runtime_seconds)} с`}</dd></div></dl>
-      </details>
+      </TechnicalDetails>
     </div>}
     {modelNameDialogOpen && <div className="native-modal-backdrop" role="presentation"><section className="native-modal" role="dialog" aria-modal="true" aria-labelledby="save-model-name-title"><h2 id="save-model-name-title">Название модели</h2><p>Перед первым сохранением задайте отображаемое название модели.</p><label>Название<input autoFocus value={modelName} maxLength={160} onChange={event => setModelName(event.target.value)} /></label>{modelSaveError && <p className="result-save-error" role="alert">{modelSaveError}</p>}<div><button className="secondary-action" disabled={modelSaveStatus === 'SAVING'} onClick={() => setModelNameDialogOpen(false)}>Отмена</button><button className="primary-action" disabled={modelSaveStatus === 'SAVING' || !modelName.trim()} onClick={() => void saveModel()}>{modelSaveStatus === 'SAVING' ? 'Сохраняем…' : 'Сохранить модель'}</button></div></section></div>}
   </main>

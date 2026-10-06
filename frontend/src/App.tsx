@@ -19,6 +19,9 @@ import { SavedInferenceReportDraftPage, SavedModelInferenceResultPage } from './
 import { SavedInferenceObjectDetailPage } from './pages/SavedInferenceObjectDetailPage'
 import { AnalystReportPage } from './pages/AnalystReportPage'
 import { UtilityPlaceholderPage } from './pages/UtilityPlaceholderPage'
+import { SettingsPage } from './pages/SettingsPage'
+import { getSettings } from './api/settings'
+import { TechnicalDetailsPreferenceContext } from './components/TechnicalDetails'
 import { analystReportIdFromRoute, buildInferenceResultRoute, currentRoute, guardedRoute, inferenceResultIdFromRoute, isAnalystReportRoute, isInferenceResultRoute, isModelDetailRoute, isModelInferenceRoute, isObjectDetailRoute, isSavedInferenceObjectDetailRoute, isSavedInferenceReportDraftRoute, modelVersionIdFromInferenceRoute, modelVersionIdFromRoute, navigate, navigateObjects, objectIdFromRoute, parseObjectsQuery, replaceRoute, routes, savedInferenceObjectDetailFromRoute, savedInferenceReportDraftResultIdFromRoute, type AppRoute } from './routing'
 
 const recoveryText = 'Сессия подготовки была сброшена. Загрузите файл повторно.'
@@ -30,7 +33,9 @@ export function App() {
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null)
   const [confirmingNewAnalysis, setConfirmingNewAnalysis] = useState(false)
   const [startingNewAnalysis, setStartingNewAnalysis] = useState(false)
+  const [technicalDetailsPreference, setTechnicalDetailsPreference] = useState({ expanded: false, loaded: false })
   const requestedRoute = useRef<AppRoute>(route)
+  const technicalDetailsPreferenceVersion = useRef(0)
   const resultThresholdAccess = useRef(false)
   const resultObjectsAccess = useRef(false)
 
@@ -61,6 +66,11 @@ export function App() {
     }
   }, [])
 
+  const updateTechnicalDetailsPreference = useCallback((expanded: boolean) => {
+    technicalDetailsPreferenceVersion.current += 1
+    setTechnicalDetailsPreference({ expanded, loaded: true })
+  }, [])
+
   useEffect(() => {
     const onHashChange = () => {
       const next = currentRoute()
@@ -85,6 +95,17 @@ export function App() {
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [sync])
+
+  useEffect(() => {
+    let active = true
+    const requestVersion = technicalDetailsPreferenceVersion.current
+    void getSettings().then(settings => {
+      if (active && requestVersion === technicalDetailsPreferenceVersion.current) {
+        setTechnicalDetailsPreference({ expanded: settings.technical_details_expanded, loaded: true })
+      }
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [])
 
   useEffect(() => {
     let revalidationInFlight = false
@@ -115,6 +136,7 @@ export function App() {
   const openHome = useCallback(() => navigate(routes.home), [])
   const openModels = useCallback(() => navigate(routes.models), [])
   const openHistory = useCallback(() => navigate(routes.history), [])
+  const openSettings = useCallback(() => navigate(routes.settings), [])
   const openDocumentation = useCallback(() => navigate(routes.documentation), [])
   const openHotkeys = useCallback(() => navigate(routes.hotkeys), [])
   const openAbout = useCallback(() => navigate(routes.about), [])
@@ -148,6 +170,8 @@ export function App() {
     ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={() => beginNewAnalysis()} onOpenModels={openModels} startingNewAnalysis={startingNewAnalysis} />
     : route === routes.models
       ? <ModelsPage />
+      : route === routes.settings
+        ? <SettingsPage onTechnicalDetailsPreferenceChange={updateTechnicalDetailsPreference} />
       : route === routes.history
         ? <HistoryPage />
       : isModelInferenceRoute(route)
@@ -185,7 +209,7 @@ export function App() {
                   : isObjectDetailRoute(route)
                     ? <ObjectDetailPage objectId={objectIdFromRoute(route)!} onBack={backToObjects} />
                     : <DataPage route={route} sessionReady={sessionReady} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
-  const shellClass = route === routes.home || route === routes.history || route === routes.documentation || route === routes.hotkeys || route === routes.about
+  const shellClass = route === routes.home || route === routes.history || route === routes.settings || route === routes.documentation || route === routes.hotkeys || route === routes.about
     ? 'home-shell'
     : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route) || isAnalystReportRoute(route)
       ? 'models-shell'
@@ -195,14 +219,15 @@ export function App() {
         ? 'workflow-shell features-shell'
         : 'features-shell'
 
-  return <>
+  return <TechnicalDetailsPreferenceContext.Provider value={technicalDetailsPreference}>
     <div className={`app-shell ${shellClass}`}>
       <Sidebar
-        active={route === routes.home ? 'home' : route === routes.history ? 'history' : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route) || isAnalystReportRoute(route) ? 'models' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
+        active={route === routes.home ? 'home' : route === routes.history ? 'history' : route === routes.settings ? 'settings' : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route) || isAnalystReportRoute(route) ? 'models' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
         onHome={openHome}
         onNewAnalysis={() => beginNewAnalysis()}
         onModels={openModels}
         onHistory={openHistory}
+        onSettings={openSettings}
         onDocumentation={openDocumentation}
         onHotkeys={openHotkeys}
         onAbout={openAbout}
@@ -210,5 +235,5 @@ export function App() {
       <div className="app-page">{page}</div>
     </div>
     {confirmingNewAnalysis && <div className="native-modal-backdrop" role="presentation"><section className="native-modal" role="dialog" aria-modal="true" aria-labelledby="new-analysis-title"><h2 id="new-analysis-title">Начать новый анализ?</h2><p>Текущие неподтверждённые данные будут сброшены.</p><div><button className="secondary-action" onClick={() => setConfirmingNewAnalysis(false)}>Отмена</button><button className="destructive-action" disabled={startingNewAnalysis} onClick={() => { setConfirmingNewAnalysis(false); beginNewAnalysis(true) }}>Начать новый</button></div></section></div>}
-  </>
+  </TechnicalDetailsPreferenceContext.Provider>
 }
