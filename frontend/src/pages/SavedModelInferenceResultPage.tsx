@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { addSavedInferenceReportRow, deleteSavedInferenceConfiguration, getSavedInferenceConfiguration, getSavedInferenceObjects, getSavedInferenceReportDraft, getSavedInferenceResult, putSavedInferenceConfiguration, removeSavedInferenceReportRow, type SavedInferenceConfigurationResponse, type SavedInferenceObjects, type SavedInferenceReportDraft, type SavedInferenceViewConfiguration, type SavedInferenceResult } from '../api/inference'
+import { addSavedInferenceReportRow, deleteSavedInferenceConfiguration, getInferenceProjectSuggestion, getSavedInferenceConfiguration, getSavedInferenceObjects, getSavedInferenceReportDraft, getSavedInferenceResult, putSavedInferenceConfiguration, removeSavedInferenceReportRow, saveInferenceProject, type SavedInferenceConfigurationResponse, type SavedInferenceObjects, type SavedInferenceReportDraft, type SavedInferenceViewConfiguration, type SavedInferenceResult } from '../api/inference'
 import { buildInferenceResultRoute, buildModelDetailRoute, buildSavedInferenceObjectDetailRoute, buildSavedInferenceReportDraftRoute, navigate } from '../routing'
 import { Icon } from '../components/Icon'
 import { SavedInferenceObjectDetailPage } from './SavedInferenceObjectDetailPage'
@@ -9,6 +9,14 @@ const percentFormat = new Intl.NumberFormat('ru-RU', { style: 'percent', maximum
 const scoreFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
 const thresholdFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const PAGE_SIZE = 50
+
+function viewKey(value: SavedInferenceViewConfiguration) {
+  return JSON.stringify([value.threshold, value.min_score, value.max_score, value.position_filter, value.sort, value.search])
+}
+
+type AutosaveOperation =
+  | { kind: 'put'; view: SavedInferenceViewConfiguration; dueAt: number }
+  | { kind: 'reset' }
 
 function message(reason: unknown) { return reason instanceof Error ? reason.message : 'Не удалось прочитать сохранённый результат.' }
 function requestView(resultId: string, view: SavedInferenceViewConfiguration, offset = 0) {
@@ -35,7 +43,20 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
   const [reportDraft, setReportDraft] = useState<SavedInferenceReportDraft | null>(null)
   const [reportBusy, setReportBusy] = useState(false)
   const [reportError, setReportError] = useState<string | null>(null)
+  const [projectName, setProjectName] = useState('')
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false)
+  const [projectBusy, setProjectBusy] = useState(false)
+  const [projectError, setProjectError] = useState<string | null>(null)
   const latest = useRef(0)
+  const persistedView = useRef<string | null>(null)
+  const autosaveReady = useRef(false)
+  const autosaveInFlight = useRef(false)
+  const autosaveOperation = useRef<AutosaveOperation | null>(null)
+  const autosaveTimer = useRef<number | null>(null)
+  const autosaveGeneration = useRef(0)
+  const autosaveDesiredView = useRef<SavedInferenceViewConfiguration | null>(null)
+  const failedAutosaveKey = useRef<string | null>(null)
+  const startAutosave = useRef<() => void>(() => {})
 
   const applyResponse = useCallback((response: SavedInferenceConfigurationResponse) => {
     setSaved(response.saved); setView(response.configuration); setModelThreshold(response.model_decision_threshold); setConfigError(null)
@@ -63,15 +84,112 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
 
   useEffect(() => {
     let active = true
+    autosaveGeneration.current += 1
+    if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current)
+    autosaveReady.current = false; persistedView.current = null; autosaveInFlight.current = false; autosaveOperation.current = null; autosaveTimer.current = null; autosaveDesiredView.current = null; failedAutosaveKey.current = null
     setLoading(true); setView(null); setSummary(null); setObjects(null); setSelectedRowId(null); setReportDraft(null); setReportError(null); setModelThreshold(null); setConfigError(null); setResultError(null); setObjectsError(null); setSaveSuccess(false)
     void getSavedInferenceReportDraft(inferenceResultId).then(value => { if (active) setReportDraft(value) }).catch(reason => { if (active) setReportError(message(reason)) })
     void getSavedInferenceConfiguration(inferenceResultId).then(async response => {
       if (!active) return
       const configuration = applyResponse(response)
       await load(configuration)
+      if (active) { persistedView.current = viewKey(configuration); autosaveReady.current = true }
     }).catch(reason => { if (active) setConfigError(message(reason)) }).finally(() => { if (active) setLoading(false) })
-    return () => { active = false; latest.current += 1 }
+    return () => {
+      active = false; latest.current += 1; autosaveGeneration.current += 1
+      if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current)
+      autosaveTimer.current = null
+    }
   }, [applyResponse, inferenceResultId, load])
+
+  const startNextAutosave = useCallback(() => {
+    const operation = autosaveOperation.current
+    if (!operation || autosaveInFlight.current || (operation.kind === 'put' && !autosaveReady.current)) return
+    if (operation.kind === 'put') {
+      const key = viewKey(operation.view)
+      if (key === persistedView.current || key === failedAutosaveKey.current) {
+        autosaveOperation.current = null
+        return
+      }
+      const remaining = operation.dueAt - Date.now()
+      if (remaining > 0) {
+        if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current)
+        autosaveTimer.current = window.setTimeout(() => {
+          autosaveTimer.current = null
+          startAutosave.current()
+        }, remaining)
+        return
+      }
+    }
+    if (autosaveTimer.current !== null) {
+      window.clearTimeout(autosaveTimer.current)
+      autosaveTimer.current = null
+    }
+    autosaveOperation.current = null
+    autosaveInFlight.current = true
+    const generation = autosaveGeneration.current
+    setSaveBusy(true); setSaveError(null)
+
+    if (operation.kind === 'reset') {
+      void deleteSavedInferenceConfiguration(inferenceResultId).then(async response => {
+        if (generation !== autosaveGeneration.current) return
+        const configuration = response.configuration
+        persistedView.current = viewKey(configuration)
+        autosaveReady.current = true
+        failedAutosaveKey.current = null
+        setSaved(response.saved)
+        // Do not overwrite a view changed while reset was in flight; its queued PUT wins next.
+        if (!autosaveOperation.current) {
+          setSelectedRowId(null)
+          applyResponse(response)
+          await load(configuration)
+        }
+      }).catch(reason => {
+        if (generation === autosaveGeneration.current) setSaveError(message(reason))
+      }).finally(() => {
+        if (generation !== autosaveGeneration.current) return
+        autosaveInFlight.current = false; setSaveBusy(false)
+        startAutosave.current()
+      })
+      return
+    }
+
+    const sentView = operation.view
+    const sentKey = viewKey(sentView)
+    void putSavedInferenceConfiguration(inferenceResultId, sentView).then(response => {
+      if (generation !== autosaveGeneration.current) return
+      persistedView.current = viewKey(response.configuration)
+      failedAutosaveKey.current = null
+      setSaved(response.saved)
+    }).catch(reason => {
+      if (generation !== autosaveGeneration.current) return
+      setSaveError(message(reason))
+      failedAutosaveKey.current = sentKey
+      const desiredView = autosaveDesiredView.current
+      if (!autosaveOperation.current && desiredView && viewKey(desiredView) !== sentKey) {
+        autosaveOperation.current = { kind: 'put', view: desiredView, dueAt: Date.now() }
+      }
+    }).finally(() => {
+      if (generation !== autosaveGeneration.current) return
+      autosaveInFlight.current = false; setSaveBusy(false)
+      startAutosave.current()
+    })
+  }, [applyResponse, inferenceResultId, load])
+
+  startAutosave.current = startNextAutosave
+
+  useEffect(() => {
+    if (!view || !autosaveReady.current) return
+    autosaveDesiredView.current = view
+    const key = viewKey(view)
+    if (key === persistedView.current && !autosaveInFlight.current) {
+      if (autosaveOperation.current?.kind === 'put') autosaveOperation.current = null
+      return
+    }
+    if (key === failedAutosaveKey.current) return
+    autosaveOperation.current = { kind: 'put', view, dueAt: Date.now() + 350 }
+    startAutosave.current()
+  }, [view])
 
   const updateView = (patch: Partial<SavedInferenceViewConfiguration>) => {
     if (!view) return
@@ -93,29 +211,37 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
     } catch (reason) { setReportError(message(reason)) }
     finally { setReportBusy(false) }
   }
-  const save = async () => {
-    if (!view || saveBusy) return
-    setSaveBusy(true); setSaveError(null); setSaveSuccess(false)
-    try { applyResponse(await putSavedInferenceConfiguration(inferenceResultId, view)); setSaveSuccess(true) }
-    catch (reason) { setSaveError(message(reason)) }
-    finally { setSaveBusy(false) }
+  const reset = () => {
+    if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current)
+    autosaveTimer.current = null
+    autosaveOperation.current = { kind: 'reset' }
+    failedAutosaveKey.current = null
+    setSelectedRowId(null); setSaveError(null); setSaveSuccess(false)
+    startAutosave.current()
   }
-  const reset = async () => {
-    if (saveBusy) return
-    setSaveBusy(true); setSaveError(null); setSaveSuccess(false)
-    try { setSelectedRowId(null); const next = applyResponse(await deleteSavedInferenceConfiguration(inferenceResultId)); await load(next) }
-    catch (reason) { setSaveError(message(reason)) }
-    finally { setSaveBusy(false) }
+  const openProjectDialog = async () => {
+    if (!summary || projectBusy) return
+    setProjectBusy(true); setProjectError(null); setProjectName(''); setProjectDialogOpen(true)
+    try { setProjectName((await getInferenceProjectSuggestion(inferenceResultId)).suggested_name) }
+    catch { setProjectError('Не удалось получить рекомендуемое название проекта. Повторите попытку.') }
+    finally { setProjectBusy(false) }
+  }
+  const saveProject = async () => {
+    if (projectBusy || !projectName.trim()) return
+    setProjectBusy(true); setProjectError(null)
+    try { await saveInferenceProject(inferenceResultId, projectName); setProjectDialogOpen(false); navigate('#/history') }
+    catch (reason) { setProjectError(message(reason)) }
+    finally { setProjectBusy(false) }
   }
 
   if (loading) return <main className="workspace inference-result-workspace"><section className="inference-state"><Icon name="clock" size={30} /><p>Восстанавливаем сохранённую конфигурацию результата…</p></section></main>
-  if (configError) return <main className="workspace inference-result-workspace"><section className="inference-state inference-error" role="alert"><Icon name="warning" size={28} /><div><strong>Не удалось прочитать конфигурацию просмотра</strong><p>{configError}</p><button className="secondary-action" disabled={saveBusy} onClick={() => void reset()}>Сбросить настройки</button></div></section></main>
+  if (configError) return <main className="workspace inference-result-workspace"><section className="inference-state inference-error" role="alert"><Icon name="warning" size={28} /><div><strong>Не удалось прочитать конфигурацию просмотра</strong><p>{configError}</p><button className="secondary-action" onClick={reset}>Сбросить настройки</button></div></section></main>
   if (!view) return null
   const maximum = Math.max(...(summary?.histogram.map(bin => bin.count) ?? [1]), 1)
   const thresholdChanged = modelThreshold !== null && view.threshold !== modelThreshold
 
   return <main className="workspace inference-result-workspace">
-    <header className="inference-result-header"><div><button className="back-action inference-back" onClick={() => summary && navigate(buildModelDetailRoute(summary.model_version_id))}>← Назад к модели</button><p className="eyebrow">Модели / Анализ / Результат</p><h1>Результат анализа</h1><p>Оценки сохранённой модели для новых данных.</p></div><div className="inference-result-actions"><button className="secondary-action" disabled={saveBusy} onClick={() => void save()}><Icon name="file" />{saveBusy ? 'Сохраняем…' : 'Сохранить настройки просмотра'}</button><button className="secondary-action" onClick={() => navigate(buildSavedInferenceReportDraftRoute(inferenceResultId))}>Отчёт · {reportDraft?.selected_row_ids.length ?? 0}</button><button className="secondary-action" disabled title="Экспорт пока не подключён"><Icon name="download" />Экспорт</button><button className="secondary-action" disabled={!summary} onClick={() => summary && navigate(buildModelDetailRoute(summary.model_version_id))}><Icon name="folder" />Открыть модель</button><div className="inference-more"><button className="inference-more-action" type="button" aria-label="Дополнительные действия" aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>⋯</button>{moreOpen && <div className="inference-more-menu"><button type="button" disabled={saveBusy} onClick={() => { setMoreOpen(false); void reset() }}>Сбросить настройки</button></div>}</div></div></header>
+    <header className="inference-result-header"><div><button className="back-action inference-back" onClick={() => summary && navigate(buildModelDetailRoute(summary.model_version_id))}>← Назад к модели</button><p className="eyebrow">Модели / Анализ / Результат</p><h1>Результат анализа</h1><p>Оценки сохранённой модели для новых данных.</p></div><div className="inference-result-actions"><button className="secondary-action" disabled={!summary || projectBusy} onClick={() => void openProjectDialog()}><Icon name="folder" />Сохранить как проект</button><button className="secondary-action" onClick={() => navigate(buildSavedInferenceReportDraftRoute(inferenceResultId))}>Отчёт · {reportDraft?.selected_row_ids.length ?? 0}</button><button className="secondary-action" disabled title="Экспорт пока не подключён"><Icon name="download" />Экспорт</button><button className="secondary-action" disabled={!summary} onClick={() => summary && navigate(buildModelDetailRoute(summary.model_version_id))}><Icon name="folder" />Открыть модель</button><div className="inference-more"><button className="inference-more-action" type="button" aria-label="Дополнительные действия" aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>⋯</button>{moreOpen && <div className="inference-more-menu"><button type="button" onClick={() => { setMoreOpen(false); reset() }}>Сбросить настройки</button></div>}</div></div></header>
     {saveError && <p className="inference-inline-error" role="alert"><Icon name="warning" />{saveError}</p>}
     {reportError && <p className="inference-inline-error" role="alert"><Icon name="warning" />{reportError}</p>}
     {saveSuccess && <p className="inference-inline-status">✓ Настройки просмотра сохранены и будут восстановлены при повторном открытии этого результата. Сам результат расчёта сохраняется автоматически.</p>}
@@ -131,6 +257,7 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
     </section>
     {selectedRowId && <section className="panel inference-inline-explanation-panel"><header><div><Icon name="info" size={26} /><div><h2>Объяснение объекта</h2><p>Local SHAP и Result Interpreter используют сохранённые данные выбранного объекта.</p></div></div><button className="inference-explanation-close" type="button" aria-label="Закрыть объяснение" onClick={() => setSelectedRowId(null)}>×</button></header><SavedInferenceObjectDetailPage embedded inferenceResultId={inferenceResultId} rowId={selectedRowId} threshold={view.threshold} inReport={reportDraft?.selected_row_ids.includes(selectedRowId) ?? false} reportBusy={reportBusy} onToggleReport={() => void toggleReportRow(selectedRowId)} /></section>}
     </div>
+    {projectDialogOpen && <div className="native-modal-backdrop" role="presentation"><section className="native-modal" role="dialog" aria-modal="true" aria-labelledby="save-project-title"><h2 id="save-project-title">Сохранить как проект</h2><p>Проект хранит ссылку на точный сохранённый результат анализа.</p><label>Название проекта<input autoFocus value={projectName} maxLength={160} onChange={event => setProjectName(event.target.value)} /></label>{projectError && <p className="result-save-error" role="alert">{projectError}</p>}<div><button className="secondary-action" disabled={projectBusy} onClick={() => setProjectDialogOpen(false)}>Отмена</button><button className="primary-action" disabled={projectBusy || !projectName.trim()} onClick={() => void saveProject()}>{projectBusy ? 'Сохраняем…' : 'Сохранить'}</button></div></section></div>}
   </main>
 }
 

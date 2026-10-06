@@ -29,6 +29,7 @@ from komus_risk.application import (
     ModelSourceResultUnavailable,
     ModelVersionIntegrityError,
     ModelVersionNotFound,
+    ProjectWorkspaceError,
     InferenceInputError,
     InferencePreparationError,
     SavedModelInferenceError,
@@ -284,6 +285,49 @@ class SavedModelResponse(BaseModel):
 class ModelVersionSaveResponse(SavedModelResponse):
     save_state: Literal["CREATED", "ALREADY_SAVED"]
     artifact_id: str
+
+
+class ModelVersionSaveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str | None = None
+
+
+class ProjectWorkspaceSaveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+
+
+class ProjectWorkspaceSuggestionResponse(BaseModel):
+    suggested_name: str
+
+
+class ProjectWorkspaceResponse(BaseModel):
+    schema_version: Literal[1]
+    project_id: str
+    name: str
+    work_type: Literal["SAVED_MODEL_INFERENCE"]
+    inference_result_id: str
+    model_version_id: str
+    source_fingerprint: str | None
+    model_display_name: str | None
+    source_display_name: str | None
+    row_count: int | None
+    created_at: str
+    updated_at: str
+    last_opened_at: str | None
+    resumable: bool = True
+    unavailable_code: str | None = None
+
+
+class ProjectWorkspaceListResponse(BaseModel):
+    total_count: int
+    resumable_count: int
+    offset: int
+    limit: int
+    returned_count: int
+    items: list[ProjectWorkspaceResponse]
 
 
 class ModelVersionListItemResponse(BaseModel):
@@ -723,7 +767,7 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None, saved_model_inference_service: Any | None = None, saved_inference_explanation_service: SavedInferenceExplanationService | None = None, analyst_report_service: Any | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None, saved_model_inference_service: Any | None = None, saved_inference_explanation_service: SavedInferenceExplanationService | None = None, analyst_report_service: Any | None = None, project_workspace_service: Any | None = None) -> FastAPI:
     """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
@@ -752,6 +796,7 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         else runtime.saved_inference_explanation_service
     )
     analyst_reports = analyst_report_service if analyst_report_service is not None else runtime.analyst_report_service
+    project_workspaces = project_workspace_service if project_workspace_service is not None else runtime.project_workspace_service
     artifact_store = experiment_artifact_store or runtime.artifact_store
     context_authority = prepared_context_authority or runtime.prepared_context_authority
     feature_selection = FeatureSelectionService()
@@ -899,8 +944,9 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         request: Request,
         response: Response,
         session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+        payload: ModelVersionSaveRequest | None = None,
     ) -> ModelVersionSaveResponse:
-        if await request.body():
+        if await request.body() and payload is None:
             raise HTTPException(
                 status_code=422,
                 detail={"code": "INVALID_MODEL_SAVE_REQUEST", "message": "Сохранение модели не принимает параметры."},
@@ -929,6 +975,7 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 experiment_artifact_id=binding.artifact_id,
                 prepared_dataset_context=context,
                 decision_threshold=binding.threshold,
+                **({"display_name": payload.display_name} if payload else {}),
             )
         except ModelSaveError as error:
             raise HTTPException(
@@ -1262,6 +1309,13 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         except (TypeError, ValueError) as error:
             raise SavedModelInferenceError("INVALID_INFERENCE_RESULT_QUERY") from error
 
+    def project_workspace_response(value: dict[str, Any]) -> ProjectWorkspaceResponse:
+        return ProjectWorkspaceResponse(**value)
+
+    def project_workspace_error(exc: ProjectWorkspaceError) -> HTTPException:
+        status = 422 if exc.code == "INVALID_PROJECT_NAME" else 400 if exc.code == "INVALID_PROJECT_WORKSPACE_QUERY" else 404 if exc.code == "PROJECT_WORKSPACE_NOT_FOUND" else 409 if exc.code in {"PROJECT_WORKSPACE_INTEGRITY_ERROR", "PROJECT_INFERENCE_RESULT_UNAVAILABLE"} else 500
+        return HTTPException(status_code=status, detail={"code": exc.code, "message": "Project workspace request could not be completed."})
+
     @api.get("/api/v1/inference-results/{inference_result_id}", response_model=SavedModelInferenceSummaryResponse)
     def get_saved_inference_result(
         inference_result_id: str, threshold: str = "0.50",
@@ -1286,6 +1340,48 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             below_threshold_count=value.below_threshold_count, below_threshold_share=value.below_threshold_share,
             histogram=[InferenceScoreHistogramBinResponse(**item) for item in value.histogram],
         )
+
+    @api.post("/api/v1/inference-results/{inference_result_id}/project", response_model=ProjectWorkspaceResponse)
+    def save_project_workspace(inference_result_id: str, payload: ProjectWorkspaceSaveRequest) -> ProjectWorkspaceResponse:
+        try:
+            record = project_workspaces.save(
+                inference_result_id=inference_result_id, name=payload.name,
+            )
+            return project_workspace_response(project_workspaces.detail(record.project_id))
+        except ProjectWorkspaceError as error:
+            raise project_workspace_error(error) from None
+
+    @api.get("/api/v1/inference-results/{inference_result_id}/project-suggestion", response_model=ProjectWorkspaceSuggestionResponse)
+    def project_workspace_suggestion(inference_result_id: str) -> ProjectWorkspaceSuggestionResponse:
+        try:
+            return ProjectWorkspaceSuggestionResponse(suggested_name=project_workspaces.suggested_name(inference_result_id))
+        except ProjectWorkspaceError as error:
+            raise project_workspace_error(error) from None
+
+    @api.get("/api/v1/projects", response_model=ProjectWorkspaceListResponse)
+    def list_project_workspaces(offset: str = "0", limit: str = "50") -> ProjectWorkspaceListResponse:
+        try:
+            if not offset.isdecimal() or not limit.isdecimal():
+                raise ProjectWorkspaceError("INVALID_PROJECT_WORKSPACE_QUERY")
+            page = project_workspaces.list(offset=int(offset), limit=int(limit))
+            return ProjectWorkspaceListResponse(total_count=page.total_count, resumable_count=page.resumable_count, offset=page.offset, limit=page.limit,
+                                                returned_count=len(page.items), items=[project_workspace_response(item) for item in page.items])
+        except ProjectWorkspaceError as error:
+            raise project_workspace_error(error) from None
+
+    @api.get("/api/v1/projects/{project_id}", response_model=ProjectWorkspaceResponse)
+    def get_project_workspace(project_id: str) -> ProjectWorkspaceResponse:
+        try:
+            return project_workspace_response(project_workspaces.detail(project_id))
+        except ProjectWorkspaceError as error:
+            raise project_workspace_error(error) from None
+
+    @api.post("/api/v1/projects/{project_id}/open", response_model=ProjectWorkspaceResponse)
+    def open_project_workspace(project_id: str) -> ProjectWorkspaceResponse:
+        try:
+            return project_workspace_response(project_workspaces.open(project_id) | {"resumable": True, "unavailable_code": None})
+        except ProjectWorkspaceError as error:
+            raise project_workspace_error(error) from None
 
     @api.get("/api/v1/inference-results/{inference_result_id}/objects", response_model=SavedModelInferenceObjectListResponse)
     def get_saved_inference_objects(

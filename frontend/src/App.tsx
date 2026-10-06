@@ -3,6 +3,7 @@ import { getNativeSession, startNewAnalysis, type NativeSession } from './api/se
 import { Sidebar } from './components/Sidebar'
 import { DataPage } from './pages/DataPage'
 import { HomePage } from './pages/HomePage'
+import { HistoryPage } from './pages/HistoryPage'
 import { AlgorithmPage } from './pages/AlgorithmPage'
 import { FeaturesPage } from './pages/FeaturesPage'
 import { QualityPage } from './pages/QualityPage'
@@ -112,6 +113,7 @@ export function App() {
 
   const openHome = useCallback(() => navigate(routes.home), [])
   const openModels = useCallback(() => navigate(routes.models), [])
+  const openHistory = useCallback(() => navigate(routes.history), [])
   const openDocumentation = useCallback(() => navigate(routes.documentation), [])
   const openHotkeys = useCallback(() => navigate(routes.hotkeys), [])
   const openAbout = useCallback(() => navigate(routes.about), [])
@@ -145,6 +147,8 @@ export function App() {
     ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={() => beginNewAnalysis()} onOpenModels={openModels} startingNewAnalysis={startingNewAnalysis} />
     : route === routes.models
       ? <ModelsPage />
+      : route === routes.history
+        ? <HistoryPage />
       : isModelInferenceRoute(route)
         ? <SavedModelInferencePage modelVersionId={modelVersionIdFromInferenceRoute(route)!} />
       : isSavedInferenceObjectDetailRoute(route)
@@ -178,7 +182,7 @@ export function App() {
                   : isObjectDetailRoute(route)
                     ? <ObjectDetailPage objectId={objectIdFromRoute(route)!} onBack={backToObjects} />
                     : <DataPage route={route} sessionReady={sessionReady} onDatasetUploaded={handleDatasetUploaded} onStaleSession={recoverStaleSession} recoveryMessage={recoveryMessage} />
-  const shellClass = route === routes.home || route === routes.documentation || route === routes.hotkeys || route === routes.about
+  const shellClass = route === routes.home || route === routes.history || route === routes.documentation || route === routes.hotkeys || route === routes.about
     ? 'home-shell'
     : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route)
       ? 'models-shell'
@@ -191,10 +195,11 @@ export function App() {
   return <>
     <div className={`app-shell ${shellClass}`}>
       <Sidebar
-        active={route === routes.home ? 'home' : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route) ? 'models' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
+        active={route === routes.home ? 'home' : route === routes.history ? 'history' : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route) ? 'models' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
         onHome={openHome}
         onNewAnalysis={() => beginNewAnalysis()}
         onModels={openModels}
+        onHistory={openHistory}
         onDocumentation={openDocumentation}
         onHotkeys={openHotkeys}
         onAbout={openAbout}

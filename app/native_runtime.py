@@ -14,6 +14,7 @@ from komus_risk.application import (
     GlobalResultInterpreterService,
     IntegrationWorkflowService,
     ModelLibraryService,
+    ProjectWorkspaceService,
     ModelInferenceService,
     SavedModelInferenceService,
     SavedInferenceExplanationService,
@@ -24,6 +25,7 @@ from komus_risk.application import (
 from komus_risk.artifacts import (
     ExperimentArtifactStore,
     ModelLibraryRecordStore,
+    ProjectWorkspaceStore,
     ModelVersionStore,
     SavedModelInferenceResultStore,
     SavedInferenceResultViewConfigurationStore,
@@ -52,6 +54,7 @@ class NativeExperimentRuntime:
     artifact_store: ExperimentArtifactStore
     integration_workflow_service: IntegrationWorkflowService
     model_library_service: ModelLibraryService
+    project_workspace_service: ProjectWorkspaceService
     saved_model_inference_service: SavedModelInferenceService
     saved_inference_explanation_service: SavedInferenceExplanationService
     analyst_report_service: AnalystReportService
@@ -116,6 +119,10 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         report_draft_store=SavedInferenceReportDraftStore(store_root / "inference_report_drafts"),
         cleanup_upload=cleanup_staged_upload,
     )
+    project_workspace_service = ProjectWorkspaceService(
+        store=ProjectWorkspaceStore(store_root / "projects"),
+        saved_inference_service=saved_model_inference_service,
+    )
     interpretation_store = SavedInferenceInterpretationStore(store_root / "inference_interpretations")
     saved_inference_explanation_service = SavedInferenceExplanationService(
         result_store=SavedModelInferenceResultStore(store_root / "inference_results"),
@@ -153,6 +160,7 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         artifact_store=artifact_store,
         integration_workflow_service=integration_workflow_service,
         model_library_service=model_library_service,
+        project_workspace_service=project_workspace_service,
         saved_model_inference_service=saved_model_inference_service,
         saved_inference_explanation_service=saved_inference_explanation_service,
         analyst_report_service=analyst_report_service,

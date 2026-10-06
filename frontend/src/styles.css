@@ -1888,3 +1888,11 @@ body:has(.global-explanation-workspace) { min-width: 0; }
 
 .inference-score-range { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
 .inference-score-range label { display: flex; align-items: center; }.inference-score-range input { width: 58px; }
+
+/* ProjectWorkspace V1: keep the Home projection compact without altering global typography. */
+.projects-panel + .models-panel { margin-top: 18px; }
+.projects-table { table-layout: fixed; }
+.projects-table th, .projects-table td { padding-top: 9px; padding-bottom: 9px; font-size: 12px; }
+.projects-table th:first-child, .projects-table td:first-child { width: 30%; }
+.home-project-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-project-name strong { font-size: 13px; font-weight: 650; }

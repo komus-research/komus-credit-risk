@@ -209,6 +209,8 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
   const [error, setError] = useState<string | null>(null)
   const [modelSaveStatus, setModelSaveStatus] = useState<ModelSaveStatus>('NOT_SAVED')
   const [modelSaveError, setModelSaveError] = useState<string | null>(null)
+  const [modelNameDialogOpen, setModelNameDialogOpen] = useState(false)
+  const [modelName, setModelName] = useState('')
   const [globalPreview, setGlobalPreview] = useState<GlobalOOFExplanation | null>(null)
   const [globalPreviewStatus, setGlobalPreviewStatus] = useState<GlobalPreviewStatus>('idle')
 
@@ -229,7 +231,7 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
     setModelSaveStatus('SAVING')
     setModelSaveError(null)
     try {
-      const savedModel = await saveCurrentResultModel()
+      const savedModel = await saveCurrentResultModel(modelName.trim() || undefined)
       setResult(current => current ? {
         ...current,
         saved_model: {
@@ -242,6 +244,7 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
         },
       } : current)
       setModelSaveStatus('SAVED')
+      setModelNameDialogOpen(false)
     } catch (reason) {
       setModelSaveStatus('ERROR')
       if (reason instanceof ModelVersionSaveAPIError && reason.code === 'MODEL_DECISION_THRESHOLD_REQUIRED') {
@@ -250,6 +253,12 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
       }
       setModelSaveError(reason instanceof Error ? reason.message : 'Не удалось сохранить модель.')
     }
+  }
+
+  const openModelSaveDialog = () => {
+    if (!result || modelIsSaved) return
+    setModelName(result.saved_model?.display_name ?? result.summary.model_id)
+    setModelSaveError(null); setModelNameDialogOpen(true)
   }
 
   const summary = result?.summary
@@ -349,7 +358,7 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
       <div><h1>Результат модели</h1><p>Итоги обучения, проверка качества и анализ поведения модели на всей оценочной выборке.</p></div>
       <div className="result-header-actions" aria-label="Действия с результатом">
         <div className="result-save-action">
-          <button className="secondary-action" disabled={!result || modelIsSaved || modelSaveStatus === 'SAVING'} onClick={saveModel} title={saveButtonTitle} aria-label={saveButtonTitle ?? saveButtonLabel}><Icon name="file" size={17} />{saveButtonLabel}</button>
+          <button className="secondary-action" disabled={!result || modelIsSaved || modelSaveStatus === 'SAVING'} onClick={openModelSaveDialog} title={saveButtonTitle} aria-label={saveButtonTitle ?? saveButtonLabel}><Icon name="file" size={17} />{saveButtonLabel}</button>
           {modelSaveError && <span className="result-save-error" role="alert">{modelSaveError}</span>}
         </div>
         <button className="secondary-action" disabled title={unavailable} aria-label={`Экспорт отчёта. ${unavailable}`}><Icon name="download" size={17} />Экспорт отчёта</button>
@@ -443,6 +452,7 @@ export function ResultPage({ onOpenThreshold, onOpenObjects }: { onOpenThreshold
         <dl><div><dt>Artifact ID</dt><dd>{summary.artifact_id}</dd></div><div><dt>Result ID</dt><dd>{summary.result_id}</dd></div><div><dt>Уровень оценки</dt><dd>{summary.evaluation_level}</dd></div><div><dt>Время выполнения</dt><dd>{summary.runtime_seconds === null ? '—' : `${numberFormat.format(summary.runtime_seconds)} с`}</dd></div></dl>
       </details>
     </div>}
+    {modelNameDialogOpen && <div className="native-modal-backdrop" role="presentation"><section className="native-modal" role="dialog" aria-modal="true" aria-labelledby="save-model-name-title"><h2 id="save-model-name-title">Название модели</h2><p>Перед первым сохранением задайте отображаемое название модели.</p><label>Название<input autoFocus value={modelName} maxLength={160} onChange={event => setModelName(event.target.value)} /></label>{modelSaveError && <p className="result-save-error" role="alert">{modelSaveError}</p>}<div><button className="secondary-action" disabled={modelSaveStatus === 'SAVING'} onClick={() => setModelNameDialogOpen(false)}>Отмена</button><button className="primary-action" disabled={modelSaveStatus === 'SAVING' || !modelName.trim()} onClick={() => void saveModel()}>{modelSaveStatus === 'SAVING' ? 'Сохраняем…' : 'Сохранить модель'}</button></div></section></div>}
   </main>
 }
 
