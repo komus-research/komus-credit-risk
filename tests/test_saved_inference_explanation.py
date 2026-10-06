@@ -24,6 +24,7 @@ from komus_risk.application import (
 from komus_risk.artifacts import (
     LoadedModelVersion,
     ModelVersionSummary,
+    SavedInferenceInterpretationStore,
     SavedModelInferenceResultStore,
 )
 from komus_risk.hashing import stable_hash
@@ -111,7 +112,14 @@ class _InterpreterWorkflow(_Workflow):
         self.interpret_calls += 1
         if self.fails:
             raise RuntimeError("provider text must not leak")
-        return SimpleNamespace(response=SimpleNamespace(text=f"for {request}", created_at="2026-01-02T00:00:00+00:00", response_hash="response-hash"))
+        content = {
+            "request_hash": f"request-{request}", "prompt_id": "prompt", "prompt_version": "1",
+            "prompt_hash": "prompt-hash", "interpreter_id": "interpreter",
+            "interpreter_model": "model", "text": f"for {request}",
+        }
+        return SimpleNamespace(response=SimpleNamespace(
+            **content, created_at="2026-01-02T00:00:00+00:00", response_hash=stable_hash(content),
+        ))
 
 
 def _service(root: Path):
@@ -167,6 +175,8 @@ def test_saved_interpretation_reuses_trusted_local_evidence_and_isolates_failure
         service, result, _workflow = _service(Path(temp))
         workflow = _InterpreterWorkflow()
         service.integration_workflow_service = workflow
+        persisted = SavedInferenceInterpretationStore(Path(temp) / "interpretations")
+        service.interpretation_store = persisted
         row_id = result.rows[0].row_id
 
         # GET-equivalent local explanation never invokes the interpreter.
@@ -180,6 +190,11 @@ def test_saved_interpretation_reuses_trusted_local_evidence_and_isolates_failure
         assert interpretation.role == "lawyer"
         assert workflow.prepare_calls == workflow.interpret_calls == 1
         assert workflow.explain_calls == 1  # bounded trusted SHAP cache is shared
+        saved = persisted.list_for_evidence(
+            result.inference_result_id, row_id, model_version_id="model-v1",
+            explanation_id=interpretation.explanation_id, evidence_hash=interpretation.evidence_hash,
+        )
+        assert len(saved) == 1 and saved[0].text == "for lawyer"
 
         workflow.available = False
         with pytest.raises(SavedInferenceInterpretationUnavailable, match="EXTERNAL_DATA_POLICY_DISABLED"):
