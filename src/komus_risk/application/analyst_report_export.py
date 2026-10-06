@@ -8,6 +8,7 @@ SHAP, drafts, or an interpreter.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from io import BytesIO
 from textwrap import wrap
 from typing import Any
@@ -41,6 +42,7 @@ class ReportProjection:
     model_version: str
     inference_result_id: str
     threshold: float
+    model_summary: dict[str, Any] | None
     companies: tuple[ReportCompany, ...]
 
 
@@ -72,7 +74,8 @@ def project_report(report: dict[str, Any]) -> ReportProjection:
     return ReportProjection(
         report_id=report["report_id"], content_hash=report["content_hash"],
         created_at=report["created_at"], model_version=source["model_version"],
-        inference_result_id=source["inference_result_id"], threshold=threshold, companies=companies,
+        inference_result_id=source["inference_result_id"], threshold=threshold,
+        model_summary=report.get("model_summary"), companies=companies,
     )
 
 
@@ -97,14 +100,14 @@ def report_pdf(projection: ReportProjection) -> bytes:
     lines = _pdf_lines(projection)
     per_page = 43
     with PdfPages(destination) as pdf:
-        for start in range(0, len(lines), per_page):
+        for page_number, start in enumerate(range(0, len(lines), per_page), start=1):
             figure = plt.figure(figsize=(8.27, 11.69))
             figure.patch.set_facecolor("white")
             page = lines[start:start + per_page]
             figure.text(0.08, 0.965, "AXION", fontsize=16, fontweight="bold", color="#0b4b50")
             figure.text(0.08, 0.938, "Аналитический отчёт", fontsize=12, fontweight="bold")
             figure.text(0.08, 0.905, "\n".join(page), fontsize=8.6, va="top", linespacing=1.38)
-            figure.text(0.08, 0.035, f"report_id: {projection.report_id}", fontsize=6.5, color="#555555")
+            figure.text(0.08, 0.035, f"AXION · страница {page_number}", fontsize=6.5, color="#555555")
             pdf.savefig(figure, bbox_inches="tight")
             plt.close(figure)
     return destination.getvalue()
@@ -112,12 +115,11 @@ def report_pdf(projection: ReportProjection) -> bytes:
 
 def _pdf_lines(projection: ReportProjection) -> list[str]:
     lines = [
-        f"Дата формирования: {projection.created_at}",
-        f"Модель: {projection.model_version}",
-        f"Inference Result: {projection.inference_result_id}",
+        f"Дата формирования: {_human_date(projection.created_at)}",
         f"Порог решения: {projection.threshold:.3f}",
         f"Количество компаний: {len(projection.companies)}", "",
     ]
+    lines.extend(_summary_lines(projection.model_summary))
     for company in projection.companies:
         title = f"Компания {company.number}: {company.identifier}"
         if company.subject_name:
@@ -134,7 +136,34 @@ def _pdf_lines(projection: ReportProjection) -> list[str]:
     wrapped: list[str] = []
     for line in lines:
         wrapped.extend(wrap(line, width=104, break_long_words=False, break_on_hyphens=False) or [""])
+    wrapped.extend([
+        "Техническая информация:",
+        f"report_id: {projection.report_id}",
+        f"inference_result_id: {projection.inference_result_id}",
+        f"content_hash: {projection.content_hash}",
+    ])
     return wrapped
+
+
+def _human_date(value: str) -> str:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).strftime("%d.%m.%Y, %H:%M")
+    except ValueError:
+        return value
+
+
+def _summary_lines(summary: dict[str, Any] | None) -> list[str]:
+    if summary is None:
+        return []
+    return [
+        "Модель и качество:",
+        f"Модель: {summary['display_name']}",
+        f"Алгоритм: {summary['model_display_name']}",
+        f"Обучающая выборка: {summary['dataset_name']}",
+        f"Признаков: {summary['feature_count']}; кросс-валидация: {summary['folds']} folds",
+        f"OOF Gini: {summary['oof_gini']:.4f}; OOF ROC-AUC: {summary['oof_roc_auc']:.4f}; OOF PR-AUC: {summary['oof_pr_auc']:.4f}",
+        "",
+    ]
 
 
 def report_docx(projection: ReportProjection) -> bytes:
@@ -149,16 +178,22 @@ def report_docx(projection: ReportProjection) -> bytes:
     document.add_heading("AXION", level=1)
     document.add_heading("Аналитический отчёт", level=2)
     for text in (
-        f"Дата формирования: {projection.created_at}", f"Модель: {projection.model_version}",
-        f"Inference Result: {projection.inference_result_id}", f"Порог решения: {projection.threshold:.3f}",
+        f"Дата формирования: {_human_date(projection.created_at)}", f"Порог решения: {projection.threshold:.3f}",
         f"Количество компаний: {len(projection.companies)}",
     ):
         document.add_paragraph(text)
-    for company in projection.companies:
+    if projection.model_summary:
+        document.add_heading("Модель и качество", level=2)
+        for text in _summary_lines(projection.model_summary)[1:-1]:
+            document.add_paragraph(text)
+    for index, company in enumerate(projection.companies):
+        if index:
+            document.add_page_break()
         heading = f"Компания {company.number}: {company.identifier}"
         if company.subject_name:
             heading += f" ({company.subject_name})"
-        document.add_heading(heading, level=2)
+        company_heading = document.add_heading(heading, level=2)
+        company_heading.paragraph_format.keep_with_next = True
         document.add_paragraph(f"Score: {company.score:.3f}; порог: {company.threshold:.3f}; {company.position_label}")
         document.add_heading("Основные факторы Local SHAP", level=3)
         table = document.add_table(rows=1, cols=4)
@@ -177,6 +212,7 @@ def report_docx(projection: ReportProjection) -> bytes:
             document.add_paragraph("Интерпретация Result Interpreter не была сформирована на момент создания отчёта.")
     document.add_heading("Техническая информация", level=2)
     document.add_paragraph(f"report_id: {projection.report_id}")
+    document.add_paragraph(f"inference_result_id: {projection.inference_result_id}")
     document.add_paragraph(f"content_hash: {projection.content_hash}")
     destination = BytesIO()
     document.save(destination)

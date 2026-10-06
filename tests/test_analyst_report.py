@@ -78,10 +78,20 @@ def _service(root: Path):
     ))
     explanations = _Explanations(result.inference_result_id, {"row-a": 0.8, "row-b": 0.2})
     interpretations = SavedInferenceInterpretationStore(root / "inference_interpretations")
-    library = SimpleNamespace(load_for_inference=lambda model_id: (
-        SimpleNamespace(model_version_id=model_id, experiment_artifact_id="artifact-v1", decision_threshold=0.5, decision_threshold_state="USER_APPLIED"),
-        SimpleNamespace(summary=SimpleNamespace(model_id="catboost", model_version="1")),
-    ))
+    library = SimpleNamespace(
+        load_for_inference=lambda model_id: (
+            SimpleNamespace(model_version_id=model_id, experiment_artifact_id="artifact-v1", display_name="Pilot model", decision_threshold=0.5, decision_threshold_state="USER_APPLIED"),
+            SimpleNamespace(summary=SimpleNamespace(model_id="catboost", model_version="1")),
+        ),
+        detail=lambda model_id: SimpleNamespace(value={
+            "model_version_id": model_id, "display_name": "Pilot model",
+            "algorithm": {"model_display_name": "CatBoost"},
+            "dataset": {"dataset_name": "Training sample"},
+            "features": [{"feature_id": "f-1"}, {"feature_id": "f-2"}],
+            "configuration": {"folds": 5},
+            "oof_quality": {"gini": 0.4, "roc_auc": 0.7, "pr_auc": 0.6},
+        }),
+    )
     return (
         AnalystReportService(
             result_store=results, draft_store=drafts, explanation_service=explanations,
@@ -125,6 +135,39 @@ def test_report_snapshot_is_ordered_immutable_and_idempotent():
         assert changed_state == "CREATED" and changed["report_id"] != report["report_id"]
         assert changed["companies"][0]["role_interpretations"][0]["role"] == "lawyer"
         assert report_path.read_bytes() == before
+
+
+def test_new_report_freezes_trusted_model_summary():
+    with TemporaryDirectory() as temp:
+        service, result, _drafts, _explanations, _interpretations, _reports_root = _service(Path(temp))
+        report, _ = service.generate(result.inference_result_id)
+        assert report["model_summary"] == {
+            "display_name": "Pilot model", "model_display_name": "CatBoost",
+            "dataset_name": "Training sample", "feature_count": 2, "folds": 5,
+            "oof_gini": 0.4, "oof_roc_auc": 0.7, "oof_pr_auc": 0.6,
+        }
+
+
+def test_legacy_report_without_model_summary_still_reads_and_exports():
+    from app.api.main import create_app
+
+    with TemporaryDirectory() as temp:
+        service, result, _drafts, _explanations, _interpretations, reports_root = _service(Path(temp))
+        report, _ = service.generate(result.inference_result_id)
+        legacy = {key: value for key, value in report.items() if key != "model_summary"}
+        legacy_snapshot = {
+            key: legacy[key] for key in ("schema_version", "source", "decision_context", "selection", "companies")
+        }
+        legacy_id = stable_hash(legacy_snapshot)
+        legacy["report_id"] = legacy_id
+        legacy["content_hash"] = legacy_id
+        AnalystReportStore(reports_root).publish(legacy)
+
+        client = TestClient(create_app(analyst_report_service=service))
+        preview = client.get(f"/api/v1/analyst-reports/{legacy_id}")
+        assert preview.status_code == 200 and "model_summary" not in preview.json()
+        assert client.get(f"/api/v1/analyst-reports/{legacy_id}/pdf").status_code == 200
+        assert client.get(f"/api/v1/analyst-reports/{legacy_id}/docx").status_code == 200
 
 
 def test_report_fails_closed_for_missing_local_evidence_without_publication():
@@ -176,7 +219,15 @@ def test_report_exports_are_valid_and_keep_artifact_company_order():
     with TemporaryDirectory() as temp:
         service, result, _drafts, _explanations, _interpretations, _reports_root = _service(Path(temp))
         report, _ = service.generate(result.inference_result_id)
+        def unexpected_model_lookup(*_args, **_kwargs):
+            raise AssertionError("preview/export must not look up a live model")
+        service.model_library_service = SimpleNamespace(
+            load_for_inference=unexpected_model_lookup, detail=unexpected_model_lookup,
+        )
         client = TestClient(create_app(analyst_report_service=service))
+
+        preview = client.get(f"/api/v1/analyst-reports/{report['report_id']}")
+        assert preview.status_code == 200
 
         pdf = client.get(f"/api/v1/analyst-reports/{report['report_id']}/pdf")
         assert pdf.status_code == 200

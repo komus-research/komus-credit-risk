@@ -131,6 +131,7 @@ export type AnalystReport = {
   schema_version: 1; report_id: string; content_hash: string; created_at: string
   source: { inference_result_id: string; model_version: string }
   decision_context: { threshold: number }
+  model_summary?: { display_name: string; model_display_name: string; dataset_name: string; feature_count: number; folds: number; oof_gini: number; oof_roc_auc: number; oof_pr_auc: number }
   selection: { selected_row_ids: string[] }
   companies: AnalystReportCompany[]
 }

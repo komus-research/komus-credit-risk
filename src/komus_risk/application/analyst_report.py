@@ -61,7 +61,7 @@ class AnalystReportService:
         result = self._result(inference_result_id)
         if result.inference_result_id != draft.inference_result_id:
             raise AnalystReportError("ANALYST_REPORT_DRAFT_INTEGRITY_ERROR")
-        threshold, threshold_source, loaded = self._decision_context(result)
+        threshold, threshold_source, record, loaded = self._decision_context(result)
         companies = [self._company(result, row_id, threshold) for row_id in draft.selected_row_ids]
         snapshot = {
             "schema_version": 1,
@@ -75,6 +75,7 @@ class AnalystReportService:
                 "inference_recipe_key": result.inference_recipe_key,
             },
             "decision_context": {"threshold": threshold, "threshold_source": threshold_source},
+            "model_summary": self._model_summary(result.model_version_id, record),
             "selection": {
                 "inference_result_id": draft.inference_result_id,
                 "selected_row_ids": list(draft.selected_row_ids),
@@ -124,7 +125,7 @@ class AnalystReportService:
         except InferenceResultIntegrityError as error:
             raise AnalystReportError("ANALYST_REPORT_SOURCE_INTEGRITY_ERROR") from error
 
-    def _decision_context(self, result: Any) -> tuple[float, str, Any]:
+    def _decision_context(self, result: Any) -> tuple[float, str, Any, Any]:
         try:
             record, loaded = self.model_library_service.load_for_inference(result.model_version_id)
             if record.model_version_id != result.model_version_id or record.experiment_artifact_id != result.experiment_artifact_id:
@@ -139,7 +140,35 @@ class AnalystReportService:
                 raise ValueError
             if isinstance(value, bool) or not isinstance(value, Real) or not isfinite(float(value)) or not 0 <= float(value) <= 1:
                 raise ValueError
-            return float(value), source, loaded
+            return float(value), source, record, loaded
+        except Exception as error:
+            raise AnalystReportError("ANALYST_REPORT_SOURCE_INTEGRITY_ERROR") from error
+
+    def _model_summary(self, model_version_id: str, record: Any) -> dict[str, Any]:
+        """Freeze trusted ModelLibrary detail in a newly generated report only."""
+        try:
+            detail = self.model_library_service.detail(model_version_id)
+            value = getattr(detail, "value", detail)
+            if not isinstance(value, dict) or value.get("model_version_id") != model_version_id:
+                raise ValueError
+            algorithm = value["algorithm"]
+            dataset = value["dataset"]
+            configuration = value["configuration"]
+            quality = value["oof_quality"]
+            summary = {
+                "display_name": value["display_name"],
+                "model_display_name": algorithm["model_display_name"],
+                "dataset_name": dataset["dataset_name"],
+                "feature_count": len(value["features"]),
+                "folds": configuration["folds"],
+                "oof_gini": quality["gini"],
+                "oof_roc_auc": quality["roc_auc"],
+                "oof_pr_auc": quality["pr_auc"],
+            }
+            if summary["display_name"] != record.display_name:
+                raise ValueError
+            AnalystReportStore._model_summary(summary)
+            return summary
         except Exception as error:
             raise AnalystReportError("ANALYST_REPORT_SOURCE_INTEGRITY_ERROR") from error
 

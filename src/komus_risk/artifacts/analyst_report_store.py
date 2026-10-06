@@ -201,10 +201,15 @@ class AnalystReportStore:
     @classmethod
     def semantic_snapshot(cls, report: object) -> dict[str, Any]:
         """Validate V1 and reconstruct the only hashable report meaning."""
-        if not isinstance(report, dict) or set(report) != {
+        required_keys = {
             "schema_version", "report_id", "content_hash", "created_at", "source",
             "decision_context", "selection", "companies",
-        } or report.get("schema_version") != 1 or not cls._timestamp(report.get("created_at")):
+        }
+        if (
+            not isinstance(report, dict) or not required_keys.issubset(report)
+            or set(report) - (required_keys | {"model_summary"})
+            or report.get("schema_version") != 1 or not cls._timestamp(report.get("created_at"))
+        ):
             raise AnalystReportIntegrityError()
         source = report["source"]
         if not isinstance(source, dict) or set(source) != {
@@ -229,10 +234,28 @@ class AnalystReportStore:
             "schema_version": 1, "source": source, "decision_context": decision,
             "selection": selection, "companies": companies,
         }
+        if "model_summary" in report:
+            cls._model_summary(report["model_summary"])
+            snapshot["model_summary"] = report["model_summary"]
         content_hash = stable_hash(snapshot)
         if report.get("report_id") != content_hash or report.get("content_hash") != content_hash:
             raise AnalystReportIntegrityError()
         return snapshot
+
+    @classmethod
+    def _model_summary(cls, value: object) -> None:
+        keys = {
+            "display_name", "model_display_name", "dataset_name", "feature_count", "folds",
+            "oof_gini", "oof_roc_auc", "oof_pr_auc",
+        }
+        if (
+            not isinstance(value, dict) or set(value) != keys
+            or not all(cls._text(value.get(key)) for key in ("display_name", "model_display_name", "dataset_name"))
+            or isinstance(value.get("feature_count"), bool) or not isinstance(value.get("feature_count"), int) or value["feature_count"] < 1
+            or isinstance(value.get("folds"), bool) or not isinstance(value.get("folds"), int) or value["folds"] < 1
+            or not all(cls._number(value.get(key)) for key in ("oof_gini", "oof_roc_auc", "oof_pr_auc"))
+        ):
+            raise AnalystReportIntegrityError()
 
     @classmethod
     def _company(cls, company: object, source: dict[str, Any], decision: dict[str, Any], row_id: str) -> None:

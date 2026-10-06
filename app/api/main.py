@@ -604,6 +604,7 @@ class AnalystReportResponse(BaseModel):
     created_at: str
     source: dict[str, Any]
     decision_context: dict[str, Any]
+    model_summary: dict[str, Any] | None = None
     selection: dict[str, Any]
     companies: list[dict[str, Any]]
 
@@ -1557,7 +1558,7 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             report_id=report["report_id"], created_at=report["created_at"], generation_state=state,
         )
 
-    @api.get("/api/v1/analyst-reports/{report_id}", response_model=AnalystReportResponse)
+    @api.get("/api/v1/analyst-reports/{report_id}", response_model=AnalystReportResponse, response_model_exclude_none=True)
     def get_analyst_report(report_id: str) -> AnalystReportResponse:
         try:
             return AnalystReportResponse(**analyst_reports.get(report_id))
