@@ -37,6 +37,7 @@ from komus_risk.application import (
     SavedInferenceInterpretationUnavailable,
     AnalystReportError,
 )
+from komus_risk.application.analyst_report_export import project_report, report_docx, report_pdf
 from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.oof_explanation import OOFExplanationError
 from komus_risk.application.dataset_onboarding import (
@@ -1108,7 +1109,7 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         }
         return HTTPException(
             status_code=status_by_code.get(exc.code, 500),
-            detail={"code": exc.code, "message": "Analyst report could not be safely resolved."},
+            detail={"code": exc.code, "message": "Не удалось безопасно получить аналитический отчёт."},
         )
 
     @api.get("/api/v1/model-versions", response_model=ModelVersionListResponse)
@@ -1564,6 +1565,36 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             raise analyst_report_error(error) from None
         except Exception:
             raise analyst_report_error(AnalystReportError("ANALYST_REPORT_INTEGRITY_ERROR")) from None
+
+    @api.get("/api/v1/analyst-reports/{report_id}/pdf")
+    def download_analyst_report_pdf(report_id: str) -> Response:
+        try:
+            projection = project_report(analyst_reports.get(report_id))
+            content = report_pdf(projection)
+        except AnalystReportError as error:
+            raise analyst_report_error(error) from None
+        except Exception:
+            raise analyst_report_error(AnalystReportError("ANALYST_REPORT_INTEGRITY_ERROR")) from None
+        return Response(
+            content=content,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="AXION_report_{report_id[:12]}.pdf"'},
+        )
+
+    @api.get("/api/v1/analyst-reports/{report_id}/docx")
+    def download_analyst_report_docx(report_id: str) -> Response:
+        try:
+            projection = project_report(analyst_reports.get(report_id))
+            content = report_docx(projection)
+        except AnalystReportError as error:
+            raise analyst_report_error(error) from None
+        except Exception:
+            raise analyst_report_error(AnalystReportError("ANALYST_REPORT_INTEGRITY_ERROR")) from None
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f'attachment; filename="AXION_report_{report_id[:12]}.docx"'},
+        )
 
     @api.get("/api/v1/result/objects", response_model=ResultObjectListResponse)
     def get_current_result_objects(

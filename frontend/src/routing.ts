@@ -27,7 +27,8 @@ export type ModelInferenceRoute = `${typeof routes.models}/${string}/inference`
 export type InferenceResultRoute = `#/inference-results/${string}`
 export type SavedInferenceObjectDetailRoute = `#/inference-results/${string}/objects/${string}`
 export type SavedInferenceReportDraftRoute = `#/inference-results/${string}/report-draft`
-export type AppRoute = CanonicalRoute | ObjectDetailRoute | ModelDetailRoute | ModelInferenceRoute | InferenceResultRoute | SavedInferenceObjectDetailRoute | SavedInferenceReportDraftRoute
+export type AnalystReportRoute = `#/analyst-reports/${string}`
+export type AppRoute = CanonicalRoute | ObjectDetailRoute | ModelDetailRoute | ModelInferenceRoute | InferenceResultRoute | SavedInferenceObjectDetailRoute | SavedInferenceReportDraftRoute | AnalystReportRoute
 
 type ObjectsOutcome = 'TP' | 'TN' | 'FP' | 'FN'
 type ObjectsTarget = 'ANY' | 'POSITIVE' | 'NEGATIVE'
@@ -53,6 +54,7 @@ const quickViews = new Set<Exclude<ObjectsQuickView, null>>(['errors', 'high', '
 const objectDetailPrefix = `${routes.resultObjects}/`
 const modelDetailPrefix = `${routes.models}/`
 const inferenceResultPrefix = '#/inference-results/'
+const analystReportPrefix = '#/analyst-reports/'
 
 function quickViewMatchesQuery(quickView: ObjectsQuickView, outcomes: ObjectsOutcome[], sort: ObjectsSort) {
   if (quickView === null) return false
@@ -189,6 +191,22 @@ export function isSavedInferenceReportDraftRoute(route: string): route is SavedI
   return savedInferenceReportDraftResultIdFromRoute(route) !== null
 }
 
+export function buildAnalystReportRoute(reportId: string): AnalystReportRoute {
+  return `${analystReportPrefix}${encodeURIComponent(reportId)}` as AnalystReportRoute
+}
+
+export function analystReportIdFromRoute(route: string): string | null {
+  const path = route.split('?', 1)[0]
+  if (!path.startsWith(analystReportPrefix)) return null
+  const encoded = path.slice(analystReportPrefix.length)
+  if (!encoded || encoded.includes('/')) return null
+  try { return decodeURIComponent(encoded) || null } catch { return null }
+}
+
+export function isAnalystReportRoute(route: string): route is AnalystReportRoute {
+  return analystReportIdFromRoute(route) !== null
+}
+
 export function savedInferenceObjectDetailFromRoute(route: string): { inferenceResultId: string; rowId: string; threshold: number } | null {
   const path = route.split('?', 1)[0]
   if (!path.startsWith(inferenceResultPrefix)) return null
@@ -222,6 +240,7 @@ export function currentRoute(): AppRoute | null {
   const path = hashPath()
   if (knownRoutes.has(path)) return path as CanonicalRoute
   if (isSavedInferenceReportDraftRoute(window.location.hash)) return path as SavedInferenceReportDraftRoute
+  if (isAnalystReportRoute(window.location.hash)) return path as AnalystReportRoute
   if (isSavedInferenceObjectDetailRoute(window.location.hash)) return path as SavedInferenceObjectDetailRoute
   return isObjectDetailRoute(path) || isModelInferenceRoute(path) || isInferenceResultRoute(path) || isModelDetailRoute(path) ? path : null
 }
@@ -298,7 +317,7 @@ export function replaceObjects(state: ObjectsQueryState) {
 }
 
 export function guardedRoute(route: AppRoute, session: NativeSession, allowResultThreshold = false, allowResultObjects = false): AppRoute {
-  if (route === routes.models || route === routes.history || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route)) return route
+  if (route === routes.models || route === routes.history || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route) || isAnalystReportRoute(route)) return route
   if (isObjectDetailRoute(route)) {
     return session.resume_route === routes.result ? route : session.resume_route
   }

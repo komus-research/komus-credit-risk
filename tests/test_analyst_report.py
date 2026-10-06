@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 from hashlib import sha256
+from io import BytesIO
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
+from zipfile import ZipFile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -166,6 +168,44 @@ def test_report_api_generates_then_returns_the_canonical_preview_document():
     preview = client.get(f"/api/v1/analyst-reports/{'a' * 64}")
     assert preview.status_code == 200
     assert preview.json() == report
+
+
+def test_report_exports_are_valid_and_keep_artifact_company_order():
+    from app.api.main import create_app
+
+    with TemporaryDirectory() as temp:
+        service, result, _drafts, _explanations, _interpretations, _reports_root = _service(Path(temp))
+        report, _ = service.generate(result.inference_result_id)
+        client = TestClient(create_app(analyst_report_service=service))
+
+        pdf = client.get(f"/api/v1/analyst-reports/{report['report_id']}/pdf")
+        assert pdf.status_code == 200
+        assert pdf.headers["content-type"].startswith("application/pdf")
+        assert pdf.content.startswith(b"%PDF-") and len(pdf.content) > 100
+
+        docx = client.get(f"/api/v1/analyst-reports/{report['report_id']}/docx")
+        assert docx.status_code == 200
+        assert docx.headers["content-type"].startswith("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        assert len(docx.content) > 100
+        with ZipFile(BytesIO(docx.content)) as archive:
+            document = archive.read("word/document.xml").decode("utf-8")
+        assert document.index("Alpha") < document.index("Beta")
+
+
+def test_report_export_missing_or_corrupt_report_fails_closed():
+    from app.api.main import create_app
+
+    with TemporaryDirectory() as temp:
+        service, result, _drafts, _explanations, _interpretations, reports_root = _service(Path(temp))
+        report, _ = service.generate(result.inference_result_id)
+        client = TestClient(create_app(analyst_report_service=service))
+        assert client.get("/api/v1/analyst-reports/missing/pdf").status_code == 404
+        report_path = reports_root / report["report_id"] / "report.json"
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+        payload["companies"][0]["score"] = 0.7
+        report_path.write_text(json.dumps(payload), encoding="utf-8")
+        _rewrite_manifest(report_path)
+        assert client.get(f"/api/v1/analyst-reports/{report['report_id']}/docx").status_code == 409
 
 
 def _rewrite_manifest(report_path: Path) -> None:

@@ -125,6 +125,16 @@ export type SavedInferenceReportDraft = {
   schema_version: 1; inference_result_id: string; selected_row_ids: string[]; created_at: string | null; updated_at: string | null; threshold: number
   items: SavedInferenceReportDraftItem[]
 }
+export type AnalystReportContribution = { feature_id: string; column_name: string; display_name_ru: string | null; raw_value: number; shap_value: number; direction: 'increases_output' | 'decreases_output' | 'neutral' }
+export type AnalystReportCompany = { row_id: string; identifier: string; subject_name: string | null; score: number; threshold: number; position: 'ABOVE' | 'BELOW'; report_visible_contributions: AnalystReportContribution[]; role_interpretations: { role: string; text: string }[] }
+export type AnalystReport = {
+  schema_version: 1; report_id: string; content_hash: string; created_at: string
+  source: { inference_result_id: string; model_version: string }
+  decision_context: { threshold: number }
+  selection: { selected_row_ids: string[] }
+  companies: AnalystReportCompany[]
+}
+export type AnalystReportGeneration = { report_id: string; created_at: string; generation_state: 'CREATED' | 'REUSED' }
 export type ProjectWorkspace = {
   schema_version: 1; project_id: string; name: string; work_type: 'SAVED_MODEL_INFERENCE'; inference_result_id: string
   model_version_id: string; source_fingerprint: string | null; model_display_name: string | null; source_display_name: string | null
@@ -238,4 +248,29 @@ export function addSavedInferenceReportRow(inferenceResultId: string, rowId: str
 
 export function removeSavedInferenceReportRow(inferenceResultId: string, rowId: string) {
   return request<SavedInferenceReportDraft>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/report-draft/rows/${encodeURIComponent(rowId)}`, { method: 'DELETE' })
+}
+
+export function generateAnalystReport(inferenceResultId: string) {
+  return request<AnalystReportGeneration>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/report`, { method: 'POST' })
+}
+
+export function getAnalystReport(reportId: string) {
+  return request<AnalystReport>(`/api/v1/analyst-reports/${encodeURIComponent(reportId)}`)
+}
+
+export async function downloadAnalystReport(reportId: string, format: 'pdf' | 'docx') {
+  const fallback = 'Не удалось скачать аналитический отчёт.'
+  let response: Response
+  try { response = await fetch(`/api/v1/analyst-reports/${encodeURIComponent(reportId)}/${format}`) }
+  catch { throw new InferenceAPIError(fallback) }
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null) as ErrorPayload | null
+    throw new InferenceAPIError(payload?.detail?.message ?? fallback, payload?.detail?.code ?? null)
+  }
+  const blob = await response.blob()
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `AXION_report_${reportId.slice(0, 12)}.${format}`
+  document.body.appendChild(link); link.click(); link.remove()
+  URL.revokeObjectURL(link.href)
 }
