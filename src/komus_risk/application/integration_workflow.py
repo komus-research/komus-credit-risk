@@ -162,6 +162,18 @@ class IntegrationWorkflowService:
         )
         return self.model_version_store.load(summary.model_version_id)
 
+    def inspect_inference_input(
+        self,
+        *,
+        loaded_model_version: LoadedModelVersion,
+        snapshot: TabularSnapshot,
+    ):
+        """Validate targetless input without invoking the saved predictor."""
+        return self.model_inference_service.inspect(
+            loaded_model_version=loaded_model_version,
+            snapshot=snapshot,
+        )
+
     def predict(
         self,
         *,

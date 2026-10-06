@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from app.bootstrap import SUPPORTED_PROTOCOL, SupportedProtocol, _repository_root
 from app.experiment_runtime import compose_experiment_models
 from app.result_interpreter_runtime import compose_result_interpreter_runtime
+from app.upload_staging import cleanup_staged_upload
 from komus_risk.application import (
     ExperimentApplicationService,
     FinalModelTrainingService,
@@ -14,6 +15,7 @@ from komus_risk.application import (
     IntegrationWorkflowService,
     ModelLibraryService,
     ModelInferenceService,
+    SavedModelInferenceService,
     ResultInterpreterPromptLoader,
     ResultInterpreterService,
 )
@@ -21,6 +23,7 @@ from komus_risk.artifacts import (
     ExperimentArtifactStore,
     ModelLibraryRecordStore,
     ModelVersionStore,
+    SavedModelInferenceResultStore,
 )
 from komus_risk.application.history import AnalysisHistoryService
 from komus_risk.application.oof_explanation import OOFExplanationService
@@ -43,6 +46,7 @@ class NativeExperimentRuntime:
     artifact_store: ExperimentArtifactStore
     integration_workflow_service: IntegrationWorkflowService
     model_library_service: ModelLibraryService
+    saved_model_inference_service: SavedModelInferenceService
     supported_protocol: SupportedProtocol
     prepared_context_authority: PreparedDatasetContextAuthority
 
@@ -96,6 +100,12 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         integration_workflow_service=integration_workflow_service,
         experiment_artifact_store=artifact_store,
     )
+    saved_model_inference_service = SavedModelInferenceService(
+        model_library_service=model_library_service,
+        model_inference_service=integration_workflow_service.model_inference_service,
+        result_store=SavedModelInferenceResultStore(store_root / "inference_results"),
+        cleanup_upload=cleanup_staged_upload,
+    )
     return NativeExperimentRuntime(
         planning_service=ExperimentPlanningService(
             model_plugin_registry=plugins,
@@ -117,6 +127,7 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         artifact_store=artifact_store,
         integration_workflow_service=integration_workflow_service,
         model_library_service=model_library_service,
+        saved_model_inference_service=saved_model_inference_service,
         supported_protocol=SUPPORTED_PROTOCOL,
         prepared_context_authority=authority,
     )

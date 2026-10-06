@@ -54,7 +54,21 @@ from .local_explanation import (
     LocalExplanationService,
     LocalFeatureContribution,
 )
-from .model_inference import ModelInferenceService, PredictionBatch, PredictionRow
+from .model_inference import (
+    InferenceCompatibility,
+    InferenceInputError,
+    ModelInferenceService,
+    PredictionBatch,
+    PredictionRow,
+    PreparedInferenceInput,
+)
+from .saved_model_inference import (
+    InferencePreflight,
+    InferencePreparationError,
+    InferenceRun,
+    SavedModelInferenceError,
+    SavedModelInferenceService,
+)
 from .oof_explanation import (
     GlobalOOFExplanation,
     GlobalOOFFeatureImportance,
@@ -129,7 +143,15 @@ __all__ = [
     "LocalExplanationProvider",
     "LocalExplanationService",
     "LocalFeatureContribution",
+    "InferenceCompatibility",
+    "InferenceInputError",
     "ModelInferenceService",
+    "PreparedInferenceInput",
+    "SavedModelInferenceError",
+    "InferencePreparationError",
+    "InferencePreflight",
+    "InferenceRun",
+    "SavedModelInferenceService",
     "OOFExplanationError",
     "OOFExplanationService",
     "GlobalOOFExplanation",

@@ -28,6 +28,9 @@ from komus_risk.application import (
     ModelSourceResultUnavailable,
     ModelVersionIntegrityError,
     ModelVersionNotFound,
+    InferenceInputError,
+    InferencePreparationError,
+    SavedModelInferenceError,
 )
 from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.oof_explanation import OOFExplanationError
@@ -42,7 +45,14 @@ from komus_risk.application.native_session import (
     NativeSessionTransitionError,
 )
 from komus_risk.planning import ExperimentPlanningService
-from app.upload_staging import cleanup_staged_upload, stage_upload_bytes
+from komus_risk.data import TabularReadError, TabularReader
+from app.upload_staging import (
+    EmptyUploadError,
+    UnsupportedUploadExtension,
+    UploadReadError,
+    cleanup_staged_upload,
+    stage_upload_bytes,
+)
 from app.native_runtime import create_native_experiment_runtime
 
 SESSION_COOKIE_NAME = "axion_session"
@@ -325,6 +335,37 @@ class ModelVersionRenameResponse(BaseModel):
     display_name: str
 
 
+class SavedModelInferencePreflightResponse(BaseModel):
+    preparation_id: str
+    model_version_id: str
+    experiment_artifact_id: str
+    model_display_name: str
+    display_name: str
+    display_version: str
+    training_dataset_name: str
+    source_display_name: str
+    source_format: str
+    source_file_sha256: str
+    source_fingerprint: str
+    row_count: int
+    column_count: int
+    identifier_column: str
+    required_feature_count: int
+    required_feature_columns: list[str]
+    ignored_column_count: int
+    ignored_columns: list[str]
+    status: Literal["COMPATIBLE"]
+    checks: dict[str, Literal["PASS"]]
+
+
+class SavedModelInferenceRunResponse(BaseModel):
+    run_state: Literal["CREATED", "REUSED"]
+    inference_result_id: str
+    model_version_id: str
+    source_display_name: str
+    created_at: str
+
+
 class ResultOverviewResponse(BaseModel):
     summary: ResultSummaryResponse
     threshold: ResultThresholdResponse
@@ -485,10 +526,11 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None, saved_model_inference_service: Any | None = None) -> FastAPI:
     """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
+    tabular_reader = TabularReader()
     runtime = create_native_experiment_runtime()
     result_service = oof_result_service or runtime.oof_result_service
     explanation_service = oof_explanation_service or runtime.oof_explanation_service
@@ -501,6 +543,11 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         model_library_service
         if model_library_service is not None
         else runtime.model_library_service
+    )
+    saved_inference = (
+        saved_model_inference_service
+        if saved_model_inference_service is not None
+        else runtime.saved_model_inference_service
     )
     artifact_store = experiment_artifact_store or runtime.artifact_store
     context_authority = prepared_context_authority or runtime.prepared_context_authority
@@ -706,6 +753,51 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         )
         return HTTPException(status_code=status, detail={"code": exc.code, "message": message})
 
+    def saved_inference_error(exc: SavedModelInferenceError) -> HTTPException:
+        status_by_code = {
+            "INFERENCE_SOURCE_UNSUPPORTED_FORMAT": 415,
+            "INFERENCE_SOURCE_UNREADABLE": 422,
+            "INFERENCE_PHYSICAL_HEADERS_INVALID": 422,
+            "INFERENCE_SOURCE_EMPTY": 422,
+            "INFERENCE_IDENTIFIER_MISSING": 422,
+            "INFERENCE_REQUIRED_FEATURE_MISSING": 422,
+            "INFERENCE_DTYPE_INCOMPATIBLE": 422,
+            "INFERENCE_VALUES_INVALID": 422,
+            "INFERENCE_PREPARATION_STALE": 409,
+            "INFERENCE_RUN_IN_PROGRESS": 409,
+            "MODEL_VERSION_INTEGRITY_ERROR": 409,
+            "MODEL_SOURCE_RESULT_UNAVAILABLE": 409,
+            "MODEL_INFERENCE_UNSUPPORTED": 409,
+            "INFERENCE_FAILED": 500,
+            "INFERENCE_RESULT_PERSISTENCE_FAILED": 500,
+            "INFERENCE_INTERNAL_ERROR": 500,
+        }
+        messages = {
+            "INFERENCE_SOURCE_UNSUPPORTED_FORMAT": "Формат файла не поддерживается для прогноза.",
+            "INFERENCE_SOURCE_UNREADABLE": "Не удалось безопасно прочитать файл для прогноза.",
+            "INFERENCE_PHYSICAL_HEADERS_INVALID": "Заголовки колонок в новых данных некорректны.",
+            "INFERENCE_SOURCE_EMPTY": "В новых данных нет объектов для прогноза.",
+            "INFERENCE_IDENTIFIER_MISSING": "В новых данных отсутствует обязательный идентификатор или есть пустое значение.",
+            "INFERENCE_REQUIRED_FEATURE_MISSING": "В новых данных отсутствует обязательный признак модели.",
+            "INFERENCE_DTYPE_INCOMPATIBLE": "Тип одного из обязательных признаков несовместим с моделью.",
+            "INFERENCE_VALUES_INVALID": "Обязательные признаки содержат недопустимые значения.",
+            "INFERENCE_PREPARATION_STALE": "Проверенные данные для прогноза устарели или недоступны. Загрузите файл заново.",
+            "INFERENCE_RUN_IN_PROGRESS": "Расчёт прогноза уже выполняется.",
+            "MODEL_VERSION_INTEGRITY_ERROR": "Сохранённая модель не прошла проверку целостности.",
+            "MODEL_SOURCE_RESULT_UNAVAILABLE": "Не удалось подтвердить исходный результат сохранённой модели.",
+            "MODEL_INFERENCE_UNSUPPORTED": "Эту сохранённую модель нельзя безопасно использовать для прогноза.",
+            "INFERENCE_FAILED": "Не удалось выполнить прогноз сохранённой моделью.",
+            "INFERENCE_RESULT_PERSISTENCE_FAILED": "Не удалось безопасно сохранить результат прогноза.",
+            "INFERENCE_INTERNAL_ERROR": "Не удалось безопасно выполнить прогноз сохранённой моделью.",
+        }
+        return HTTPException(
+            status_code=status_by_code.get(exc.code, 500),
+            detail={
+                "code": exc.code,
+                "message": messages.get(exc.code, "Не удалось безопасно выполнить прогноз сохранённой моделью."),
+            },
+        )
+
     @api.get("/api/v1/model-versions", response_model=ModelVersionListResponse)
     def list_model_versions(
         offset: str = "0",
@@ -758,6 +850,115 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             model_version_id=record.model_version_id,
             display_name=record.display_name,
         )
+
+    @api.post("/api/v1/model-versions/{model_version_id}/inference/preflight", response_model=SavedModelInferencePreflightResponse)
+    async def preflight_saved_model_inference(
+        model_version_id: str,
+        response: Response,
+        file: Annotated[UploadFile, File(...)],
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> SavedModelInferencePreflightResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        staged = None
+        try:
+            upload_bytes = await file.read()
+            staged = await run_in_threadpool(stage_upload_bytes, file.filename or "inference-data", upload_bytes)
+            snapshot = await run_in_threadpool(tabular_reader.read, staged.local_path)
+            preflight = await run_in_threadpool(
+                saved_inference.preflight,
+                session_owner=resolved_session_id,
+                model_version_id=model_version_id,
+                staged_upload=staged,
+                snapshot=snapshot,
+            )
+        except ModelLibraryError as error:
+            cleanup_staged_upload(staged)
+            raise model_library_error(error) from None
+        except UnsupportedUploadExtension:
+            cleanup_staged_upload(staged)
+            raise saved_inference_error(SavedModelInferenceError("INFERENCE_SOURCE_UNSUPPORTED_FORMAT")) from None
+        except (EmptyUploadError, UploadReadError):
+            cleanup_staged_upload(staged)
+            raise saved_inference_error(SavedModelInferenceError("INFERENCE_SOURCE_UNREADABLE")) from None
+        except InferenceInputError as error:
+            cleanup_staged_upload(staged)
+            raise saved_inference_error(SavedModelInferenceError(error.code)) from None
+        except SavedModelInferenceError as error:
+            cleanup_staged_upload(staged)
+            raise saved_inference_error(error) from None
+        except TabularReadError as error:
+            cleanup_staged_upload(staged)
+            code = "INFERENCE_SOURCE_UNSUPPORTED_FORMAT" if error.code == "unsupported_format" else "INFERENCE_SOURCE_UNREADABLE"
+            raise saved_inference_error(SavedModelInferenceError(code)) from None
+        except Exception:
+            cleanup_staged_upload(staged)
+            raise saved_inference_error(SavedModelInferenceError("INFERENCE_INTERNAL_ERROR")) from None
+        return SavedModelInferencePreflightResponse(
+            preparation_id=preflight.preparation_id,
+            model_version_id=preflight.model_version_id,
+            experiment_artifact_id=preflight.experiment_artifact_id,
+            model_display_name=preflight.model_display_name,
+            display_name=preflight.display_name,
+            display_version=preflight.display_version,
+            training_dataset_name=preflight.training_dataset_name,
+            source_display_name=preflight.source_display_name,
+            source_format=preflight.source_format,
+            source_file_sha256=preflight.source_file_sha256,
+            source_fingerprint=preflight.source_fingerprint,
+            row_count=preflight.row_count,
+            column_count=preflight.column_count,
+            identifier_column=preflight.identifier_column,
+            required_feature_count=len(preflight.required_feature_columns),
+            required_feature_columns=list(preflight.required_feature_columns),
+            ignored_column_count=len(preflight.ignored_columns),
+            ignored_columns=list(preflight.ignored_columns),
+            status="COMPATIBLE",
+            checks={name: "PASS" for name in ("required_features", "input_types", "feature_binding", "rows", "identifier")},
+        )
+
+    @api.post("/api/v1/model-versions/{model_version_id}/inference/{preparation_id}/run", response_model=SavedModelInferenceRunResponse)
+    async def run_saved_model_inference(
+        model_version_id: str,
+        preparation_id: str,
+        response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> SavedModelInferenceRunResponse:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        try:
+            result = await run_in_threadpool(
+                saved_inference.run,
+                session_owner=resolved_session_id,
+                model_version_id=model_version_id,
+                preparation_id=preparation_id,
+            )
+        except ModelLibraryError as error:
+            raise model_library_error(error) from None
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        except Exception:
+            raise saved_inference_error(SavedModelInferenceError("INFERENCE_FAILED")) from None
+        return SavedModelInferenceRunResponse(
+            run_state=result.run_state,
+            inference_result_id=result.inference_result_id,
+            model_version_id=result.model_version_id,
+            source_display_name=result.source_display_name,
+            created_at=result.created_at,
+        )
+
+    @api.delete("/api/v1/model-versions/{model_version_id}/inference/{preparation_id}", status_code=204)
+    async def cancel_saved_model_inference(
+        model_version_id: str, preparation_id: str, response: Response,
+        session_id: Annotated[str | None, Cookie(alias=SESSION_COOKIE_NAME)] = None,
+    ) -> Response:
+        resolved_session_id, _ = resolve_session(response, session_id)
+        try:
+            await run_in_threadpool(
+                saved_inference.cancel, session_owner=resolved_session_id,
+                model_version_id=model_version_id, preparation_id=preparation_id,
+            )
+        except SavedModelInferenceError as error:
+            raise saved_inference_error(error) from None
+        return Response(status_code=204)
 
     @api.get("/api/v1/result/objects", response_model=ResultObjectListResponse)
     def get_current_result_objects(

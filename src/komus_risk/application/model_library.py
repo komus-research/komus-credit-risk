@@ -186,6 +186,25 @@ class ModelLibraryService:
             "technical_provenance": technical_provenance,
         })
 
+    def load_for_inference(self, model_version_id: str):
+        """Load one exact saved ModelVersion only after trusted library binding checks."""
+        if not isinstance(model_version_id, str) or not model_version_id.strip():
+            raise ModelVersionNotFound()
+        record = next((item for item in self._records() if item.model_version_id == model_version_id), None)
+        if record is None:
+            raise ModelVersionNotFound()
+        self._trusted_join(record)
+        try:
+            loaded = self.model_version_store.load(model_version_id)
+        except Exception as error:
+            raise ModelVersionIntegrityError() from error
+        if (
+            loaded.summary.model_version_id != record.model_version_id
+            or loaded.summary.experiment_artifact_id != record.experiment_artifact_id
+        ):
+            raise ModelVersionIntegrityError()
+        return record, loaded
+
     def rename(self, model_version_id: str, display_name: str) -> ModelLibraryRecord:
         if not isinstance(model_version_id, str) or not model_version_id.strip():
             raise ModelVersionNotFound()
