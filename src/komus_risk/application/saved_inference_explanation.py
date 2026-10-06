@@ -15,6 +15,8 @@ import pandas as pd
 from komus_risk.artifacts import (
     InferenceResultIntegrityError,
     InferenceResultNotFoundError,
+    SavedInferenceInterpretationRecord,
+    SavedInferenceInterpretationStore,
     SavedInferenceObjectEvidence,
     SavedModelInferenceResultStore,
 )
@@ -106,11 +108,13 @@ class SavedInferenceExplanationService:
     def __init__(
         self, *, result_store: SavedModelInferenceResultStore, model_library_service: Any,
         integration_workflow_service: Any, experiment_artifact_store: Any | None = None,
+        interpretation_store: SavedInferenceInterpretationStore | None = None,
     ) -> None:
         self.result_store = result_store
         self.model_library_service = model_library_service
         self.integration_workflow_service = integration_workflow_service
         self.experiment_artifact_store = experiment_artifact_store
+        self.interpretation_store = interpretation_store
         self._cache: OrderedDict[tuple[str, str, str, str, str, str], Any] = OrderedDict()
         self._cache_lock = RLock()
 
@@ -195,7 +199,7 @@ class SavedInferenceExplanationService:
         except Exception as error:
             raise SavedModelInferenceError("RESULT_INTERPRETER_ERROR") from error
         result = outcome.response
-        return SavedInferenceInterpretation(
+        interpretation = SavedInferenceInterpretation(
             inference_result_id=evidence.inference_result_id,
             model_version_id=evidence.model_version_id,
             row_id=evidence.row_id,
@@ -206,6 +210,28 @@ class SavedInferenceExplanationService:
             created_at=result.created_at,
             response_hash=result.response_hash,
         )
+        if self.interpretation_store is not None:
+            try:
+                self.interpretation_store.save(SavedInferenceInterpretationRecord(
+                    inference_result_id=interpretation.inference_result_id,
+                    model_version_id=interpretation.model_version_id,
+                    row_id=interpretation.row_id,
+                    explanation_id=interpretation.explanation_id,
+                    evidence_hash=interpretation.evidence_hash,
+                    role=interpretation.role,
+                    text=interpretation.text,
+                    created_at=interpretation.created_at,
+                    response_hash=interpretation.response_hash,
+                    response_content={
+                        "request_hash": result.request_hash, "prompt_id": result.prompt_id,
+                        "prompt_version": result.prompt_version, "prompt_hash": result.prompt_hash,
+                        "interpreter_id": result.interpreter_id, "interpreter_model": result.interpreter_model,
+                        "text": result.text,
+                    },
+                ))
+            except Exception as error:
+                raise SavedModelInferenceError("INFERENCE_INTERPRETATION_PERSISTENCE_ERROR") from error
+        return interpretation
 
     def _trusted_local_evidence(self, inference_result_id: str, row_id: str) -> tuple[Any, Any, PredictionBatch, Any]:
         """Build or retrieve LocalExplanationEvidence from immutable evidence only."""

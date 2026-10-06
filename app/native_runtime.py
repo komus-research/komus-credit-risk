@@ -17,6 +17,7 @@ from komus_risk.application import (
     ModelInferenceService,
     SavedModelInferenceService,
     SavedInferenceExplanationService,
+    AnalystReportService,
     ResultInterpreterPromptLoader,
     ResultInterpreterService,
 )
@@ -26,6 +27,8 @@ from komus_risk.artifacts import (
     ModelVersionStore,
     SavedModelInferenceResultStore,
     SavedInferenceResultViewConfigurationStore,
+    AnalystReportStore,
+    SavedInferenceInterpretationStore,
 )
 from komus_risk.artifacts.inference_view_store import SavedInferenceReportDraftStore
 from komus_risk.application.history import AnalysisHistoryService
@@ -51,6 +54,7 @@ class NativeExperimentRuntime:
     model_library_service: ModelLibraryService
     saved_model_inference_service: SavedModelInferenceService
     saved_inference_explanation_service: SavedInferenceExplanationService
+    analyst_report_service: AnalystReportService
     supported_protocol: SupportedProtocol
     prepared_context_authority: PreparedDatasetContextAuthority
 
@@ -112,11 +116,21 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         report_draft_store=SavedInferenceReportDraftStore(store_root / "inference_report_drafts"),
         cleanup_upload=cleanup_staged_upload,
     )
+    interpretation_store = SavedInferenceInterpretationStore(store_root / "inference_interpretations")
     saved_inference_explanation_service = SavedInferenceExplanationService(
         result_store=SavedModelInferenceResultStore(store_root / "inference_results"),
         model_library_service=model_library_service,
         integration_workflow_service=integration_workflow_service,
         experiment_artifact_store=artifact_store,
+        interpretation_store=interpretation_store,
+    )
+    analyst_report_service = AnalystReportService(
+        result_store=SavedModelInferenceResultStore(store_root / "inference_results"),
+        draft_store=SavedInferenceReportDraftStore(store_root / "inference_report_drafts"),
+        explanation_service=saved_inference_explanation_service,
+        model_library_service=model_library_service,
+        interpretation_store=interpretation_store,
+        report_store=AnalystReportStore(store_root / "analyst_reports"),
     )
     return NativeExperimentRuntime(
         planning_service=ExperimentPlanningService(
@@ -141,6 +155,7 @@ def create_native_experiment_runtime() -> NativeExperimentRuntime:
         model_library_service=model_library_service,
         saved_model_inference_service=saved_model_inference_service,
         saved_inference_explanation_service=saved_inference_explanation_service,
+        analyst_report_service=analyst_report_service,
         supported_protocol=SUPPORTED_PROTOCOL,
         prepared_context_authority=authority,
     )

@@ -84,6 +84,7 @@ from .saved_inference_explanation import (
     SavedInferenceInterpretationUnavailable,
     SavedInferenceObjectDetail,
 )
+from .analyst_report import AnalystReportError, AnalystReportService
 from .oof_explanation import (
     GlobalOOFExplanation,
     GlobalOOFFeatureImportance,
@@ -176,6 +177,8 @@ __all__ = [
     "SavedInferenceInterpretation",
     "SavedInferenceInterpretationUnavailable",
     "SavedInferenceObjectDetail",
+    "AnalystReportError",
+    "AnalystReportService",
     "OOFExplanationError",
     "OOFExplanationService",
     "GlobalOOFExplanation",

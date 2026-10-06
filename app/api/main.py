@@ -34,6 +34,7 @@ from komus_risk.application import (
     SavedModelInferenceError,
     SavedInferenceExplanationService,
     SavedInferenceInterpretationUnavailable,
+    AnalystReportError,
 )
 from komus_risk.application.oof_result import OOFResultError
 from komus_risk.application.oof_explanation import OOFExplanationError
@@ -545,6 +546,23 @@ class SavedInferenceReportDraftResponse(BaseModel):
     items: list[SavedInferenceReportDraftItemResponse]
 
 
+class AnalystReportGenerationResponse(BaseModel):
+    report_id: str
+    created_at: str
+    generation_state: Literal["CREATED", "REUSED"]
+
+
+class AnalystReportResponse(BaseModel):
+    schema_version: Literal[1]
+    report_id: str
+    content_hash: str
+    created_at: str
+    source: dict[str, Any]
+    decision_context: dict[str, Any]
+    selection: dict[str, Any]
+    companies: list[dict[str, Any]]
+
+
 class ResultOverviewResponse(BaseModel):
     summary: ResultSummaryResponse
     threshold: ResultThresholdResponse
@@ -705,7 +723,7 @@ def _progress_response(progress: DatasetInspectionProgress) -> DatasetInspection
     )
 
 
-def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None, saved_model_inference_service: Any | None = None, saved_inference_explanation_service: SavedInferenceExplanationService | None = None) -> FastAPI:
+def create_app(*, session_store: NativeSessionStore | None = None, planning_service: ExperimentPlanningService | None = None, oof_result_service: Any | None = None, oof_explanation_service: Any | None = None, prepared_context_authority: Any | None = None, experiment_artifact_store: Any | None = None, integration_workflow_service: Any | None = None, model_library_service: Any | None = None, saved_model_inference_service: Any | None = None, saved_inference_explanation_service: SavedInferenceExplanationService | None = None, analyst_report_service: Any | None = None) -> FastAPI:
     """Compose native experiment dependencies once, then expose them through thin routes."""
     store = session_store or NativeSessionStore()
     onboarding = NativeDatasetOnboardingService()
@@ -733,6 +751,7 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         if saved_inference_explanation_service is not None
         else runtime.saved_inference_explanation_service
     )
+    analyst_reports = analyst_report_service if analyst_report_service is not None else runtime.analyst_report_service
     artifact_store = experiment_artifact_store or runtime.artifact_store
     context_authority = prepared_context_authority or runtime.prepared_context_authority
     feature_selection = FeatureSelectionService()
@@ -1023,6 +1042,26 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 "code": exc.code,
                 "message": messages.get(exc.code, "Не удалось безопасно выполнить прогноз сохранённой моделью."),
             },
+        )
+
+    def analyst_report_error(exc: AnalystReportError) -> HTTPException:
+        status_by_code = {
+            "ANALYST_REPORT_DRAFT_NOT_FOUND": 404,
+            "ANALYST_REPORT_DRAFT_EMPTY": 409,
+            "ANALYST_REPORT_SOURCE_UNAVAILABLE": 404,
+            "ANALYST_REPORT_SELECTED_OBJECT_UNAVAILABLE": 404,
+            "ANALYST_REPORT_NOT_FOUND": 404,
+            "ANALYST_REPORT_DRAFT_INTEGRITY_ERROR": 409,
+            "ANALYST_REPORT_SOURCE_INTEGRITY_ERROR": 409,
+            "ANALYST_REPORT_LOCAL_EXPLANATION_INTEGRITY_ERROR": 409,
+            "ANALYST_REPORT_INTERPRETATION_INTEGRITY_ERROR": 409,
+            "ANALYST_REPORT_INTEGRITY_ERROR": 409,
+            "ANALYST_REPORT_LOCAL_EXPLANATION_UNAVAILABLE": 409,
+            "ANALYST_REPORT_PERSISTENCE_ERROR": 500,
+        }
+        return HTTPException(
+            status_code=status_by_code.get(exc.code, 500),
+            detail={"code": exc.code, "message": "Analyst report could not be safely resolved."},
         )
 
     @api.get("/api/v1/model-versions", response_model=ModelVersionListResponse)
@@ -1408,6 +1447,27 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             raise saved_inference_error(error) from None
         except Exception:
             raise saved_inference_error(SavedModelInferenceError()) from None
+
+    @api.post("/api/v1/inference-results/{inference_result_id}/report", response_model=AnalystReportGenerationResponse)
+    def generate_analyst_report(inference_result_id: str) -> AnalystReportGenerationResponse:
+        try:
+            report, state = analyst_reports.generate(inference_result_id)
+        except AnalystReportError as error:
+            raise analyst_report_error(error) from None
+        except Exception:
+            raise analyst_report_error(AnalystReportError("ANALYST_REPORT_PERSISTENCE_ERROR")) from None
+        return AnalystReportGenerationResponse(
+            report_id=report["report_id"], created_at=report["created_at"], generation_state=state,
+        )
+
+    @api.get("/api/v1/analyst-reports/{report_id}", response_model=AnalystReportResponse)
+    def get_analyst_report(report_id: str) -> AnalystReportResponse:
+        try:
+            return AnalystReportResponse(**analyst_reports.get(report_id))
+        except AnalystReportError as error:
+            raise analyst_report_error(error) from None
+        except Exception:
+            raise analyst_report_error(AnalystReportError("ANALYST_REPORT_INTEGRITY_ERROR")) from None
 
     @api.get("/api/v1/result/objects", response_model=ResultObjectListResponse)
     def get_current_result_objects(
