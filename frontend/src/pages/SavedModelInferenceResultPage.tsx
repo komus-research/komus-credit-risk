@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { addSavedInferenceReportRow, deleteSavedInferenceConfiguration, getInferenceProjectSuggestion, getSavedInferenceConfiguration, getSavedInferenceObjects, getSavedInferenceReportDraft, getSavedInferenceResult, putSavedInferenceConfiguration, removeSavedInferenceReportRow, saveInferenceProject, type SavedInferenceConfigurationResponse, type SavedInferenceObjects, type SavedInferenceReportDraft, type SavedInferenceViewConfiguration, type SavedInferenceResult } from '../api/inference'
-import { buildInferenceResultRoute, buildModelDetailRoute, buildSavedInferenceObjectDetailRoute, buildSavedInferenceReportDraftRoute, navigate } from '../routing'
+import { addSavedInferenceReportRow, deleteSavedInferenceConfiguration, generateAnalystReport, getInferenceProjectSuggestion, getSavedInferenceConfiguration, getSavedInferenceObjects, getSavedInferenceReportDraft, getSavedInferenceResult, putSavedInferenceConfiguration, removeSavedInferenceReportRow, saveInferenceProject, type SavedInferenceConfigurationResponse, type SavedInferenceObjects, type SavedInferenceReportDraft, type SavedInferenceViewConfiguration, type SavedInferenceResult } from '../api/inference'
+import { buildAnalystReportRoute, buildInferenceResultRoute, buildModelDetailRoute, buildSavedInferenceObjectDetailRoute, buildSavedInferenceReportDraftRoute, navigate } from '../routing'
 import { Icon } from '../components/Icon'
 import { SavedInferenceObjectDetailPage } from './SavedInferenceObjectDetailPage'
 
@@ -265,6 +265,7 @@ export function SavedInferenceReportDraftPage({ inferenceResultId }: { inference
   const [draft, setDraft] = useState<SavedInferenceReportDraft | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyRowId, setBusyRowId] = useState<string | null>(null)
+  const [generating, setGenerating] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -281,8 +282,18 @@ export function SavedInferenceReportDraftPage({ inferenceResultId }: { inference
     finally { setBusyRowId(null) }
   }
 
+  const generate = async () => {
+    if (!draft || draft.items.length === 0 || generating) return
+    setGenerating(true); setError(null)
+    try {
+      const generated = await generateAnalystReport(inferenceResultId)
+      navigate(buildAnalystReportRoute(generated.report_id))
+    } catch (reason) { setError(message(reason)) }
+    finally { setGenerating(false) }
+  }
+
   return <main className="workspace inference-result-workspace report-draft-workspace">
-    <header className="inference-result-header"><div><button className="back-action inference-back" onClick={() => navigate(buildInferenceResultRoute(inferenceResultId))}>← Назад к результату</button><p className="eyebrow">Модели / Анализ / Черновик отчёта</p><h1>Черновик отчёта</h1><p>{draft ? `${draft.items.length} ${draft.items.length === 1 ? 'компания' : 'компаний'}` : 'Загружаем выбранные компании…'}</p></div></header>
+    <header className="inference-result-header"><div><button className="back-action inference-back" onClick={() => navigate(buildInferenceResultRoute(inferenceResultId))}>← Назад к результату</button><p className="eyebrow">Модели / Анализ / Черновик отчёта</p><h1>Черновик отчёта</h1><p>{draft ? `${draft.items.length} ${draft.items.length === 1 ? 'компания' : 'компаний'}` : 'Загружаем выбранные компании…'}</p></div><div className="inference-result-actions"><button className="primary-action" disabled={!draft || draft.items.length === 0 || generating} onClick={() => void generate()}>{generating ? 'Формируем отчёт…' : 'Сформировать отчёт'}</button></div></header>
     {error && <p className="inference-inline-error" role="alert"><Icon name="warning" />{error}</p>}
     {!error && !draft && <section className="panel inference-state" aria-busy="true"><Icon name="clock" size={30} /><p>Загружаем черновик отчёта…</p></section>}
     {draft && <section className="panel report-draft-list"><header><div><h2>Компании в отчёте</h2><p>Сохранены ссылки на evidence выбранных объектов; аналитические данные не копируются в черновик.</p></div><span>{draft.items.length}</span></header>{draft.items.length === 0 ? <p className="report-draft-empty">Добавьте компании из панели объяснения результата.</p> : <ol>{draft.items.map((item, index) => <li key={item.row_id}><span className="report-draft-number">{index + 1}</span><div><strong>{item.identifier_display}</strong><small>Score: {scoreFormat.format(item.score)} · {item.position === 'ABOVE' ? '↑ Выше порога' : '↓ Ниже порога'} · Порог: {thresholdFormat.format(item.threshold)}</small></div><div className="report-draft-actions"><button className="secondary-action" onClick={() => navigate(buildSavedInferenceObjectDetailRoute(inferenceResultId, item.row_id, item.threshold))}>Открыть объект</button><button className="text-action" disabled={busyRowId !== null} onClick={() => void remove(item.row_id)}>{busyRowId === item.row_id ? 'Удаляем…' : 'Удалить'}</button></div></li>)}</ol>}</section>}
