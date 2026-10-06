@@ -125,6 +125,12 @@ export type SavedInferenceReportDraft = {
   schema_version: 1; inference_result_id: string; selected_row_ids: string[]; created_at: string | null; updated_at: string | null; threshold: number
   items: SavedInferenceReportDraftItem[]
 }
+export type ProjectWorkspace = {
+  schema_version: 1; project_id: string; name: string; work_type: 'SAVED_MODEL_INFERENCE'; inference_result_id: string
+  model_version_id: string; source_fingerprint: string | null; model_display_name: string | null; source_display_name: string | null
+  row_count: number | null; created_at: string; updated_at: string; last_opened_at: string | null; resumable: boolean; unavailable_code: string | null
+}
+export type ProjectWorkspaceList = { total_count: number; resumable_count: number; offset: number; limit: number; returned_count: number; items: ProjectWorkspace[] }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const fallback = 'Не удалось безопасно выполнить запрос к результату прогноза.'
@@ -162,6 +168,26 @@ export function runSavedModelInference(modelVersionId: string, preparationId: st
 
 export function getSavedInferenceResult(inferenceResultId: string, threshold: number) {
   return request<SavedInferenceResult>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}?threshold=${encodeURIComponent(String(threshold))}`)
+}
+
+export function getInferenceProjectSuggestion(inferenceResultId: string) {
+  return request<{ suggested_name: string }>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/project-suggestion`)
+}
+
+export function saveInferenceProject(inferenceResultId: string, name: string) {
+  return request<ProjectWorkspace>(`/api/v1/inference-results/${encodeURIComponent(inferenceResultId)}/project`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+}
+
+export function getProjects(offset = 0, limit = 50) {
+  return request<ProjectWorkspaceList>(`/api/v1/projects?offset=${encodeURIComponent(String(offset))}&limit=${encodeURIComponent(String(limit))}`)
+}
+
+export function getProject(projectId: string) {
+  return request<ProjectWorkspace>(`/api/v1/projects/${encodeURIComponent(projectId)}`)
+}
+
+export function openProject(projectId: string) {
+  return request<ProjectWorkspace>(`/api/v1/projects/${encodeURIComponent(projectId)}/open`, { method: 'POST' })
 }
 
 export function getSavedInferenceObjects(inferenceResultId: string, query: SavedInferenceObjectsQuery) {

@@ -124,6 +124,19 @@ def test_first_save_repeat_and_recomposition_are_idempotent() -> None:
         assert workflow.calls == 1
 
 
+def test_first_save_accepts_user_display_name_before_persistence() -> None:
+    with TemporaryDirectory() as temporary:
+        versions = _ModelVersions()
+        workflow = _Workflow(versions)
+        saved = _service(Path(temporary), versions, workflow).ensure_saved(
+            experiment_artifact_id="n" * 64, prepared_dataset_context=_context(),
+            decision_threshold=.37, display_name="  Модель для пилота  ",
+        )
+
+        assert saved.save_state == "CREATED"
+        assert saved.record.display_name == "Модель для пилота"
+
+
 def test_saved_threshold_is_immutable_and_legacy_record_is_completed_once() -> None:
     with TemporaryDirectory() as temporary:
         root = Path(temporary)

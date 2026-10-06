@@ -257,11 +257,11 @@ export async function getCurrentResult(): Promise<ResultOverview> {
   return response.json() as Promise<ResultOverview>
 }
 
-export async function saveCurrentResultModel(): Promise<ModelVersionSaveResponse> {
+export async function saveCurrentResultModel(displayName?: string): Promise<ModelVersionSaveResponse> {
   const fallback = 'Не удалось сохранить модель.'
   let response: Response
   try {
-    response = await fetch('/api/v1/result/model-version', { method: 'POST' })
+    response = await fetch('/api/v1/result/model-version', displayName === undefined ? { method: 'POST' } : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ display_name: displayName }) })
   } catch {
     throw new ModelVersionSaveAPIError(fallback)
   }

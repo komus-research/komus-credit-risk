@@ -26,6 +26,7 @@ from .integration_workflow import (
     ResultInterpreterRuntimeConfiguration,
 )
 from .model_library import ModelLibraryService, SavedModelResult
+from .project_workspace import ProjectWorkspaceError, ProjectWorkspacePage, ProjectWorkspaceService
 from .model_library_errors import (
     InvalidModelDisplayName,
     InvalidModelLibraryQuery,
@@ -189,6 +190,9 @@ __all__ = [
     "NativeSessionSnapshot",
     "NativeSessionStore",
     "ModelLibraryService",
+    "ProjectWorkspaceError",
+    "ProjectWorkspacePage",
+    "ProjectWorkspaceService",
     "ModelLibraryError",
     "InvalidModelDisplayName",
     "InvalidModelLibraryQuery",
