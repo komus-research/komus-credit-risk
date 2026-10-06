@@ -79,7 +79,13 @@ export type SavedInferenceViewConfiguration = {
   search: string
   updated_at: string | null
 }
-export type SavedInferenceConfigurationResponse = { saved: boolean; configuration: SavedInferenceViewConfiguration }
+export type SavedInferenceConfigurationResponse = {
+  saved: boolean
+  configuration: SavedInferenceViewConfiguration
+  model_decision_threshold: number | null
+  default_threshold: number
+  default_threshold_source: 'MODEL_DECISION' | 'TECHNICAL_DEFAULT'
+}
 export type SavedInferenceConfigurationInput = Pick<SavedInferenceViewConfiguration, 'threshold' | 'min_score' | 'max_score' | 'position_filter' | 'sort' | 'search'>
 export type SavedInferenceObjectsQuery = SavedInferenceViewConfiguration & { offset: number; limit: number }
 export type SavedInferenceObject = { row_id: string; source_row_position: number; identifier_display: string; score: number; above_threshold: boolean }

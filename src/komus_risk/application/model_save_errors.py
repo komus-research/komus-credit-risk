@@ -28,3 +28,19 @@ class ModelSaveBindingConflict(ModelSaveError):
 
 class ModelSaveIncompatible(ModelSaveError):
     code = "MODEL_SAVE_INCOMPATIBLE"
+
+
+class ModelDecisionThresholdRequired(ModelSaveError):
+    code = "MODEL_DECISION_THRESHOLD_REQUIRED"
+
+
+class ModelDecisionThresholdConflict(ModelSaveError):
+    code = "MODEL_DECISION_THRESHOLD_CONFLICT"
+
+
+class ModelDecisionThresholdBindingMismatch(ModelSaveError):
+    code = "MODEL_DECISION_THRESHOLD_BINDING_MISMATCH"
+
+
+class ModelDecisionThresholdIntegrityError(ModelSaveError):
+    code = "MODEL_DECISION_THRESHOLD_INTEGRITY_ERROR"

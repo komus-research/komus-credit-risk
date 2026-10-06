@@ -87,6 +87,9 @@ class SavedModelInferenceObjectPage:
 class SavedInferenceResultView:
     saved: bool
     configuration: dict[str, Any]
+    model_decision_threshold: float | None
+    default_threshold: float
+    default_threshold_source: str
 
 
 class SavedModelInferenceService:
@@ -255,7 +258,7 @@ class SavedModelInferenceService:
             raise SavedModelInferenceError("INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR") from error
         except InferenceViewConfigurationPersistenceError as error:
             raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR") from error
-        return self._view(stored, result.inference_result_id)
+        return self._view(stored, result)
 
     def put_view_configuration(self, inference_result_id: str, *, threshold: object, min_score: object, max_score: object,
                                position_filter: object, sort: object, search: object) -> SavedInferenceResultView:
@@ -270,13 +273,13 @@ class SavedModelInferenceService:
         try:
             existing = store.read(result.inference_result_id)
             if existing is not None and self._configuration_values(existing) == self._configuration_values(normalized):
-                return self._view(existing, result.inference_result_id)
+                return self._view(existing, result)
             store.save(normalized)
         except InferenceViewConfigurationIntegrityError as error:
             raise SavedModelInferenceError("INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR") from error
         except InferenceViewConfigurationPersistenceError as error:
             raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR") from error
-        return self._view(normalized, result.inference_result_id)
+        return self._view(normalized, result)
 
     def delete_view_configuration(self, inference_result_id: str) -> SavedInferenceResultView:
         result = self._read_result(inference_result_id)
@@ -286,7 +289,7 @@ class SavedModelInferenceService:
             raise SavedModelInferenceError("INFERENCE_VIEW_CONFIGURATION_INTEGRITY_ERROR") from error
         except InferenceViewConfigurationPersistenceError as error:
             raise SavedModelInferenceError("INFERENCE_INTERNAL_ERROR") from error
-        return self._view(None, result.inference_result_id)
+        return self._view(None, result)
 
     def _owned(self, owner: str, model: str, key: str) -> InferencePreparation | None:
         p = self._items.get(key); return p if p and p.session_owner == owner and p.model_version_id == model else None
@@ -356,16 +359,33 @@ class SavedModelInferenceService:
     def _configuration_values(value: SavedInferenceResultViewConfiguration) -> tuple[object, ...]:
         return (value.threshold, value.min_score, value.max_score, value.position_filter, value.sort, value.search)
 
-    @staticmethod
-    def _view(value: SavedInferenceResultViewConfiguration | None, inference_result_id: str) -> SavedInferenceResultView:
+    def _view(self, value: SavedInferenceResultViewConfiguration | None, result: SavedModelInferenceResult) -> SavedInferenceResultView:
+        model_threshold = self._model_decision_threshold(result)
+        default_threshold = model_threshold if model_threshold is not None else 0.50
+        source = "MODEL_DECISION" if model_threshold is not None else "TECHNICAL_DEFAULT"
         if value is None:
             return SavedInferenceResultView(False, {
-                "inference_result_id": inference_result_id, "threshold": 0.50, "min_score": 0.00, "max_score": 1.00,
+                "inference_result_id": result.inference_result_id, "threshold": default_threshold, "min_score": 0.00, "max_score": 1.00,
                 "position_filter": "ALL", "sort": "SCORE_DESC", "search": "", "updated_at": None,
-            })
+            }, model_threshold, default_threshold, source)
         return SavedInferenceResultView(True, {
             "inference_result_id": value.inference_result_id, "threshold": value.threshold,
             "min_score": value.min_score, "max_score": value.max_score,
             "position_filter": value.position_filter, "sort": value.sort, "search": value.search,
             "updated_at": value.updated_at,
-        })
+        }, model_threshold, default_threshold, source)
+
+    def _model_decision_threshold(self, result: SavedModelInferenceResult) -> float | None:
+        try:
+            record, _ = self.model_library_service.load_for_inference(result.model_version_id)
+            if record.model_version_id != result.model_version_id or record.experiment_artifact_id != result.experiment_artifact_id:
+                raise ValueError
+            if record.decision_threshold_state == "NOT_SET":
+                return None
+            if record.decision_threshold_state != "USER_APPLIED":
+                raise ValueError
+            return self._threshold(record.decision_threshold, "INFERENCE_RESULT_INTEGRITY_ERROR")
+        except SavedModelInferenceError:
+            raise
+        except Exception as error:
+            raise SavedModelInferenceError("INFERENCE_RESULT_INTEGRITY_ERROR") from error

@@ -64,6 +64,13 @@ class QualityTrainingStatus(StrEnum):
     FAIL = "FAIL"
 
 
+class ResultThresholdState(StrEnum):
+    """Whether the current Result threshold was explicitly accepted by a user."""
+
+    TECHNICAL_DEFAULT = "TECHNICAL_DEFAULT"
+    USER_APPLIED = "USER_APPLIED"
+
+
 class DatasetInspectionStage(StrEnum):
     """Truthful stages emitted around existing inspection operations."""
 
@@ -108,6 +115,16 @@ class NativeSessionSnapshot:
     data_substep: str
     has_meaningful_temporary_work: bool
     resume_route: str
+
+
+@dataclass(frozen=True, slots=True)
+class CurrentResultSaveBinding:
+    """One lock-protected snapshot used by the model-save boundary."""
+
+    artifact_id: str
+    prepared_context_id: str
+    threshold: float
+    threshold_state: ResultThresholdState
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +176,7 @@ class _NativeAnalysisSession:
     quality_training_started_monotonic: float | None = None
     quality_training_elapsed_seconds: float | None = None
     result_threshold: float = 0.5
+    result_threshold_state: ResultThresholdState = ResultThresholdState.TECHNICAL_DEFAULT
 
     def snapshot(self) -> NativeSessionSnapshot:
         return NativeSessionSnapshot(
@@ -247,6 +265,23 @@ class NativeSessionStore:
                 return None
             return session.prepared_context_id
 
+    def current_result_save_binding(self, session_id: str) -> CurrentResultSaveBinding | None:
+        """Atomically read the exact Result evidence used for a Save Model action."""
+        with self._lock:
+            session = self._session(session_id)
+            if (
+                session.resume_route() != "#/analysis/result"
+                or not session.quality_training_artifact_id
+                or not session.prepared_context_id
+            ):
+                return None
+            return CurrentResultSaveBinding(
+                artifact_id=session.quality_training_artifact_id,
+                prepared_context_id=session.prepared_context_id,
+                threshold=session.result_threshold,
+                threshold_state=session.result_threshold_state,
+            )
+
     def set_current_result_threshold(
         self, session_id: str, artifact_id: str, threshold: float
     ) -> bool:
@@ -264,6 +299,7 @@ class NativeSessionStore:
             ):
                 return False
             session.result_threshold = value
+            session.result_threshold_state = ResultThresholdState.USER_APPLIED
             return True
 
     def reconcile_prepared_context(
@@ -928,6 +964,7 @@ class NativeSessionStore:
         session.quality_training_started_monotonic = None
         session.quality_training_elapsed_seconds = None
         session.result_threshold = 0.5
+        session.result_threshold_state = ResultThresholdState.TECHNICAL_DEFAULT
 
     def _require_quality(self, session_id: str) -> _NativeAnalysisSession:
         session = self._require_algorithm(session_id)

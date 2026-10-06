@@ -21,6 +21,7 @@ from komus_risk.application import (
     NativeQualityService,
     ModelSaveBindingConflict,
     ModelSaveContextNotReady,
+    ModelDecisionThresholdBindingMismatch,
     ModelSaveError,
     InvalidModelDisplayName,
     InvalidModelLibraryQuery,
@@ -44,6 +45,7 @@ from komus_risk.application.native_session import (
     DatasetInspectionProgress,
     DatasetInspectionStage,
     NativeSessionTransitionError,
+    ResultThresholdState,
 )
 from komus_risk.planning import ExperimentPlanningService
 from komus_risk.data import TabularReadError, TabularReader
@@ -273,6 +275,8 @@ class SavedModelResponse(BaseModel):
     display_name: str
     display_version: str
     saved_at: str
+    decision_threshold: float | None
+    decision_threshold_state: Literal["USER_APPLIED", "NOT_SET"]
 
 
 class ModelVersionSaveResponse(SavedModelResponse):
@@ -313,6 +317,8 @@ class ModelVersionDetailResponse(BaseModel):
     display_version: str
     saved_at: str
     status: Literal["SAVED"]
+    decision_threshold: float | None = None
+    decision_threshold_state: Literal["USER_APPLIED", "NOT_SET"] = "NOT_SET"
     algorithm: dict[str, Any]
     dataset: dict[str, Any]
     population: dict[str, Any]
@@ -502,6 +508,9 @@ class InferenceViewConfigurationResponse(BaseModel):
 class SavedInferenceViewResponse(BaseModel):
     saved: bool
     configuration: InferenceViewConfigurationResponse
+    model_decision_threshold: float | None = None
+    default_threshold: float = 0.50
+    default_threshold_source: Literal["MODEL_DECISION", "TECHNICAL_DEFAULT"] = "TECHNICAL_DEFAULT"
 
 
 class ResultOverviewResponse(BaseModel):
@@ -828,6 +837,8 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                     display_name=saved.display_name,
                     display_version=saved.display_version,
                     saved_at=saved.saved_at,
+                    decision_threshold=saved.decision_threshold,
+                    decision_threshold_state=saved.decision_threshold_state,
                 )
             ),
         )
@@ -844,22 +855,29 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
                 detail={"code": "INVALID_MODEL_SAVE_REQUEST", "message": "Сохранение модели не принимает параметры."},
             )
         resolved_session_id, _ = resolve_session(response, session_id)
-        artifact_id = store.current_result_artifact_id(resolved_session_id)
-        context_id = store.current_result_prepared_context_id(resolved_session_id)
-        if artifact_id is None or context_id is None:
+        binding = store.current_result_save_binding(resolved_session_id)
+        if binding is None:
             raise HTTPException(status_code=409, detail={
                 "code": "MODEL_SAVE_CONTEXT_NOT_READY",
                 "message": "Контекст текущего результата недоступен для сохранения модели.",
             })
+        if binding.threshold_state is not ResultThresholdState.USER_APPLIED:
+            raise HTTPException(status_code=409, detail={
+                "code": "MODEL_DECISION_THRESHOLD_REQUIRED",
+                "message": "Сначала выберите и примените рабочий порог классификации.",
+            })
         try:
             try:
-                context = context_authority.resolve(context_id)
+                context = context_authority.resolve(binding.prepared_context_id)
             except Exception as error:
                 raise ModelSaveContextNotReady() from error
+            if store.current_result_save_binding(resolved_session_id) != binding:
+                raise ModelDecisionThresholdBindingMismatch()
             saved = await run_in_threadpool(
                 model_library.ensure_saved,
-                experiment_artifact_id=artifact_id,
+                experiment_artifact_id=binding.artifact_id,
                 prepared_dataset_context=context,
+                decision_threshold=binding.threshold,
             )
         except ModelSaveError as error:
             raise HTTPException(
@@ -879,6 +897,8 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
             display_name=record.display_name,
             display_version=record.display_version,
             saved_at=record.saved_at,
+            decision_threshold=record.decision_threshold,
+            decision_threshold_state=record.decision_threshold_state,
         )
 
     def model_library_error(exc: ModelLibraryError) -> HTTPException:
@@ -1130,7 +1150,13 @@ def create_app(*, session_store: NativeSessionStore | None = None, planning_serv
         return Response(status_code=204)
 
     def inference_view_response(value: Any) -> SavedInferenceViewResponse:
-        return SavedInferenceViewResponse(saved=value.saved, configuration=value.configuration)
+        return SavedInferenceViewResponse(
+            saved=value.saved,
+            configuration=value.configuration,
+            model_decision_threshold=getattr(value, "model_decision_threshold", None),
+            default_threshold=getattr(value, "default_threshold", 0.50),
+            default_threshold_source=getattr(value, "default_threshold_source", "TECHNICAL_DEFAULT"),
+        )
 
     def inference_query_number(value: str | None) -> float | None:
         if value is None:

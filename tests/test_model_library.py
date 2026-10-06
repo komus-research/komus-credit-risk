@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from komus_risk.application import InvalidModelDisplayName, ModelLibraryService, ModelSaveBindingConflict
-from komus_risk.artifacts import ModelLibraryRecord, ModelLibraryRecordStore, ModelVersionSummary
+from komus_risk.application import InvalidModelDisplayName, ModelDecisionThresholdConflict, ModelLibraryService, ModelSaveBindingConflict
+from komus_risk.artifacts import ModelDecisionThresholdRecordIntegrityError, ModelLibraryRecord, ModelLibraryRecordStore, ModelVersionSummary
 
 
 class _ModelVersions:
@@ -108,17 +108,62 @@ def test_first_save_repeat_and_recomposition_are_idempotent() -> None:
         workflow = _Workflow(versions)
         artifact_id = "a" * 64
         first = _service(root, versions, workflow).ensure_saved(
-            experiment_artifact_id=artifact_id, prepared_dataset_context=_context()
+            experiment_artifact_id=artifact_id, prepared_dataset_context=_context(), decision_threshold=.37
         )
         repeated = _service(root, versions, workflow).ensure_saved(
-            experiment_artifact_id=artifact_id, prepared_dataset_context=_context()
+            experiment_artifact_id=artifact_id, prepared_dataset_context=_context(), decision_threshold=.37
         )
 
         assert first.save_state == "CREATED"
         assert repeated.save_state == "ALREADY_SAVED"
         assert repeated.record.model_version_id == first.record.model_version_id
         assert first.record.display_name == "CatBoost — Dataset — v1"
+        assert first.record.schema_version == 2
+        assert first.record.decision_threshold == .37
+        assert first.record.decision_threshold_state == "USER_APPLIED"
         assert workflow.calls == 1
+
+
+def test_saved_threshold_is_immutable_and_legacy_record_is_completed_once() -> None:
+    with TemporaryDirectory() as temporary:
+        root = Path(temporary)
+        versions = _ModelVersions()
+        workflow = _Workflow(versions)
+        artifact_id = "t" * 64
+        service = _service(root, versions, workflow)
+        first = service.ensure_saved(experiment_artifact_id=artifact_id, prepared_dataset_context=_context(), decision_threshold=.37)
+        repeated = service.ensure_saved(experiment_artifact_id=artifact_id, prepared_dataset_context=_context(), decision_threshold=.37)
+        assert repeated.save_state == "ALREADY_SAVED" and workflow.calls == 1
+        with pytest.raises(ModelDecisionThresholdConflict):
+            service.ensure_saved(experiment_artifact_id=artifact_id, prepared_dataset_context=_context(), decision_threshold=.42)
+        assert workflow.calls == 1 and first.record.model_version_id == repeated.record.model_version_id
+
+        legacy_id = "l" * 64
+        legacy_version = ModelVersionSummary("legacy-model", legacy_id, "catboost", "1", ("feature",))
+        versions.by_artifact[legacy_id] = [legacy_version]
+        records = ModelLibraryRecordStore(root / "library")
+        records.save(ModelLibraryRecord(1, legacy_id, "legacy-model", "Legacy", "v2", "2026-01-01T00:00:00+00:00"))
+        completed = service.ensure_saved(experiment_artifact_id=legacy_id, prepared_dataset_context=_context(), decision_threshold=.37)
+        assert completed.record.schema_version == 2
+        assert completed.record.decision_threshold == .37
+        assert completed.record.decision_threshold_state == "USER_APPLIED"
+        assert completed.record.model_version_id == "legacy-model" and workflow.calls == 1
+
+
+def test_record_schema_v2_requires_exact_threshold_fields() -> None:
+    legacy = {
+        "schema_version": 1, "experiment_artifact_id": "a", "model_version_id": "m",
+        "display_name": "Model", "display_version": "v1", "saved_at": "2026-01-01T00:00:00+00:00",
+    }
+    assert ModelLibraryRecord.from_dict(legacy).decision_threshold_state == "NOT_SET"
+    current = {**legacy, "schema_version": 2, "decision_threshold": .37, "decision_threshold_state": "USER_APPLIED"}
+    assert ModelLibraryRecord.from_dict(current).decision_threshold == .37
+    for missing in ((), ("decision_threshold",), ("decision_threshold_state",)):
+        malformed = {key: value for key, value in current.items() if key not in missing}
+        if not missing:
+            malformed = dict(legacy, schema_version=2)
+        with pytest.raises(ModelDecisionThresholdRecordIntegrityError):
+            ModelLibraryRecord.from_dict(malformed)
 
 
 def test_concurrent_save_performs_one_final_fit() -> None:
@@ -130,7 +175,7 @@ def test_concurrent_save_performs_one_final_fit() -> None:
         with ThreadPoolExecutor(max_workers=2) as executor:
             outcomes = list(executor.map(
                 lambda _: service.ensure_saved(
-                    experiment_artifact_id=artifact_id, prepared_dataset_context=_context()
+                    experiment_artifact_id=artifact_id, prepared_dataset_context=_context(), decision_threshold=.37
                 ),
                 range(2),
             ))
@@ -151,7 +196,7 @@ def test_concurrent_artifacts_allocate_unique_versions_for_one_model() -> None:
             outcomes = list(executor.map(
                 lambda artifact_id: service.ensure_saved(
                     experiment_artifact_id=artifact_id,
-                    prepared_dataset_context=_context(),
+                        prepared_dataset_context=_context(), decision_threshold=.37,
                 ),
                 artifact_ids,
             ))
@@ -173,7 +218,7 @@ def test_orphan_is_bound_without_refit_and_duplicates_fail_closed() -> None:
         service = _service(root, versions, workflow)
 
         recovered = service.ensure_saved(
-            experiment_artifact_id=artifact_id, prepared_dataset_context=_context()
+            experiment_artifact_id=artifact_id, prepared_dataset_context=_context(), decision_threshold=.37
         )
         assert recovered.save_state == "ALREADY_SAVED"
         assert recovered.record.model_version_id == "orphan"
@@ -185,7 +230,7 @@ def test_orphan_is_bound_without_refit_and_duplicates_fail_closed() -> None:
         )
         with pytest.raises(ModelSaveBindingConflict):
             service.ensure_saved(
-                experiment_artifact_id=artifact_id, prepared_dataset_context=_context()
+                experiment_artifact_id=artifact_id, prepared_dataset_context=_context(), decision_threshold=.37
             )
 
 

@@ -71,6 +71,7 @@ function DetailContent({ model, onRenamed }: { model: ModelVersionDetail; onRena
     }
   }
   return <>
+    <div className="model-detail-identity"><div><small>Рабочий порог</small><strong>{model.decision_threshold == null ? 'Не задан' : new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(model.decision_threshold)}</strong></div></div>
     <button className="back-action model-back-link" onClick={() => navigate(routes.models)}>← Модели</button>
     <header className="model-detail-header"><div className="model-detail-title"><p className="eyebrow">Сохранённая обученная модель</p>{editingName
       ? <form className="model-name-edit-form" onSubmit={submitRename}><input value={draftName} maxLength={160} autoFocus onChange={event => setDraftName(event.target.value)} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); cancelRename() } }} aria-label="Название модели" /><button className="text-action" type="submit" disabled={renameBusy}>Сохранить</button><button className="text-action model-name-edit-cancel" type="button" disabled={renameBusy} onClick={cancelRename}>Отмена</button></form>

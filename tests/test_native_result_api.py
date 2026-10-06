@@ -25,7 +25,7 @@ from komus_risk.application import (
     ModelSaveSourceUnavailable,
     SavedModelInferenceError,
 )
-from komus_risk.application.native_session import NativeSessionStore, QualityTrainingStatus
+from komus_risk.application.native_session import NativeSessionStore, QualityTrainingStatus, ResultThresholdState
 from komus_risk.artifacts import ModelLibraryRecord
 
 
@@ -41,6 +41,11 @@ def _completed_session(store: NativeSessionStore, session_id: str, artifact_id: 
     session.quality_completed = True
     session.quality_training_status = QualityTrainingStatus.COMPLETED
     session.quality_training_artifact_id = artifact_id
+
+
+def _apply_threshold(client: TestClient, threshold: float = 0.50) -> None:
+    response = client.patch("/api/v1/result/threshold", json={"threshold": threshold})
+    assert response.status_code == 200, response.text
 
 
 class _ResultService:
@@ -330,14 +335,15 @@ class _ModelLibraryService:
     def __init__(self, error: Exception | None = None) -> None:
         self.record = None
         self.ensure_calls = []
+        self.final_fit_calls = 0
         self.rename_calls = []
         self.error = error
 
     def find_for_experiment(self, artifact_id: str):
         return self.record if self.record is not None and self.record.experiment_artifact_id == artifact_id else None
 
-    def ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context):
-        self.ensure_calls.append((experiment_artifact_id, prepared_dataset_context))
+    def ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context, decision_threshold: float):
+        self.ensure_calls.append((experiment_artifact_id, prepared_dataset_context, decision_threshold))
         if self.error is not None:
             raise self.error
         if self.record is None:
@@ -345,7 +351,20 @@ class _ModelLibraryService:
                 1, experiment_artifact_id, "model-version-exact",
                 "CatBoost — Trusted dataset — v1", "v1", "2026-10-05T10:00:00+00:00",
             )
+            self.record = ModelLibraryRecord(
+                schema_version=2, experiment_artifact_id=self.record.experiment_artifact_id,
+                model_version_id=self.record.model_version_id, display_name=self.record.display_name,
+                display_version=self.record.display_version, saved_at=self.record.saved_at,
+                decision_threshold=decision_threshold, decision_threshold_state="USER_APPLIED",
+            )
             return SimpleNamespace(save_state="CREATED", record=self.record)
+        if self.record.decision_threshold_state == "NOT_SET":
+            self.record = ModelLibraryRecord(
+                schema_version=2, experiment_artifact_id=self.record.experiment_artifact_id,
+                model_version_id=self.record.model_version_id, display_name=self.record.display_name,
+                display_version=self.record.display_version, saved_at=self.record.saved_at,
+                decision_threshold=decision_threshold, decision_threshold_state="USER_APPLIED",
+            )
         return SimpleNamespace(save_state="ALREADY_SAVED", record=self.record)
 
     def list(self, **_query):
@@ -550,12 +569,16 @@ def test_model_save_is_empty_idempotent_and_projected_on_result() -> None:
     client.cookies.set("axion_session", session_id)
 
     assert client.get("/api/v1/result").json()["saved_model"] is None
+    _apply_threshold(client)
     first = client.post("/api/v1/result/model-version")
     second = client.post("/api/v1/result/model-version")
     invalid = client.post("/api/v1/result/model-version", json={"artifact_id": "untrusted"})
 
     assert first.status_code == 200
-    assert first.json() == {
+    payload = first.json()
+    assert payload["decision_threshold"] == .5
+    assert payload["decision_threshold_state"] == "USER_APPLIED"
+    assert {key: value for key, value in payload.items() if key not in {"decision_threshold", "decision_threshold_state"}} == {
         "save_state": "CREATED", "artifact_id": "artifact-exact",
         "model_version_id": "model-version-exact",
         "display_name": "CatBoost — Trusted dataset — v1",
@@ -564,11 +587,69 @@ def test_model_save_is_empty_idempotent_and_projected_on_result() -> None:
     assert second.json()["save_state"] == "ALREADY_SAVED"
     assert invalid.status_code == 422
     assert len(library.ensure_calls) == 2
-    assert client.get("/api/v1/result").json()["saved_model"] == {
+    saved_payload = client.get("/api/v1/result").json()["saved_model"]
+    assert saved_payload["decision_threshold"] == .5
+    assert saved_payload["decision_threshold_state"] == "USER_APPLIED"
+    assert {key: value for key, value in saved_payload.items() if key not in {"decision_threshold", "decision_threshold_state"}} == {
         "model_version_id": "model-version-exact",
         "display_name": "CatBoost — Trusted dataset — v1",
         "display_version": "v1", "saved_at": "2026-10-05T10:00:00+00:00",
     }
+
+
+def test_model_save_requires_explicit_apply_even_at_technical_default() -> None:
+    library = _ModelLibraryService()
+    store = NativeSessionStore()
+    session_id, _ = store.get_or_create(None)
+    _completed_session(store, session_id, "artifact-exact")
+    client = TestClient(create_app(
+        session_store=store,
+        oof_result_service=_ResultService(),
+        prepared_context_authority=SimpleNamespace(resolve=lambda _context_id: object()),
+        model_library_service=library,
+    ))
+    client.cookies.set("axion_session", session_id)
+
+    required = client.post("/api/v1/result/model-version")
+    assert required.status_code == 409
+    assert required.json()["detail"]["code"] == "MODEL_DECISION_THRESHOLD_REQUIRED"
+    assert library.ensure_calls == []
+
+    _apply_threshold(client, .50)
+    allowed = client.post("/api/v1/result/model-version")
+    assert allowed.status_code == 200
+    assert library.ensure_calls[-1][-1] == .50
+
+
+def test_legacy_saved_model_is_completed_from_applied_result_threshold() -> None:
+    library = _ModelLibraryService()
+    library.record = ModelLibraryRecord(1, "artifact-exact", "model-version-exact", "Legacy", "v1", "2026-10-05T10:00:00+00:00")
+    store = NativeSessionStore()
+    session_id, _ = store.get_or_create(None)
+    _completed_session(store, session_id, "artifact-exact")
+    client = TestClient(create_app(
+        session_store=store,
+        oof_result_service=_ResultService(),
+        prepared_context_authority=SimpleNamespace(resolve=lambda _context_id: object()),
+        model_library_service=library,
+    ))
+    client.cookies.set("axion_session", session_id)
+
+    legacy = client.get("/api/v1/result").json()["saved_model"]
+    assert legacy["decision_threshold"] is None
+    assert legacy["decision_threshold_state"] == "NOT_SET"
+    assert client.post("/api/v1/result/model-version").json()["detail"]["code"] == "MODEL_DECISION_THRESHOLD_REQUIRED"
+
+    _apply_threshold(client, .37)
+    completed = client.post("/api/v1/result/model-version")
+    assert completed.status_code == 200
+    assert completed.json()["model_version_id"] == "model-version-exact"
+    assert completed.json()["display_version"] == "v1"
+    assert completed.json()["decision_threshold"] == .37
+    assert completed.json()["decision_threshold_state"] == "USER_APPLIED"
+    assert library.final_fit_calls == 0
+    saved = client.get("/api/v1/result").json()["saved_model"]
+    assert saved["decision_threshold_state"] == "USER_APPLIED"
 
 
 def test_model_versions_library_routes_expose_read_contract_and_validate_query() -> None:
@@ -635,6 +716,7 @@ def test_model_save_projects_stable_domain_errors(error) -> None:
     ))
     client.cookies.set("axion_session", session_id)
 
+    _apply_threshold(client)
     response = client.post("/api/v1/result/model-version")
 
     assert response.status_code == 409
@@ -654,6 +736,7 @@ def test_model_save_projects_unexpected_failures_as_500() -> None:
     ))
     client.cookies.set("axion_session", session_id)
 
+    _apply_threshold(client)
     response = client.post("/api/v1/result/model-version")
 
     assert response.status_code == 500
@@ -928,6 +1011,7 @@ def test_threshold_patch_saves_session_value_and_next_get_uses_it() -> None:
     service = _ResultService()
     client, store, session_id = _client(service)
     _completed_session(store, session_id, "artifact-exact")
+    assert store.current_result_save_binding(session_id).threshold_state is ResultThresholdState.TECHNICAL_DEFAULT
 
     response = client.patch("/api/v1/result/threshold", json={"threshold": 0.65})
 
@@ -939,6 +1023,7 @@ def test_threshold_patch_saves_session_value_and_next_get_uses_it() -> None:
         "above_threshold_count": 30, "above_threshold_share": 0.25,
     }
     assert store.current_result_threshold(session_id) == 0.65
+    assert store.current_result_save_binding(session_id).threshold_state is ResultThresholdState.USER_APPLIED
 
     service.calls.clear()
     overview = client.get("/api/v1/result")
@@ -956,6 +1041,7 @@ def test_threshold_preview_recomputes_without_saving_session_value() -> None:
     client, store, session_id = _client(service)
     _completed_session(store, session_id, "artifact-exact")
     assert store.current_result_threshold(session_id) == 0.5
+    assert store.current_result_save_binding(session_id).threshold_state is ResultThresholdState.TECHNICAL_DEFAULT
 
     response = client.get("/api/v1/result/threshold", params={"threshold": 0.37})
 
@@ -963,6 +1049,7 @@ def test_threshold_preview_recomputes_without_saving_session_value() -> None:
     assert service.calls == [("threshold", "artifact-exact", 0.37)]
     assert response.json()["threshold"] == 0.37
     assert store.current_result_threshold(session_id) == 0.5
+    assert store.current_result_save_binding(session_id).threshold_state is ResultThresholdState.TECHNICAL_DEFAULT
 
 
 def test_threshold_sweep_returns_bounded_curve_without_saving_session_value() -> None:
@@ -1063,6 +1150,7 @@ def test_session_resume_tracks_completed_artifact_and_quality_invalidation() -> 
     assert store.current_result_artifact_id(session_id) is None
     assert store.current_result_threshold(session_id) is None
     assert store._sessions[session_id].result_threshold == 0.5
+    assert store._sessions[session_id].result_threshold_state is ResultThresholdState.TECHNICAL_DEFAULT
 
 
 def test_explanation_is_not_ready_without_current_result() -> None:

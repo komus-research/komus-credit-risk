@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon'
 const numberFormat = new Intl.NumberFormat('ru-RU')
 const percentFormat = new Intl.NumberFormat('ru-RU', { style: 'percent', maximumFractionDigits: 1 })
 const scoreFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 3, maximumFractionDigits: 3 })
+const thresholdFormat = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const PAGE_SIZE = 50
 
 function message(reason: unknown) { return reason instanceof Error ? reason.message : 'Не удалось прочитать сохранённый результат.' }
@@ -16,6 +17,7 @@ function requestView(resultId: string, view: SavedInferenceViewConfiguration, of
 export function SavedModelInferenceResultPage({ inferenceResultId }: { inferenceResultId: string }) {
   const [view, setView] = useState<SavedInferenceViewConfiguration | null>(null)
   const [saved, setSaved] = useState(false)
+  const [modelThreshold, setModelThreshold] = useState<number | null>(null)
   const [summary, setSummary] = useState<SavedInferenceResult | null>(null)
   const [objects, setObjects] = useState<SavedInferenceObjects | null>(null)
   const [configError, setConfigError] = useState<string | null>(null)
@@ -25,11 +27,12 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
   const [objectsLoading, setObjectsLoading] = useState(false)
   const [saveBusy, setSaveBusy] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveSuccess, setSaveSuccess] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const latest = useRef(0)
 
   const applyResponse = useCallback((response: SavedInferenceConfigurationResponse) => {
-    setSaved(response.saved); setView(response.configuration); setConfigError(null)
+    setSaved(response.saved); setView(response.configuration); setModelThreshold(response.model_decision_threshold); setConfigError(null)
     return response.configuration
   }, [])
   const load = useCallback(async (configuration: SavedInferenceViewConfiguration, offset = 0) => {
@@ -47,7 +50,7 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
 
   useEffect(() => {
     let active = true
-    setLoading(true); setView(null); setSummary(null); setObjects(null); setConfigError(null); setResultError(null); setObjectsError(null)
+    setLoading(true); setView(null); setSummary(null); setObjects(null); setModelThreshold(null); setConfigError(null); setResultError(null); setObjectsError(null); setSaveSuccess(false)
     void getSavedInferenceConfiguration(inferenceResultId).then(async response => {
       if (!active) return
       const configuration = applyResponse(response)
@@ -64,14 +67,14 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
   const goPage = (offset: number) => { if (view) void load(view, Math.max(0, offset)) }
   const save = async () => {
     if (!view || saveBusy) return
-    setSaveBusy(true); setSaveError(null)
-    try { applyResponse(await putSavedInferenceConfiguration(inferenceResultId, view)) }
+    setSaveBusy(true); setSaveError(null); setSaveSuccess(false)
+    try { applyResponse(await putSavedInferenceConfiguration(inferenceResultId, view)); setSaveSuccess(true) }
     catch (reason) { setSaveError(message(reason)) }
     finally { setSaveBusy(false) }
   }
   const reset = async () => {
     if (saveBusy) return
-    setSaveBusy(true); setSaveError(null)
+    setSaveBusy(true); setSaveError(null); setSaveSuccess(false)
     try { const next = applyResponse(await deleteSavedInferenceConfiguration(inferenceResultId)); await load(next) }
     catch (reason) { setSaveError(message(reason)) }
     finally { setSaveBusy(false) }
@@ -81,10 +84,13 @@ export function SavedModelInferenceResultPage({ inferenceResultId }: { inference
   if (configError) return <main className="workspace inference-result-workspace"><section className="inference-state inference-error" role="alert"><Icon name="warning" size={28} /><div><strong>Не удалось прочитать конфигурацию просмотра</strong><p>{configError}</p><button className="secondary-action" disabled={saveBusy} onClick={() => void reset()}>Сбросить настройки</button></div></section></main>
   if (!view) return null
   const maximum = Math.max(...(summary?.histogram.map(bin => bin.count) ?? [1]), 1)
+  const thresholdChanged = modelThreshold !== null && view.threshold !== modelThreshold
 
   return <main className="workspace inference-result-workspace">
     <header className="inference-result-header"><div><button className="back-action inference-back" onClick={() => summary && navigate(buildModelDetailRoute(summary.model_version_id))}>← Назад к модели</button><p className="eyebrow">Модели / Анализ / Результат</p><h1>Результат анализа</h1><p>Оценки сохранённой модели для новых данных.</p></div><div className="inference-result-actions"><button className="secondary-action" disabled={saveBusy} onClick={() => void save()}><Icon name="file" />{saveBusy ? 'Сохраняем…' : 'Сохранить конфигурацию'}</button><button className="secondary-action" disabled title="Экспорт пока не подключён"><Icon name="download" />Экспорт</button><button className="secondary-action" disabled={!summary} onClick={() => summary && navigate(buildModelDetailRoute(summary.model_version_id))}><Icon name="folder" />Открыть модель</button><div className="inference-more"><button className="inference-more-action" type="button" aria-label="Дополнительные действия" aria-expanded={moreOpen} onClick={() => setMoreOpen(value => !value)}>⋯</button>{moreOpen && <div className="inference-more-menu"><button type="button" disabled={saveBusy} onClick={() => { setMoreOpen(false); void reset() }}>Сбросить настройки</button></div>}</div></div></header>
     {saveError && <p className="inference-inline-error" role="alert"><Icon name="warning" />{saveError}</p>}
+    {saveSuccess && <p className="inference-inline-status">✓ Конфигурация сохранена</p>}
+    <p className="inference-inline-status"><strong>{modelThreshold === null ? 'Технический порог по умолчанию: 0,50' : `Рабочий порог модели: ${thresholdFormat.format(modelThreshold)}`}</strong>{thresholdChanged && <> Текущий порог просмотра: {thresholdFormat.format(view.threshold)}.</>}{modelThreshold !== null && <button className="text-action" onClick={() => updateView({ threshold: modelThreshold })}>Вернуть рабочий порог модели</button>}</p>
     {summary && <><section className="panel inference-result-context"><div className="inference-card-icon"><Icon name="box" size={31} /></div><div><small>Модель</small><strong>{summary.display_name}</strong><span>Сохранённая модель</span></div><div><small>Алгоритм</small><strong>{summary.model_display_name}</strong></div><div><small>Данные</small><strong>{summary.source_display_name}</strong></div><div><small>Объектов</small><strong>{numberFormat.format(summary.row_count)}</strong></div><div><small>Признаков модели</small><strong>{summary.required_feature_count}</strong></div><div><small>Статус</small><strong className="inference-completed">● Расчёт завершён</strong></div></section>
       <section className="panel inference-summary"><div><h2>Оценки модели</h2><div className="inference-metrics"><article><small>Объектов</small><strong>{numberFormat.format(summary.row_count)}</strong></article><article><small>Выше порога</small><strong>{numberFormat.format(summary.above_threshold_count)}</strong><span>{percentFormat.format(summary.above_threshold_share)}</span></article><article><small>Ниже порога</small><strong>{numberFormat.format(summary.below_threshold_count)}</strong><span>{percentFormat.format(summary.below_threshold_share)}</span></article><article><small>Диапазон оценок</small><strong>{scoreFormat.format(summary.score_min)}–{scoreFormat.format(summary.score_max)}</strong></article></div></div><div className="inference-histogram"><h3>Распределение оценок</h3><div className="histogram-bars">{summary.histogram.map(bin => <span key={bin.lower_bound} title={`${scoreFormat.format(bin.lower_bound)}–${scoreFormat.format(bin.upper_bound)}: ${bin.count}`} style={{ height: `${Math.max(2, (bin.count / maximum) * 100)}%` }} />)}<i className="histogram-threshold-marker" style={{ left: `${view.threshold * 100}%` }}><b>Порог {scoreFormat.format(view.threshold)}</b></i></div><div className="histogram-axis"><span>0,00</span><span>0,50</span><span>1,00</span></div></div></section>
       <section className="panel inference-threshold-note"><Icon name="info" size={28} /><div><strong>Текущий порог: {scoreFormat.format(view.threshold)}</strong><p>Порог используется только для аналитического разделения объектов на группы «Выше порога» и «Ниже порога». Он не изменяет оценки и не переобучает модель.</p></div><label>Порог<input type="number" min="0" max="1" step="0.01" value={view.threshold} onChange={event => { const value = Number(event.target.value); if (Number.isFinite(value) && value >= 0 && value <= 1) updateView({ threshold: value }) }} /></label></section>

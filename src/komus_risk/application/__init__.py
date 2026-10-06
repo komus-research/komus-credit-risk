@@ -37,6 +37,10 @@ from .model_library_errors import (
 from .model_save_errors import (
     ModelSaveBindingConflict,
     ModelSaveContextNotReady,
+    ModelDecisionThresholdBindingMismatch,
+    ModelDecisionThresholdConflict,
+    ModelDecisionThresholdIntegrityError,
+    ModelDecisionThresholdRequired,
     ModelSaveError,
     ModelSaveIncompatible,
     ModelSaveSourceChanged,

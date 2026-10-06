@@ -8,12 +8,14 @@ from math import isfinite
 from threading import Lock, RLock
 from typing import Any
 
-from komus_risk.artifacts import ModelLibraryRecord, ModelLibraryRecordStore, ModelVersionStore
+from komus_risk.artifacts import ModelDecisionThresholdRecordConflict, ModelDecisionThresholdRecordIntegrityError, ModelLibraryRecord, ModelLibraryRecordBindingConflict, ModelLibraryRecordStore, ModelVersionStore
 
 from .integration_workflow import IntegrationWorkflowService
 from .model_save_errors import (
     ModelSaveBindingConflict,
     ModelSaveContextNotReady,
+    ModelDecisionThresholdConflict,
+    ModelDecisionThresholdIntegrityError,
     ModelSaveError,
     ModelSaveIncompatible,
 )
@@ -77,7 +79,9 @@ class ModelLibraryService:
             return record
         except ModelSaveError:
             raise
-        except ValueError as error:
+        except ModelDecisionThresholdRecordIntegrityError as error:
+            raise ModelDecisionThresholdIntegrityError() from error
+        except ModelLibraryRecordBindingConflict as error:
             raise ModelSaveBindingConflict() from error
 
     def list(
@@ -150,6 +154,8 @@ class ModelLibraryService:
             "display_version": record.display_version,
             "saved_at": record.saved_at,
             "status": "SAVED",
+            "decision_threshold": record.decision_threshold,
+            "decision_threshold_state": record.decision_threshold_state,
             "algorithm": {
                 "model_id": config["model_id"],
                 "model_display_name": self._display_name(config["model_id"]),
@@ -337,24 +343,49 @@ class ModelLibraryService:
             raise ModelVersionIntegrityError()
         return value
 
-    def ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context: Any) -> SavedModelResult:
+    def ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context: Any, decision_threshold: float) -> SavedModelResult:
         if prepared_dataset_context is None:
             raise ModelSaveContextNotReady()
+        if isinstance(decision_threshold, bool) or not isinstance(decision_threshold, (int, float)) or not isfinite(float(decision_threshold)) or not 0 <= float(decision_threshold) <= 1:
+            raise ModelDecisionThresholdIntegrityError()
         try:
             return self._ensure_saved(
                 experiment_artifact_id=experiment_artifact_id,
                 prepared_dataset_context=prepared_dataset_context,
+                decision_threshold=float(decision_threshold),
             )
         except ModelSaveError:
             raise
+        except ModelDecisionThresholdRecordIntegrityError as error:
+            raise ModelDecisionThresholdIntegrityError() from error
+        except ModelLibraryRecordBindingConflict as error:
+            raise ModelSaveBindingConflict() from error
         except ValueError as error:
             raise ModelSaveBindingConflict() from error
 
-    def _ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context: Any) -> SavedModelResult:
+    def _ensure_saved(self, *, experiment_artifact_id: str, prepared_dataset_context: Any, decision_threshold: float) -> SavedModelResult:
         with self._lock_for(experiment_artifact_id):
             record = self.record_store.find_by_experiment_artifact_id(experiment_artifact_id)
             if record is not None:
                 self._verified_model(record)
+                if record.decision_threshold_state == "USER_APPLIED":
+                    if record.decision_threshold != decision_threshold:
+                        raise ModelDecisionThresholdConflict()
+                elif record.decision_threshold_state == "NOT_SET":
+                    try:
+                        record = self.record_store.complete_decision_threshold(
+                            experiment_artifact_id=record.experiment_artifact_id,
+                            model_version_id=record.model_version_id,
+                            threshold=decision_threshold,
+                        )
+                    except ModelDecisionThresholdRecordConflict as error:
+                        raise ModelDecisionThresholdConflict() from error
+                    except ModelDecisionThresholdRecordIntegrityError as error:
+                        raise ModelDecisionThresholdIntegrityError() from error
+                    except ModelLibraryRecordBindingConflict as error:
+                        raise ModelSaveBindingConflict() from error
+                else:
+                    raise ModelDecisionThresholdIntegrityError()
                 return SavedModelResult("ALREADY_SAVED", record)
 
             versions = self.model_version_store.find_by_experiment_artifact_id(experiment_artifact_id)
@@ -364,7 +395,7 @@ class ModelLibraryService:
                 loaded = self._verified_summary(versions[0], experiment_artifact_id)
                 return SavedModelResult(
                     "ALREADY_SAVED",
-                    self._allocate_and_save_record(loaded, prepared_dataset_context),
+                    self._allocate_and_save_record(loaded, prepared_dataset_context, decision_threshold),
                 )
 
             try:
@@ -382,21 +413,21 @@ class ModelLibraryService:
             loaded = self._verified_summary(verified[0], experiment_artifact_id)
             return SavedModelResult(
                 "CREATED",
-                self._allocate_and_save_record(loaded, prepared_dataset_context),
+                self._allocate_and_save_record(loaded, prepared_dataset_context, decision_threshold),
             )
 
-    def _allocate_and_save_record(self, loaded: Any, context: Any) -> ModelLibraryRecord:
+    def _allocate_and_save_record(self, loaded: Any, context: Any, decision_threshold: float) -> ModelLibraryRecord:
         """Allocate and persist vN as one critical section per library/model."""
         with self._model_lock_for(loaded.summary.model_id):
-            return self._save_record(self._new_record(loaded, context))
+            return self._save_record(self._new_record(loaded, context, decision_threshold))
 
     def _save_record(self, record: ModelLibraryRecord) -> ModelLibraryRecord:
         try:
             return self.record_store.save(record)
-        except ValueError as error:
-            if str(error) == ModelSaveBindingConflict.code:
-                raise ModelSaveBindingConflict() from error
-            raise
+        except ModelDecisionThresholdRecordIntegrityError as error:
+            raise ModelDecisionThresholdIntegrityError() from error
+        except ModelLibraryRecordBindingConflict as error:
+            raise ModelSaveBindingConflict() from error
 
     def _verified_model(self, record: ModelLibraryRecord):
         summaries = self.model_version_store.find_by_experiment_artifact_id(record.experiment_artifact_id)
@@ -413,7 +444,7 @@ class ModelLibraryService:
             raise ModelSaveBindingConflict()
         return loaded
 
-    def _new_record(self, loaded: Any, context: Any) -> ModelLibraryRecord:
+    def _new_record(self, loaded: Any, context: Any, decision_threshold: float) -> ModelLibraryRecord:
         try:
             dataset_name = context.display_name
             if not isinstance(dataset_name, str) or not dataset_name.strip():
@@ -426,12 +457,14 @@ class ModelLibraryService:
             raise ModelSaveIncompatible() from error
         display_version = self._next_display_version(loaded.summary.model_id)
         return ModelLibraryRecord(
-            schema_version=1,
+            schema_version=2,
             experiment_artifact_id=loaded.summary.experiment_artifact_id,
             model_version_id=loaded.summary.model_version_id,
             display_name=f"{model_name} — {dataset_name} — {display_version}",
             display_version=display_version,
             saved_at=self.record_store.now(),
+            decision_threshold=decision_threshold,
+            decision_threshold_state="USER_APPLIED",
         )
 
     def _next_display_version(self, model_id: str) -> str:

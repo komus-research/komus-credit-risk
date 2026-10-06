@@ -52,6 +52,8 @@ export type SavedModel = {
   display_name: string
   display_version: string
   saved_at: string
+  decision_threshold: number | null
+  decision_threshold_state: 'USER_APPLIED' | 'NOT_SET'
 }
 
 export type ResultOverview = {

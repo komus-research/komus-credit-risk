@@ -47,6 +47,8 @@ export type ModelVersionDetail = {
   display_version: string
   saved_at: string
   status: 'SAVED'
+  decision_threshold: number | null
+  decision_threshold_state: 'USER_APPLIED' | 'NOT_SET'
   algorithm: {
     model_id: string
     model_display_name: string

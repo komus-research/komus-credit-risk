@@ -169,11 +169,17 @@ def test_result_read_and_view_configuration_survive_restart_without_prediction()
         assert summary.above_threshold_count == 1 and len(summary.histogram) == 20
         objects = service.objects(run.inference_result_id, threshold=.5, offset=0, limit=1, search="BETA", sort="SCORE_DESC")
         assert objects.total_count == 2 and objects.filtered_count == 1 and objects.items[0]["identifier_display"] == "beta"
+        library.record = ModelLibraryRecord(2, "exp", "model", "Model", "v1", "2026-01-01T00:00:00+00:00", .37, "USER_APPLIED")
         defaults = service.get_view_configuration(run.inference_result_id)
         assert defaults.saved is False and defaults.configuration["inference_result_id"] == run.inference_result_id
-        saved = service.put_view_configuration(run.inference_result_id, threshold=.4, min_score=.1, max_score=.9, position_filter="ALL", sort="SOURCE_ASC", search="beta")
-        repeated = service.put_view_configuration(run.inference_result_id, threshold=.4, min_score=.1, max_score=.9, position_filter="ALL", sort="SOURCE_ASC", search="beta")
+        assert defaults.configuration["threshold"] == .37
+        assert defaults.model_decision_threshold == .37 and defaults.default_threshold_source == "MODEL_DECISION"
+        saved = service.put_view_configuration(run.inference_result_id, threshold=.42, min_score=.1, max_score=.9, position_filter="ALL", sort="SOURCE_ASC", search="beta")
+        repeated = service.put_view_configuration(run.inference_result_id, threshold=.42, min_score=.1, max_score=.9, position_filter="ALL", sort="SOURCE_ASC", search="beta")
         assert saved.saved is True and repeated.configuration["updated_at"] == saved.configuration["updated_at"]
+        assert saved.configuration["threshold"] == .42
+        reset = service.delete_view_configuration(run.inference_result_id)
+        assert reset.configuration["threshold"] == .37 and reset.default_threshold_source == "MODEL_DECISION"
 
         restarted = SavedModelInferenceService(
             model_library_service=library, model_inference_service=ModelInferenceService(),
@@ -181,7 +187,7 @@ def test_result_read_and_view_configuration_survive_restart_without_prediction()
             view_store=SavedInferenceResultViewConfigurationStore(root / "inference_view_configurations"), cleanup_upload=lambda _: None,
         )
         assert restarted.summary(run.inference_result_id).score_max == .8
-        assert restarted.get_view_configuration(run.inference_result_id).configuration["search"] == "beta"
+        assert restarted.get_view_configuration(run.inference_result_id).configuration["search"] == ""
         assert predictor.calls == 1
 
         config_path = root / "inference_view_configurations" / f"{run.inference_result_id}.json"
@@ -192,7 +198,7 @@ def test_result_read_and_view_configuration_survive_restart_without_prediction()
         assert not config_path.exists()
 
         restarted.put_view_configuration(
-            run.inference_result_id, threshold=.4, min_score=.1, max_score=.9,
+            run.inference_result_id, threshold=.42, min_score=.1, max_score=.9,
             position_filter="ALL", sort="SOURCE_ASC", search="beta",
         )
         config_path.write_bytes(b"\xff\xfe\xfd")
@@ -200,4 +206,8 @@ def test_result_read_and_view_configuration_survive_restart_without_prediction()
             restarted.get_view_configuration(run.inference_result_id)
         assert restarted.delete_view_configuration(run.inference_result_id).saved is False
         assert not config_path.exists()
+        library.record = ModelLibraryRecord(1, "exp", "model", "Model", "v1", "2026-01-01T00:00:00+00:00")
+        legacy = restarted.get_view_configuration(run.inference_result_id)
+        assert legacy.configuration["threshold"] == .50
+        assert legacy.model_decision_threshold is None and legacy.default_threshold_source == "TECHNICAL_DEFAULT"
         assert (root / "inference_results" / run.inference_result_id / "manifest.json").read_bytes() == before
