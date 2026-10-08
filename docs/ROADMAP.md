@@ -6,7 +6,14 @@
 
 Перед крупным изменением проверяются branch/HEAD/status, данные и affected artifacts. Исследовательский Stage закрывается только после review результата и сохранения evidence package по правилам `docs/RESEARCH_RECORD.md`.
 
-Дата актуализации: **2026-09-29**.
+Дата актуализации: **2026-10-08**.
+
+> Delivery snapshot V1: native React/FastAPI path включает Home, подготовку данных,
+> признаки, алгоритм, Quality/OOF, Result, Model Library и saved inference, Analyst
+> Report, Project Workspace, History и Settings V1. Для сдачи приоритетны verification,
+> presentation и evidence; исторические research stages ниже не переписываются этим
+> snapshot. Global OOF explanation запускается отдельной операцией и доступен конкретному
+> результату только после успешного формирования OOF evidence.
 
 ---
 

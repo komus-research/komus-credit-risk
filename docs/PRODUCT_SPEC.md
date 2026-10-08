@@ -6,6 +6,13 @@
 
 Неопределённые бизнес-параметры не додумываются и не зашиваются в код.
 
+> Delivery snapshot V1: основной интерфейс — React/Vite через FastAPI к
+> application/core; Streamlit сохранён только как compatibility frontend. Реализованные
+> product flows включают подготовку данных, OOF experiment, Result/Local SHAP,
+> ModelVersion и saved inference, Result Interpreter, Analyst Report, Project Workspace,
+> History и Settings V1. Это исследовательско-прикладной прототип, а не production
+> credit-decision system.
+
 ## 1. Назначение
 
 `Komus Credit Risk` — исследовательская система для сравнения моделей прогнозирования дефолта, наборов признаков и бизнес-сценариев принятия решения.

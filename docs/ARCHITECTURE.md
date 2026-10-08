@@ -4,6 +4,12 @@
 
 Актуальная архитектурная основа проекта. Фиксирует границы ответственности и направление развития, но не требует создавать инфраструктуру заранее.
 
+> Delivery snapshot V1: canonical runtime — `React + TypeScript + Vite → FastAPI →
+> application/core`. Версионированные application artifacts хранятся локально в
+> `.axion-artifacts`; production DB не вводится без подтверждённой необходимости.
+> Streamlit — compatibility-only. LLM ограничен Result Interpreter boundary и не
+> участвует в prediction.
+
 ## 1. Главный принцип
 
 Проект развивается из исследования в инструмент без переписывания ML-логики.

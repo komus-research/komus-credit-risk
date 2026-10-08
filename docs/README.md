@@ -2,7 +2,7 @@
 
 ## Порядок чтения по умолчанию
 
-1. [`PROJECT_MAP.md`](PROJECT_MAP.md) — текущая точка проекта, canonical product path и NEXT.
+1. [`PROJECT_MAP.md`](../PROJECT_MAP.md) — текущая точка проекта, canonical product path и delivery NEXT.
 2. [`CURRENT_STATE.md`](CURRENT_STATE.md) — компактный актуальный контекст и устойчивые инварианты.
 3. Только документ, непосредственно относящийся к текущей задаче.
 4. Код, diff или artifact как фактическое evidence.
@@ -21,4 +21,4 @@
 
 ## Источник истины
 
-[`PROJECT_MAP.md`](PROJECT_MAP.md) определяет текущую продуктовую точку, canonical frontend path и NEXT. Исторические записи не меняют NEXT. `CURRENT_STATE.md` — краткая актуальная сводка; полная прежняя версия доступна в [`history/CURRENT_STATE_FULL_2026-10-01.md`](history/CURRENT_STATE_FULL_2026-10-01.md) и читается только при конкретной необходимости.
+[`PROJECT_MAP.md`](../PROJECT_MAP.md) определяет текущую продуктовую точку, canonical frontend path и delivery NEXT. Исторические записи не меняют NEXT. `CURRENT_STATE.md` — краткая актуальная сводка; полная прежняя версия доступна в [`history/CURRENT_STATE_FULL_2026-10-01.md`](history/CURRENT_STATE_FULL_2026-10-01.md) и читается только при конкретной необходимости.
