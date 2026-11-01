@@ -3,6 +3,7 @@ import { getNativeSession, startNewAnalysis, type NativeSession } from './api/se
 import { Sidebar } from './components/Sidebar'
 import { DataPage } from './pages/DataPage'
 import { HomePage } from './pages/HomePage'
+import { DemoHomePage, isDemoHomeMode, openLiveHome } from './pages/HomePageDemo'
 import { HistoryPage } from './pages/HistoryPage'
 import { AlgorithmPage } from './pages/AlgorithmPage'
 import { FeaturesPage } from './pages/FeaturesPage'
@@ -41,6 +42,8 @@ export function App() {
 
   const sync = useCallback(async (requested: AppRoute, stale = false) => {
     requestedRoute.current = requested
+    // Portfolio demo is a read-only local fixture: no backend session needed.
+    if (requested === routes.home && isDemoHomeMode()) { setSessionReady(true); return }
     if (requested === routes.models || isModelDetailRoute(requested) || isModelInferenceRoute(requested) || isInferenceResultRoute(requested) || isSavedInferenceObjectDetailRoute(requested) || isSavedInferenceReportDraftRoute(requested) || isAnalystReportRoute(requested)) {
       setSessionReady(true)
       return
@@ -97,6 +100,8 @@ export function App() {
   }, [sync])
 
   useEffect(() => {
+    // Do not contact Settings API while displaying the standalone portfolio demo.
+    if (isDemoHomeMode()) return
     let active = true
     const requestVersion = technicalDetailsPreferenceVersion.current
     void getSettings().then(settings => {
@@ -166,7 +171,10 @@ export function App() {
     }).finally(() => setStartingNewAnalysis(false))
   }, [])
 
-  const page = route === routes.home
+  const demoMode = route === routes.home && isDemoHomeMode()
+  const page = demoMode
+    ? <DemoHomePage />
+    : route === routes.home
     ? <HomePage session={session} onContinue={continueAnalysis} onStartNewAnalysis={() => beginNewAnalysis()} onOpenModels={openModels} startingNewAnalysis={startingNewAnalysis} />
     : route === routes.models
       ? <ModelsPage />
@@ -224,13 +232,13 @@ export function App() {
       <Sidebar
         active={route === routes.home ? 'home' : route === routes.history ? 'history' : route === routes.settings ? 'settings' : route === routes.models || isModelDetailRoute(route) || isModelInferenceRoute(route) || isInferenceResultRoute(route) || isSavedInferenceObjectDetailRoute(route) || isSavedInferenceReportDraftRoute(route) || isAnalystReportRoute(route) ? 'models' : route === routes.documentation ? 'documentation' : route === routes.hotkeys ? 'hotkeys' : route === routes.about ? 'about' : 'analysis'}
         onHome={openHome}
-        onNewAnalysis={() => beginNewAnalysis()}
-        onModels={openModels}
-        onHistory={openHistory}
-        onSettings={openSettings}
-        onDocumentation={openDocumentation}
-        onHotkeys={openHotkeys}
-        onAbout={openAbout}
+        onNewAnalysis={demoMode ? openLiveHome : () => beginNewAnalysis()}
+        onModels={demoMode ? () => window.location.assign(window.location.pathname + routes.models) : openModels}
+        onHistory={demoMode ? () => window.location.assign(window.location.pathname + routes.history) : openHistory}
+        onSettings={demoMode ? () => window.location.assign(window.location.pathname + routes.settings) : openSettings}
+        onDocumentation={demoMode ? () => window.location.assign(window.location.pathname + routes.documentation) : openDocumentation}
+        onHotkeys={demoMode ? () => window.location.assign(window.location.pathname + routes.hotkeys) : openHotkeys}
+        onAbout={demoMode ? () => window.location.assign(window.location.pathname + routes.about) : openAbout}
       />
       <div className="app-page">{page}</div>
     </div>
